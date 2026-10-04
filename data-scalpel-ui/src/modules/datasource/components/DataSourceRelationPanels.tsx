@@ -48,7 +48,7 @@ interface ModelFilters {
 
 const relationTags = (values: DataSourceRelationKind[]) => (
   <Space size={[4, 4]} wrap>
-    {values.map((value) => <Tag key={value} color={value === 'DIRECT' ? 'blue' : 'purple'}>{relationKindLabels[value]}</Tag>)}
+    {values.map((value) => <Tag key={value}>{relationKindLabels[value]}</Tag>)}
   </Space>
 );
 
@@ -158,7 +158,7 @@ export const DataSourceRelatedTasksPanel = ({ dataSourceId, active }: PanelProps
   const columns: TableProps<DataSourceRelatedTask>['columns'] = [
     { title: '任务', dataIndex: 'taskName', width: 220, sorter: true, render: (value: string, task) => <Button type="link" onClick={() => navigate(`/task/${task.taskId}`)}>{value}</Button> },
     { title: '关联方式', dataIndex: 'relationKinds', width: 170, render: relationTags },
-    { title: '角色', dataIndex: 'roles', width: 120, render: (roles: DataSourceTaskRelationRole[]) => <Space size={4}>{roles.map((role) => <Tag key={role} color={role === 'INPUT' ? 'blue' : 'purple'}>{roleLabels[role]}</Tag>)}</Space> },
+    { title: '角色', dataIndex: 'roles', width: 120, render: (roles: DataSourceTaskRelationRole[]) => <Space size={4}>{roles.map((role) => <Tag key={role}>{roleLabels[role]}</Tag>)}</Space> },
     { title: '任务类型', dataIndex: 'taskType', width: 150, sorter: true, render: (value: TaskType) => taskTypeLabels[value] },
     { title: '状态', dataIndex: 'taskStatus', width: 100, sorter: true, render: (value: TaskStatus) => <Tag color={taskStatusColors[value]}>{taskStatusLabels[value]}</Tag> },
     { title: '引用位置', dataIndex: 'locations', width: 360, render: (locations: DataSourceTaskReferenceLocation[]) => <LocationTags locations={locations} /> },

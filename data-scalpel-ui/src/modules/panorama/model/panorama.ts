@@ -30,7 +30,6 @@ export interface PanoramaQuery extends SearchRequest { directoryIds?: string[]; 
 export interface MapBounds { west: number; south: number; east: number; north: number }
 export interface PanoramaMapPoint { id: string; name: string; latitude: number; longitude: number; captureTime: string | null; contentVersion: number }
 export interface PanoramaMapPoints { points: PanoramaMapPoint[]; totalElements: number; truncated: boolean }
-export interface PanoramaMapConfig { url: string; attribution: string; maxZoom: number }
 export const processingLabels: Record<ProcessingStatus, string> = { QUEUED: '排队中', PROCESSING: '处理中', READY: '已就绪', FAILED: '处理失败' };
 export const isProcessing = (p?: Panorama) => p?.processingStatus === 'QUEUED' || p?.processingStatus === 'PROCESSING';
 // Capture times without offsets are photo-local wall times; never reinterpret them in the browser's timezone.

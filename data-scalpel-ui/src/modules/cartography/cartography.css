@@ -18,9 +18,9 @@
 .cartography-compact-row { grid-column:1/-1; align-items:flex-end; }
 .cartography-compact-row > .ant-select:first-child { flex:1; min-width:130px; }
 .cartography-rule-list { display:flex; flex-direction:column; gap:6px; max-height:270px; overflow:auto; }
-.cartography-rule-row { display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; gap:8px; padding:6px; background:#fff; border:1px solid rgb(77 96 166 / 12%); border-radius:8px; }
+.cartography-rule-row { display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; gap:8px; padding:6px; background:#fff; border:1px solid rgb(77 96 166 / 12%); border-radius:var(--ds-radius-control); }
 .cartography-rule-copy { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(90px,1fr); align-items:center; gap:6px; min-width:0; }
-.cartography-swatch-button { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; background:#f6f7fb; border:1px solid #e4e8f2; border-radius:7px; cursor:pointer; }
+.cartography-swatch-button { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; background:#f6f7fb; border:1px solid #e4e8f2; border-radius:var(--ds-radius-control); cursor:pointer; }
 .cartography-swatch { display:inline-block; flex:none; width:18px; height:18px; box-sizing:border-box; background:color-mix(in srgb,var(--fill,transparent) calc(var(--fill-opacity,1) * 100%),transparent); border:var(--stroke-width,2px) var(--stroke-style,solid) color-mix(in srgb,var(--stroke,#4F6BFF) calc(var(--stroke-opacity,1) * 100%),transparent); }
 .cartography-swatch-point { border-radius:50%; }
 .cartography-shape-square { border-radius:2px; }
@@ -32,7 +32,7 @@
 .cartography-breaks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
 .cartography-breaks label { display:flex; align-items:center; gap:6px; color:#63708d; font-size:12px; }
 .cartography-breaks .ant-input { min-width:0; }
-.cartography-range-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:9px; border-radius:8px; background:#f7f8fc; }
+.cartography-range-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:9px; border-radius:var(--ds-radius-control); background:#f7f8fc; }
 .cartography-inline-state { grid-column:1/-1; color:#63708d; font-size:12px; }
 .cartography-legend { display:flex; flex-direction:column; gap:6px; max-height:180px; overflow:auto; }
 .cartography-legend > div { display:flex; align-items:center; gap:8px; color:#4d5875; font-size:12px; }

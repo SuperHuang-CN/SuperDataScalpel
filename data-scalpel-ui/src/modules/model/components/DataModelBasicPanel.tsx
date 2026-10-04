@@ -79,11 +79,11 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </div>
       );
       if (!forCreate) {
-        modalApi.info({ rootClassName: 'business-overlay business-modal-overlay', title: '建表 SQL', content, width: 820, okText: '关闭' });
+        modalApi.info({ rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay', title: '建表 SQL', content, width: 820, okText: '关闭' });
         return;
       }
       modalApi.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
         title: '创建物理表',
         content,
         width: 820,

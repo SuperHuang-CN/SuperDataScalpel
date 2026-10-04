@@ -2,3 +2,4 @@ export { DirectoryTreePanel, type DirectorySelection } from './components/Direct
 export { findDirectoryDescendantIds, directoryTreeSelectData, type DirectoryScope, type DirectoryTreeNode } from './model/directory';
 export { invalidateDirectoryTree, useDirectoryTree } from './hooks/useDirectories';
 export { exportDirectoryTree } from './api/directoryApi';
+export { directoryTreeSelectOptions } from './components/directoryTreeSelectOptions';

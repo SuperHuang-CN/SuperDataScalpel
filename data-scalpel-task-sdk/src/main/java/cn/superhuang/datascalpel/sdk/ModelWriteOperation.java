@@ -7,6 +7,13 @@ package cn.superhuang.datascalpel.sdk;
  */
 public interface ModelWriteOperation {
     /**
+     * 启用单目标原子批写；实时任务不支持，不会自动降级。
+     * @param options 原子提交及覆盖范围，不能为空。
+     */
+    default ModelWriteOperation batchWrite(BatchWriteOptions options) {
+        throw new UnsupportedOperationException("当前运行时不支持原子批写");
+    }
+    /**
      * 选择追加、覆盖或按主键更新插入。
      * @param mode 目标写入方式。
      */

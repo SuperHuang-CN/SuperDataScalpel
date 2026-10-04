@@ -29,7 +29,7 @@ public class DynamicServiceRouteRegistry {
     private final Method sqlHandlerMethod;
     private final Map<UUID, RequestMappingInfo> mappingsByServiceId = new HashMap<>();
     private final Map<String, UUID> serviceIdByPath = new HashMap<>();
-    private final Map<String, StoredServiceDeployment> deploymentByPath = new HashMap<>();
+    private final Map<String, StoredServiceDeployment> deploymentByPath = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DynamicServiceRouteRegistry(
             @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping handlerMapping,
@@ -104,7 +104,7 @@ public class DynamicServiceRouteRegistry {
         }
     }
 
-    public synchronized Optional<StoredServiceDeployment> deployment(String path) {
+    public Optional<StoredServiceDeployment> deployment(String path) {
         try {
             return Optional.ofNullable(deploymentByPath.get(EngineRoutePath.normalize(path)));
         } catch (IllegalArgumentException exception) {

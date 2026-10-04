@@ -219,11 +219,16 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
                 return CanvasNodeOperationResult.outputOnly();
             }
         }
+        BatchWritePolicy.validate(write.batchWrite(), write.writeMode(), context.executionMode(),
+                dataSource.metadata().jdbcDatabaseType(), new SparkCanvasTable(targetSchema, selected), issues);
+        if (issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         CanvasPreparedOutput prepared =
                 context.dataAccess().prepareJdbcOutput(node, write, targetSchema, selected);
         var lineageWriteMode = switch (write.writeMode()) {
             case APPEND -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.APPEND;
-            case OVERWRITE -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.FULL_OVERWRITE;
+            case OVERWRITE -> write.batchWrite() != null && write.batchWrite().overwriteCondition() != null
+                    ? cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.CONDITIONAL_OVERWRITE
+                    : cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.FULL_OVERWRITE;
             case UPSERT -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.UPSERT;
         };
         return CanvasNodeOperationResult.output(

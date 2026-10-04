@@ -1,0 +1,101 @@
+/* Data source detail owns its visual scope; other domain detail pages are unchanged. */
+.app-content-detail .data-source-detail-page {
+  --ds-primary-gradient: linear-gradient(#287f9e, #287f9e);
+  --ds-standard-control-height: 36px;
+  container: data-source-detail / inline-size;
+  color: #263d4c;
+  font-family: var(--ds-ui-font);
+  font-size: 14px;
+}
+.data-source-detail-page :is(.ant-btn, .ant-input, .ant-select, .ant-typography, .ant-table, .ant-tabs, .ant-badge-status-text) { font-family: inherit; }
+.app-content-detail .data-source-detail-page .data-source-detail-header {
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #dce8ee;
+  border-radius: var(--ds-radius-panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.data-source-detail-header > .ant-btn { flex: none; }
+.data-source-detail-header .data-source-detail-identity { flex: 1; }
+.app-content-detail .data-source-detail-header .business-detail-resource-icon {
+  background: #f0f6f9;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+.app-content-detail .data-source-detail-page .data-source-detail-title { color: #263d4c; font-size: 17px; font-weight: 600; max-width: 100%; }
+.data-source-detail-type { color: #5b7180; font-size: 12px; }
+.app-content-detail .data-source-detail-page .data-source-detail-subtitle { margin: 4px 0 0; color: #5b7180; }
+.data-source-detail-endpoint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.app-content-detail .data-source-detail-page .business-detail-header .ant-btn { border-radius: var(--ds-radius-control); box-shadow: none; }
+.app-content-detail .data-source-detail-page .business-detail-header .ant-btn-primary:not(:disabled) { background: #287f9e; box-shadow: none; }
+.app-content-detail .data-source-detail-page .data-source-detail-tabs { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; backdrop-filter: none; }
+.app-content-detail .data-source-detail-page .data-source-detail-tabs > .ant-tabs-nav { padding-inline: 20px; background: #fff; border-bottom-color: #e1ebf0; }
+.app-content-detail .data-source-detail-page .data-source-detail-tabs > .ant-tabs-nav .ant-tabs-tab { margin: 0 24px 0 0; padding: 14px 0; border-radius: 0; color: #5b7180; background: transparent; }
+.app-content-detail .data-source-detail-page .data-source-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn { color: #287f9e; text-shadow: none; }
+.app-content-detail .data-source-detail-page .data-source-detail-tabs > .ant-tabs-nav .ant-tabs-ink-bar { background: #287f9e; }
+
+/* One reading surface: connection values first, management context alongside. */
+.app-content-detail .data-source-detail-page .data-source-basic-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  align-content: start;
+  gap: 28px;
+  padding: 8px;
+  overflow-y: auto;
+}
+.data-source-overview-section { min-width: 0; }
+.data-source-overview-section > h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; color: #263d4c; font-size: 15px; font-weight: 600; line-height: 24px; }
+.data-source-overview-section > h2 .anticon { color: #287f9e; font-size: 17px; }
+.data-source-management-section { padding-left: 24px; border-left: 1px solid #e1ebf0; }
+.app-content-detail .data-source-detail-page .business-detail-descriptions { gap: 0 24px; grid-auto-flow: row; }
+.app-content-detail .data-source-detail-page .data-source-connection-section .business-detail-descriptions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.app-content-detail .data-source-detail-page .data-source-management-section .business-detail-descriptions { grid-template-columns: minmax(0, 1fr); }
+.app-content-detail .data-source-detail-page .business-detail-description-item {
+  gap: 6px;
+  min-height: 66px;
+  padding: 12px 0;
+  background: transparent;
+  border-bottom: 1px solid #edf2f5;
+  box-shadow: none;
+}
+.app-content-detail .data-source-detail-page .business-detail-description-item-span-2 { grid-column: 1 / -1; }
+.app-content-detail .data-source-detail-page .business-detail-description-label { color: #5b7180; font-size: 12px; font-weight: 400; line-height: 18px; }
+.app-content-detail .data-source-detail-page .business-detail-description-value { display: block; color: #263d4c; font-weight: 400; line-height: 22px; white-space: pre-wrap; }
+.data-source-detail-page .business-detail-description-value code { font-family: inherit; font-size: 13px; overflow-wrap: anywhere; }
+.data-source-detail-purpose { display: inline-flex; align-items: center; gap: 6px; }
+.data-source-detail-purpose svg { color: #287f9e; }
+.data-source-detail-page .data-source-connection-options { width: 100%; }
+.data-source-detail-page .data-source-connection-options .ant-table-cell { overflow-wrap: anywhere; }
+
+/* Resource browsers and related lists use the same quiet lake-blue palette. */
+.app-content-detail .data-source-detail-page .detail-table-filter-toolbar { background: #f7fafc; border-color: #e1ebf0; border-radius: var(--ds-radius-control); box-shadow: none; }
+.data-source-detail-page .metadata-workspace { grid-template-columns: clamp(260px, 24%, 340px) minmax(0, 1fr); border-color: #e1ebf0; border-radius: var(--ds-radius-control); background: #fff; }
+.data-source-detail-page .metadata-table-browser { background: #f8fbfc; border-right-color: #e1ebf0; }
+.data-source-detail-page .metadata-browser-toolbar { padding: 12px; border-bottom-color: #e1ebf0; }
+.data-source-detail-page .metadata-browser-heading { color: #263d4c; }
+.data-source-detail-page .metadata-table-kind { color: #287f9e; background: transparent; }
+.data-source-detail-page .metadata-table-kind-view { color: #5b7180; }
+/* The legacy selected-row background is important; replace it only in this browser. */
+.data-source-detail-page .metadata-table-row-selected > .ant-table-cell { color: #1e607b; background: #dceef5 !important; font-weight: 600; }
+.data-source-detail-page .metadata-table-row-selected > .ant-table-cell:first-child { box-shadow: none; }
+.data-source-detail-page .metadata-table-browser .ant-table-row:focus-visible { outline: 2px solid #287f9e; outline-offset: -2px; }
+.data-source-detail-page .metadata-detail-header { border-bottom-color: #e1ebf0; }
+.data-source-detail-page .metadata-platform-type { color: #287f9e; background: #edf6f9; }
+.data-source-detail-page :is(.ant-btn, a):focus-visible { outline: 2px solid #287f9e; outline-offset: 2px; }
+@container data-source-detail (max-width: 960px) {
+  .app-content-detail .data-source-detail-page .data-source-basic-panel { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .data-source-management-section { border-left: 0; border-top: 1px solid #e1ebf0; padding: 20px 0 0; }
+  .app-content-detail .data-source-detail-page .data-source-management-section .business-detail-descriptions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-content-detail .data-source-detail-page .data-source-detail-header { flex-wrap: wrap; }
+  .data-source-detail-header .data-source-detail-identity { flex-basis: calc(100% - 112px); }
+  .app-content-detail .data-source-detail-page .data-source-detail-actions { margin-left: auto; }
+  .data-source-detail-page .metadata-workspace { grid-template-columns: 240px minmax(0, 1fr); }
+}
+@container data-source-detail (max-width: 600px) {
+  .app-content-detail .data-source-detail-page .data-source-overview-section .business-detail-descriptions { grid-template-columns: minmax(0, 1fr); }
+  .data-source-detail-page .metadata-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 35%) minmax(0, 1fr); }
+  .data-source-detail-page .metadata-table-browser { border-right: 0; border-bottom: 1px solid #e1ebf0; }
+}

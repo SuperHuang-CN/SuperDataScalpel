@@ -18,6 +18,7 @@ spring:
         jdbc:
           time_zone: UTC
   super-api-studio:
+    cluster-type: None
     view-enabled: true
     security:
       management-auth-enabled: true
@@ -26,6 +27,10 @@ spring:
 
 data-scalpel:
   engine:
+    cluster:
+      enabled: ${DATASCALPEL_ENGINE_CLUSTER_ENABLED:true}
+      poll-interval-ms: ${DATASCALPEL_ENGINE_CLUSTER_POLL_INTERVAL_MS:1000}
+      max-stale-ms: ${DATASCALPEL_ENGINE_CLUSTER_MAX_STALE_MS:10000}
     code: ${DATASCALPEL_ENGINE_CODE}
     management-token: ${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN}
     query:
@@ -45,6 +50,11 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,engineRuntime
 
 info:
   application:

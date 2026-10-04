@@ -26,6 +26,7 @@ import {
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { api, post } from '../api';
+import { ValidityDrawer, type ValidityTarget } from './ValidityDrawer';
 import type { ApiKey, Consumer, PageResponse, Service, Subscription } from '../model';
 
 interface ConsumerForm {
@@ -38,6 +39,7 @@ interface ConsumerForm {
 }
 
 export const ConsumersPage = () => {
+  const [validityTarget, setValidityTarget] = useState<ValidityTarget>();
   const queryClient = useQueryClient();
   const [selectedConsumerId, setSelectedConsumerId] = useState<string>();
   const [consumerDrawerOpen, setConsumerDrawerOpen] = useState(false);
@@ -152,7 +154,7 @@ export const ConsumersPage = () => {
             { title: '状态', dataIndex: 'enabled', width: 80, render: (enabled: boolean) => <Tag color={enabled ? 'success' : 'default'}>{enabled ? '启用' : '停用'}</Tag> },
             {
               title: '操作', width: 100,
-              render: (_: unknown, record: Consumer) => (
+              render: (_: unknown, record: Consumer) => record.source === 'DATASCALPEL' ? <Tag>Admin 端管理</Tag> : (
                 <Space size={2}>
                   <Tooltip title={record.enabled ? '停用' : '启用'}>
                     <Button type="text" icon={record.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} onClick={() => command.mutate({ path: `/consumers/${record.id}/actions/${record.enabled ? 'disable' : 'enable'}` })} />
@@ -178,7 +180,7 @@ export const ConsumersPage = () => {
               label: 'API Key',
               children: (
                 <>
-                  <div className="toolbar"><span>明文只在创建或轮换后显示一次</span><Button type="primary" icon={<KeyOutlined />} disabled={!selectedConsumerId} onClick={() => { keyForm.resetFields(); setKeyDrawerOpen(true); }}>创建 Key</Button></div>
+                  <div className="toolbar"><span>明文只在创建或轮换后显示一次；托管 Consumer 请在 Admin 管理</span><Button type="primary" icon={<KeyOutlined />} disabled={!selectedConsumerId || selectedConsumer?.source === 'DATASCALPEL'} onClick={() => { keyForm.resetFields(); setKeyDrawerOpen(true); }}>创建 Key</Button></div>
                   <Table
                     rowKey="id"
                     size="small"
@@ -186,12 +188,12 @@ export const ConsumersPage = () => {
                     dataSource={keysQuery.data ?? []}
                     pagination={false}
                     columns={[
-                      { title: '名称', dataIndex: 'name' },
+                      { title: '名称', dataIndex: 'name', render: (name: string, key: ApiKey) => <Space orientation="vertical" size={0}>{name}<Button type="link" size="small" onClick={() => setValidityTarget({ kind: 'keys', id: key.id, source: key.source, name })}>有效期与续期</Button></Space> },
                       { title: '凭据提示', render: (_: unknown, key: ApiKey) => <Typography.Text code>{key.prefix}…{key.lastFour}</Typography.Text> },
                       { title: '状态', dataIndex: 'status', width: 90, render: (status: string) => <Tag color={status === 'ACTIVE' ? 'success' : 'default'}>{status}</Tag> },
                       {
                         title: '操作', width: 130,
-                        render: (_: unknown, key: ApiKey) => (
+                        render: (_: unknown, key: ApiKey) => key.source === 'DATASCALPEL' ? <Tag>Admin 端管理</Tag> : (
                           <Space size={2}>
                             <Popconfirm title={`轮换 ${key.name}？`} description="旧 Key 将在配置传播后失效。" onConfirm={() => rotateKey.mutate(key)}>
                               <Tooltip title="轮换"><Button type="text" icon={<ReloadOutlined />} /></Tooltip>
@@ -215,7 +217,7 @@ export const ConsumersPage = () => {
               label: '服务订阅',
               children: (
                 <>
-                  <div className="toolbar"><span>授权受保护服务</span><Button type="primary" icon={<PlusOutlined />} disabled={!selectedConsumerId} onClick={() => { subscriptionForm.resetFields(); setSubscriptionDrawerOpen(true); }}>授权订阅</Button></div>
+                  <div className="toolbar"><span>授权受保护服务</span><Button type="primary" icon={<PlusOutlined />} disabled={!selectedConsumerId || selectedConsumer?.source === 'DATASCALPEL'} onClick={() => { subscriptionForm.resetFields(); setSubscriptionDrawerOpen(true); }}>授权订阅</Button></div>
                   <Table
                     rowKey="id"
                     size="small"
@@ -223,11 +225,11 @@ export const ConsumersPage = () => {
                     dataSource={subscriptionsQuery.data?.content ?? []}
                     pagination={false}
                     columns={[
-                      { title: '服务', dataIndex: 'serviceId', render: (id: string) => services.find((item) => item.id === id)?.name ?? id },
+                      { title: '服务', dataIndex: 'serviceId', render: (id: string, subscription: Subscription) => <Space orientation="vertical" size={0}>{services.find((item) => item.id === id)?.name ?? id}<Button type="link" size="small" onClick={() => setValidityTarget({ kind: 'subscriptions', id: subscription.id, source: subscription.source, name: '服务订阅' })}>有效期与限流</Button></Space> },
                       { title: '状态', dataIndex: 'status', width: 100, render: (status: string) => <Tag color={status === 'ACTIVE' ? 'success' : 'default'}>{status}</Tag> },
                       {
                         title: '操作', width: 80,
-                        render: (_: unknown, subscription: Subscription) => subscription.status === 'ACTIVE' ? (
+                        render: (_: unknown, subscription: Subscription) => subscription.source === 'DATASCALPEL' ? <Tag>Admin 端管理</Tag> : subscription.status === 'ACTIVE' ? (
                           <Popconfirm title="撤回此服务订阅？" onConfirm={() => command.mutate({ path: `/subscriptions/${subscription.id}/actions/revoke` })}>
                             <Button danger type="text">撤回</Button>
                           </Popconfirm>
@@ -260,7 +262,7 @@ export const ConsumersPage = () => {
       <Drawer title="授权服务订阅" width={480} open={subscriptionDrawerOpen} onClose={() => setSubscriptionDrawerOpen(false)} destroyOnHidden extra={<Button type="primary" loading={grant.isPending} onClick={() => subscriptionForm.submit()}>授权</Button>}>
         <Form form={subscriptionForm} layout="vertical" onFinish={(values) => grant.mutate(values)}>
           <Form.Item label="服务" name="serviceId" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label" options={services.filter((service) => service.accessMode === 'SUBSCRIPTION_REQUIRED').map((service) => ({ value: service.id, label: `${service.name} (${service.code})` }))} />
+            <Select showSearch optionFilterProp="label" options={services.filter((service) => service.accessMode === 'SUBSCRIPTION_REQUIRED' && service.source !== 'DATASCALPEL').map((service) => ({ value: service.id, label: `${service.name} (${service.code})` }))} />
           </Form.Item>
         </Form>
       </Drawer>
@@ -268,6 +270,7 @@ export const ConsumersPage = () => {
         <Typography.Paragraph type="warning">该明文关闭后无法再次查看。</Typography.Paragraph>
         <Typography.Text className="secret-value" copyable>{secret}</Typography.Text>
       </Modal>
+      <ValidityDrawer target={validityTarget} onClose={() => setValidityTarget(undefined)} />
     </div>
   );
 };

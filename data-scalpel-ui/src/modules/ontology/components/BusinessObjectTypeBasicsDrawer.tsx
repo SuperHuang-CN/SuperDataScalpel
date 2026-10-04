@@ -1,3 +1,4 @@
+import { ApartmentOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Space, TreeSelect } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createBusinessObjectType, updateBusinessObjectType } from '../api/businessObjectTypeApi';
@@ -31,9 +32,9 @@ export const BusinessObjectTypeBasicsDrawer = ({
   });
   return <Drawer
     open
-    title={objectType ? '修改业务对象类型资料' : '新建业务对象类型'}
+    title={<span className="modeling-dialog-title"><ApartmentOutlined aria-hidden /><span>{objectType ? '修改业务对象类型资料' : '新建业务对象类型'}</span></span>}
     width={640}
-    rootClassName="business-overlay business-drawer-overlay"
+    rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
     onClose={onClose}
     footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>{objectType ? '保存' : '创建'}</Button></Space>}
   >

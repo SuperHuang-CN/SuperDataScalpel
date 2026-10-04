@@ -60,6 +60,7 @@ vi.mock('../hooks/useDataServices', () => ({
         gatewayBindings: [{
           id: 'service-binding-1',
           provider: 'KONG',
+          accessMode: 'SUBSCRIPTION_REQUIRED',
           externalServiceId: 'kong-service-1',
           externalRouteId: 'kong-route-1',
           publishedRevision: 1,
@@ -199,10 +200,10 @@ describe('ApiConsumerAccessDrawer', () => {
       request: { name: '生产密钥' },
     }));
     expect(await screen.findByText('dsk_one_time_secret')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '我已保存' }));
+    await user.click(screen.getByRole('button', { name: '我已安全保存' }));
     await waitFor(() => expect(screen.queryByText('dsk_one_time_secret')).not.toBeInTheDocument());
 
-    await user.click(screen.getByRole('tab', { name: '服务订阅' }));
+    await user.click(screen.getByRole('tab', { name: /服务订阅/ }));
     await user.click(screen.getByRole('combobox'));
     await user.click(await screen.findByText('订单服务（orders）'));
     await user.click(screen.getByRole('button', { name: /新增订阅/ }));
@@ -257,7 +258,7 @@ describe('ApiConsumerAccessDrawer', () => {
       />,
     );
 
-    await user.click(screen.getByRole('tab', { name: '服务订阅' }));
+    await user.click(screen.getByRole('tab', { name: /服务订阅/ }));
 
     expect(await screen.findByText('正在撤回')).toBeInTheDocument();
     expect(screen.getByText(/Kong · 撤回失败/)).toBeInTheDocument();
@@ -307,20 +308,19 @@ describe('ApiConsumerAccessDrawer', () => {
     );
 
     expect(await screen.findByText('对账 · 有漂移')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '对账生产密钥的网关状态' }));
+    await user.click(screen.getByRole('button', { name: '管理 API Key 生产密钥' }));
+    await user.click(await screen.findByRole('menuitem', { name: /对账网关状态/ }));
     await waitFor(() => expect(hooks.reconcileCredential).toHaveBeenCalledWith({
       consumerId: consumer.id,
       credentialId: 'credential-1',
     }));
 
-    const rotateButton = screen.getByRole('button', { name: '轮换生产密钥' });
-    await user.hover(rotateButton);
-    expect(await screen.findByText('轮换并重新同步（无法恢复原密钥）')).toBeInTheDocument();
-    await user.click(rotateButton);
-    const warning = await screen.findByText('旧密钥会立即失效，请先确认调用方可以同步更新。');
-    const popover = warning.closest('.ant-popover');
-    expect(popover).not.toBeNull();
-    await user.click(within(popover as HTMLElement).getByRole('button', { name: /轮\s*换/ }));
+    await user.click(screen.getByRole('button', { name: '管理 API Key 生产密钥' }));
+    await user.click(await screen.findByRole('menuitem', { name: /轮换 API Key/ }));
+    const warning = await screen.findByText(/旧密钥会立即失效，请先确认调用方可以同步更新/);
+    const dialog = warning.closest('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    await user.click(within(dialog as HTMLElement).getByRole('button', { name: /轮\s*换/ }));
     await waitFor(() => expect(hooks.rotateCredential).toHaveBeenCalledWith({
       consumerId: consumer.id,
       credentialId: 'credential-1',

@@ -44,7 +44,18 @@ public class EngineDeploymentStore {
 
     @Transactional
     public DeploymentPreparation beginDeployment(ServiceDeploymentRequest request) {
-        EngineDeployment deployment = repository.findByEngineCodeAndServiceId(properties.code(), request.serviceId())
+        String path = cn.superhuang.data.scalpel.engine.route.EngineRoutePath.normalize(request.routePath());
+        // Check the shared desired state, not only this node's possibly older route cache.
+        for (EngineDeployment other : repository.findAllByEngineCode(properties.code())) {
+            if (!other.getServiceId().equals(request.serviceId())
+                    && other.getStatus() != EngineDeploymentRecordStatus.REMOVED
+                    && other.getStatus() != EngineDeploymentRecordStatus.DEPLOY_FAILED
+                    && path.equals(cn.superhuang.data.scalpel.engine.route.EngineRoutePath.normalize(other.getRoutePath()))) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT, "服务路径已被其他部署占用：" + path);
+            }
+        }
+        EngineDeployment deployment = repository.findForUpdate(properties.code(), request.serviceId())
                 .orElse(null);
 
         String definitionJson = write(request.definition());
@@ -64,17 +75,17 @@ public class EngineDeploymentStore {
     }
 
     @Transactional
-    public ServiceDeploymentResponse completeDeployment(UUID serviceId) {
-        EngineDeployment deployment = requireCurrent(serviceId);
+    public ServiceDeploymentResponse completeDeployment(UUID serviceId, long generation) {
+        EngineDeployment deployment = requireCurrent(serviceId, generation);
         deployment.deployed();
         repository.flush();
         return response(deployment, EngineDeploymentStatus.DEPLOYED, "部署成功");
     }
 
     @Transactional
-    public void failDeployment(UUID serviceId, String message) {
-        EngineDeployment deployment = current(serviceId);
-        if (deployment != null) {
+    public void failDeployment(UUID serviceId, long generation, String message) {
+        EngineDeployment deployment = repository.findForUpdate(properties.code(), serviceId).orElse(null);
+        if (deployment != null && deployment.getRevision() == generation) {
             deployment.deploymentFailed(message);
             repository.flush();
         }
@@ -82,7 +93,7 @@ public class EngineDeploymentStore {
 
     @Transactional
     public RemovalPreparation beginRemoval(ServiceUndeploymentRequest request) {
-        EngineDeployment deployment = repository.findByEngineCodeAndServiceId(properties.code(), request.serviceId())
+        EngineDeployment deployment = repository.findForUpdate(properties.code(), request.serviceId())
                 .orElse(null);
         if (deployment == null) {
             return new RemovalPreparation(false, new ServiceDeploymentResponse(
@@ -100,17 +111,17 @@ public class EngineDeploymentStore {
     }
 
     @Transactional
-    public ServiceDeploymentResponse completeRemoval(UUID serviceId) {
-        EngineDeployment deployment = requireCurrent(serviceId);
+    public ServiceDeploymentResponse completeRemoval(UUID serviceId, long generation) {
+        EngineDeployment deployment = requireCurrent(serviceId, generation);
         deployment.removed();
         repository.flush();
         return response(deployment, EngineDeploymentStatus.REMOVED, "部署已移除");
     }
 
     @Transactional
-    public void failRemoval(UUID serviceId, String message) {
-        EngineDeployment deployment = current(serviceId);
-        if (deployment != null) {
+    public void failRemoval(UUID serviceId, long generation, String message) {
+        EngineDeployment deployment = repository.findForUpdate(properties.code(), serviceId).orElse(null);
+        if (deployment != null && deployment.getRevision() == generation) {
             deployment.removalFailed(message);
             repository.flush();
         }
@@ -140,11 +151,18 @@ public class EngineDeploymentStore {
                 .filter(item -> REMOVAL_RECOVERY_STATUSES.contains(item.getStatus())).map(this::read);
     }
 
-    private EngineDeployment requireCurrent(UUID serviceId) {
-        EngineDeployment deployment = current(serviceId);
+    @Transactional(readOnly = true)
+    public List<StoredServiceDeployment> all() {
+        return repository.findAllByEngineCode(properties.code()).stream().map(this::read).toList();
+    }
+
+    private EngineDeployment requireCurrent(UUID serviceId, long generation) {
+        EngineDeployment deployment = repository.findForUpdate(properties.code(), serviceId).orElse(null);
         if (deployment == null) {
             throw new IllegalStateException("服务部署不存在");
         }
+        if(deployment.getRevision()!=generation) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT,"部署操作已被更新的操作替代，请核对当前状态");
         return deployment;
     }
 
@@ -168,7 +186,7 @@ public class EngineDeploymentStore {
         return new StoredServiceDeployment(new ServiceDeploymentRequest(
                 deployment.getServiceId(), deployment.getServiceCode(), deployment.getRoutePath(),
                 deployment.getDefinitionDigest(), definition, deployment.getDataSourceId()
-        ));
+        ), deployment.getRevision(), deployment.getStatus());
     }
 
     private String write(Object value) {

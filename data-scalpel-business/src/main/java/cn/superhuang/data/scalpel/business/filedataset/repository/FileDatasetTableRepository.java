@@ -36,4 +36,6 @@ public interface FileDatasetTableRepository extends SearchRepository<FileDataset
     boolean existsByFileDatasetIdAndParseStatus(UUID fileDatasetId, FileDatasetParseStatus parseStatus);
 
     void deleteByFileDatasetId(UUID fileDatasetId);
+    boolean existsByPendingCrsFileId(UUID fileId);
+    List<FileDatasetTable> findByPendingCrsFileId(UUID fileId);
 }

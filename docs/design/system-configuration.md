@@ -10,7 +10,7 @@
 
 | 配置键 | 名称 | 类型 | 默认值 | 当前用途 |
 | --- | --- | --- | --- | --- |
-| `panorama.map` | 全景地图设置 | `STRING`（受控 JSON） | `{"url":"","attribution":"","maxZoom":18}` | 全景地图的 XYZ 底图；专用 Drawer 编辑 |
+| `panorama.map` | 全景地图设置 | `STRING`（受控 JSON） | `{"url":"","attribution":"","maxZoom":18}` | 模型空间预览与全景地图共用的 XYZ 底图；沿用原配置名称、配置键和专用 Drawer |
 | `platform.name` | 平台名称 | `STRING` | `DataScalpel` | 前端左侧品牌和顶部标题 |
 | `platform.subtitle` | 平台副标题 | `STRING` | `内网部署 · 模块化单体` | 前端顶部副标题 |
 | `task.engine.base-url` | Task Engine 地址 | `STRING` | `http://127.0.0.1:18091` | Admin 访问 Task Engine 的内部地址 |
@@ -60,7 +60,7 @@ data-scalpel-business/
 - 页面只允许修改 `configValue`，不提供新增或删除操作。
 - `panorama.map` 通过专用表单提交受控 JSON 字符串，校验 HTTP(S) XYZ 地址、纯文本署名和 0～22 缩放上限；内部 URL 为空表示关闭底图，不改变普通 STRING 的非空要求。完整规则见 [全景影像管理 V1](../development/panorama-management-v1.md)。
 - `STRING` 接受非空文本；`INTEGER` 必须是 Java `Integer`；`BOOLEAN` 仅接受 `true` 或 `false`，保存时规范化为小写。内置定义可以进一步声明整数最小值和最大值，更新时同时执行范围校验。
-- 应用启动时仅插入缺失的内置配置，不覆盖数据库中已经被修改的值，不执行删除或全量重置。
+- 应用启动时只插入缺失的内置配置，不覆盖数据库中已保存的配置值、名称和说明，不执行删除或全量重置。
 - 第一版不缓存配置。业务模块需要读取配置时通过 `SystemConfigurationService` 查询，确保管理页面修改后下一次读取即可得到新值。
 - 文件解析队列开关和并发在下一轮 1 秒调度时生效；最大尝试次数只作为新任务快照；重试基础延时影响后续重试计划；历史保留天数在下一次每小时清理时读取。关闭队列只停止领取，不取消任务；历史清理只删除超过保留期的 `SUCCEEDED`、`FAILED`、`CANCELLED`。
 - 文件来源没有延迟清理系统配置。覆盖、替换、删除和最终失败会在事务提交后立即清理无引用对象；删除失败只记录日志并由运维人工处理孤儿对象。
@@ -74,6 +74,7 @@ data-scalpel-business/
 | --- | --- | --- |
 | `GET` | `/api/v1/system/configurations` | 使用 `SearchRequest` 分页查询配置 |
 | `POST` | `/api/v1/system/configurations/{id}/actions/update` | 仅更新配置值 |
+| `GET` | `/api/v1/system/configurations/map-config` | 只读返回 `{url, attribution, maxZoom}`；具有 `model.view`、`panorama.view` 或 `system.configuration.view` 任一权限即可读取，不暴露其他系统配置 |
 
 查询参数与统一 Search DSL 保持一致：`search`、`page`、`size`、`sort`。前端默认按 `sortOrder,configKey` 排序。
 
@@ -103,7 +104,8 @@ data-scalpel-ui/src/modules/system/
 
 表格展示名称、配置键、当前值、类型、说明和操作。点击“修改”后打开右侧 Drawer：
 
-- `STRING` 使用 Input。
+- `panorama.map` 沿用“全景地图设置”专用 Drawer，维护 XYZ 地址、纯文本署名和最大瓦片级别；模型空间预览也读取此配置，地址留空关闭底图，点击保存后生效。页面直接展示数据库中的名称和说明，不做名称覆盖或提供商预设。
+- 其他 `STRING` 使用 Input。
 - `INTEGER` 使用 InputNumber。
 - `BOOLEAN` 使用 Switch。
 - 名称、配置键、类型和说明只读显示。
@@ -114,7 +116,7 @@ data-scalpel-ui/src/modules/system/
 
 - 通过 TanStack Query 查询配置列表。
 - query key 包含查询条件和分页参数。
-- 更新成功后失效 `system-configurations` 前缀下的查询，使列表和应用壳的品牌配置同步刷新。
+- 更新成功后失效 `system-configurations` 前缀下的查询，使列表和应用壳的品牌配置同步刷新。更新 `panorama.map` 失效统一的 `map-configuration` 查询，模型和全景地图复用系统模块公开 Hook。
 - 前端通过统一 `SearchRequest` 参数构造工具请求后端；页面筛选在前端转换为稳定的 Search DSL。
 
 应用壳读取配置列表中的 `platform.name` 和 `platform.subtitle`，管理员保存后会自动刷新为新文案。

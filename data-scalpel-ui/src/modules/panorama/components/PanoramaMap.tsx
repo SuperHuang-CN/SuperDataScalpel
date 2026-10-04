@@ -4,15 +4,16 @@ import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibr
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
-import { fetchPanoramaMapConfig, fetchPanoramaMapPoints } from '../api/panoramaApi';
-import type { MapBounds, PanoramaMapConfig, PanoramaQuery } from '../model/panorama';
+import { fetchPanoramaMapPoints } from '../api/panoramaApi';
+import { useMapConfiguration, type MapSettings } from '../../system';
+import type { MapBounds, PanoramaQuery } from '../model/panorama';
 import 'maplibre-gl/dist/maplibre-gl.css';
-const emptyConfig: PanoramaMapConfig = { url: '', attribution: '', maxZoom: 18 };
+const emptyConfig: MapSettings = { url: '', attribution: '', maxZoom: 18 };
 export const PanoramaMap = ({ query, revision }: { query: PanoramaQuery; revision: number }) => {
   const host = useRef<HTMLDivElement>(null); const mapRef = useRef<MapLibreMap | null>(null); const navigate = useNavigate();
   const [bounds, setBounds] = useState<MapBounds>({ west: -180, south: -90, east: 180, north: 90 });
   const [ready, setReady] = useState(0); const [attempt, setAttempt] = useState(0); const [mapError, setMapError] = useState<string>();
-  const configQuery = useQuery({ queryKey: ['panorama-map-config'], queryFn: ({ signal }) => fetchPanoramaMapConfig(signal), staleTime: 0, refetchOnMount: 'always' });
+  const configQuery = useMapConfiguration();
   const config = configQuery.data ?? emptyConfig;
   const points = useQuery({ queryKey: ['panoramas', 'map', query, bounds, revision], queryFn: ({ signal }) => fetchPanoramaMapPoints(query, bounds, signal) });
   useEffect(() => {
@@ -31,7 +32,7 @@ export const PanoramaMap = ({ query, revision }: { query: PanoramaQuery; revisio
       setBounds({ west: width >= 360 ? -180 : wrap(box.getWest()), east: width >= 360 ? 180 : wrap(box.getEast()), south: Math.max(-90, box.getSouth()), north: Math.min(90, box.getNorth()) });
       popup?.remove();
     };
-    map.on('load', () => {
+    map.on('style.load', () => {
       map.addSource('panoramas', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 45, clusterMaxZoom: 14 });
       map.addLayer({ id: 'clusters', type: 'circle', source: 'panoramas', filter: ['has', 'point_count'], paint: { 'circle-color': '#6c62d9', 'circle-radius': 19, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
       map.addLayer({ id: 'points', type: 'circle', source: 'panoramas', filter: ['!', ['has', 'point_count']], paint: { 'circle-color': '#3f72df', 'circle-radius': 7, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
@@ -78,6 +79,6 @@ export const PanoramaMap = ({ query, revision }: { query: PanoramaQuery; revisio
       {configQuery.isError && <InlineFeedback tone="error" label="底图配置读取失败" action={<Button size="small" onClick={() => void configQuery.refetch()}>重试</Button>} />}
       {mapError && <InlineFeedback tone="warning" label={mapError} action={<Button size="small" onClick={() => { setMapError(undefined); setAttempt(attempt + 1); }}>重试地图</Button>} />}
     </Space></div><div ref={host} className="panorama-map" aria-label="全景拍摄点地图" />
-    {config.attribution && <div className="panorama-map-attribution">{config.attribution}</div>}
+    {config.url && config.attribution && <div className="panorama-map-attribution">{config.attribution}</div>}
   </div>;
 };

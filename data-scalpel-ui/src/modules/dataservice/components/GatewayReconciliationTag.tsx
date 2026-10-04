@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { Tag, Tooltip } from 'antd';
 import {
   gatewayReconciliationReasonLabels,
@@ -14,13 +15,7 @@ const colors: Record<GatewayReconciliationStatus, string> = {
   CHECK_FAILED: 'warning',
 };
 
-const formatDateTime = (value: string | null) => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-    hour12: false,
-  }).format(new Date(value))
-  : null;
+const formatDateTime = (value: string | null) => value ? formatManagementDateTime(value) : null;
 
 export const GatewayReconciliationTag = ({
   state,

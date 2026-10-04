@@ -1,5 +1,6 @@
 import { parseMappings, parseWriteMode, stringValue, validateOptionalUuid } from "../../canvasValueParsers";
 import { parseConfiguration, type Configuration, parseOutputWrites } from '../configurationParsing';
+import { parseBatchWrite } from '../batchWriteOptions';
 
 export const parseNodeConfiguration = (value: unknown, path: string) => (
     parseConfiguration<Configuration<'MODEL_OUTPUT'>>(value, path, (configuration, errors) => {
@@ -9,6 +10,7 @@ export const parseNodeConfiguration = (value: unknown, path: string) => (
         targetModelId: validateOptionalUuid(stringValue(write.targetModelId), `${writePath}.targetModelId`, errors),
         writeMode: parseWriteMode(write.writeMode, `${writePath}.writeMode`, errors),
         columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
+        ...(write.batchWrite === undefined ? {} : { batchWrite: parseBatchWrite(write.batchWrite, `${writePath}.batchWrite`, errors) }),
       }));
       return { writes };
     })

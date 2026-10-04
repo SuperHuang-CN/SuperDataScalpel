@@ -71,17 +71,17 @@ export const SystemPermissionManagementPage = () => {
   return (
     <section className="management-workbench">
       <div className="management-filter-strip">
-        <Form<KeywordFilter> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}><Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索模块、名称或权限编码" className="data-source-keyword-input" /></Form.Item></Form>
-        <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={permissionsQuery.isFetching} onReset={reset} />
+        <Form<KeywordFilter> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search} id="system-permission-management-page-filters-0"><Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索模块、名称或权限编码" className="data-source-keyword-input" /></Form.Item></Form>
+        <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={permissionsQuery.isFetching} onReset={reset} commands={<div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新权限列表" onClick={() => void permissionsQuery.refetch()} /></Tooltip></div>} formId="system-permission-management-page-filters-0" />
       </div>
       <div className="management-results-surface">
         <div className="management-result-toolbar">
         <span className="management-result-title">权限列表 <span className="management-result-count">共 {permissionsQuery.data?.totalElements ?? 0} 项</span></span>
-        <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新权限列表" onClick={() => void permissionsQuery.refetch()} /></Tooltip></div>
+
         </div>
         <Table<PermissionTableRow>
         size="small" className="management-table" rowKey="id" columns={columns}
-        dataSource={tableData} loading={permissionsQuery.isFetching} scroll={{ y: '100%' }}
+        dataSource={tableData} loading={permissionsQuery.isFetching} scroll={{ x: 1000, y: '100%' }}
         pagination={false}
         expandable={{ defaultExpandAllRows: true, expandRowByClick: true, rowExpandable: (record) => record.kind === 'group' }}
         rowClassName={(record) => record.kind === 'group' ? 'permission-group-row' : ''}

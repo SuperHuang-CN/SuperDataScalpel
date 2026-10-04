@@ -2,8 +2,13 @@ import { requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type { SystemConfiguration, UpdateSystemConfigurationRequest } from '../model/systemConfiguration';
+import type { MapSettings } from '../model/panoramaMapSettings';
 
 const SYSTEM_CONFIGURATION_PATH = '/v1/system/configurations';
+
+export const fetchMapConfiguration = (signal?: AbortSignal) => requestJson<MapSettings>(
+  `${SYSTEM_CONFIGURATION_PATH}/map-config`, { signal },
+);
 
 export const fetchSystemConfigurations = async (
   request: SearchRequest,

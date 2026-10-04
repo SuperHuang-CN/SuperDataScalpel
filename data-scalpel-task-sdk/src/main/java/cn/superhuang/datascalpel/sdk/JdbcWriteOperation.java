@@ -7,6 +7,22 @@ package cn.superhuang.datascalpel.sdk;
  */
 public interface JdbcWriteOperation {
     /**
+     * 启用单目标原子批写；实时任务不支持，不会自动降级。
+     * @param options 原子提交及覆盖范围，不能为空。
+     */
+    default JdbcWriteOperation batchWrite(BatchWriteOptions options) {
+        throw new UnsupportedOperationException("当前运行时不支持原子批写");
+    }
+
+    /**
+     * 声明目标 Geometry 字段的 EPSG SRID；不改变坐标。
+     * @param targetColumnName 参与映射的目标 Geometry 字段。
+     * @param epsg 正整数 EPSG 编码，需与数据坐标一致。
+     */
+    default JdbcWriteOperation geometrySrid(String targetColumnName, int epsg) {
+        throw new UnsupportedOperationException("当前运行时不支持空间 JDBC 写入");
+    }
+    /**
      * 设置写入的目标物理表。
      * @param table 目标物理表名称或结构化表标识。
      */

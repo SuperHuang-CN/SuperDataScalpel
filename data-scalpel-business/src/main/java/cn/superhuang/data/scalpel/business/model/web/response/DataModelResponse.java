@@ -22,6 +22,7 @@ public record DataModelResponse(
         @Schema(description = "创建或绑定时解析并保存的物理 Schema；数据库不使用 Schema 时为空") String schemaName,
         @Schema(description = "目标或已绑定的物理表名") String physicalTableName,
         @Schema(description = "MANAGED 平台受控物理表或 EXTERNAL 外部已有物理表") PhysicalTableMode physicalTableMode,
+        @Schema(description = "是否为空间表：当前模型字段中至少包含一个 GEOMETRY 字段时为 true，否则为 false（属性表，含尚未配置字段的草稿）；依据模型定义计算，不探测物理数据库") boolean spatial,
         @Schema(description = "单机 ClickHouse MergeTree 排序键字段编码；其他数据库为空列表") List<String> clickHouseOrderByColumns,
         @Schema(description = "模型生命周期状态：草稿、已发布或已停用") DataModelStatus status,
         @Schema(description = "模型字段快照版本，创建时为 1；每次成功整体保存字段或完成物理表变更计划都会递增，即使只修改字段名称、说明、顺序、码表绑定或提交相同内容。修改模型基础资料不递增。") int schemaVersion,
@@ -34,26 +35,16 @@ public record DataModelResponse(
             DataModel model,
             String storageDataSourceName,
             ModelWarehouseLayerSummaryResponse warehouseLayer,
-            DataModelPhysicalStatisticsResponse physicalStatistics
+            DataModelPhysicalStatisticsResponse physicalStatistics,
+            boolean spatial
     ) {
         return new DataModelResponse(
                 model.getId(), model.getCode(), model.getName(), model.getDirectoryId(),
                 warehouseLayer,
                 model.getStorageDataSourceId(), storageDataSourceName, model.getCatalogName(), model.getSchemaName(),
-                model.getPhysicalTableName(), model.getPhysicalTableMode(), model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), physicalStatistics, model.getDescription(),
+                model.getPhysicalTableName(), model.getPhysicalTableMode(), spatial, model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), physicalStatistics, model.getDescription(),
                 model.getCreatedAt(), model.getUpdatedAt()
         );
     }
 
-    public static DataModelResponse from(
-            DataModel model,
-            String storageDataSourceName,
-            ModelWarehouseLayerSummaryResponse warehouseLayer
-    ) {
-        return from(model, storageDataSourceName, warehouseLayer, null);
-    }
-
-    public static DataModelResponse from(DataModel model, String storageDataSourceName) {
-        return from(model, storageDataSourceName, null, null);
-    }
 }

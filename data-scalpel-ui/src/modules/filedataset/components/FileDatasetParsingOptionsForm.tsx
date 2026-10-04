@@ -39,7 +39,7 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
           <Form.Item label="字段分隔符" name="fieldDelimiter" rules={[{ required: true, message: '请选择字段分隔符' }]}>
             <Select
               options={type === 'TSV' ? fieldDelimiterOptions.filter((option) => option.value === '\t') : fieldDelimiterOptions}
-              disabled={type === 'TSV'}
+              disabled={type === 'TSV' ? true : undefined}
             />
           </Form.Item>
         </Col>

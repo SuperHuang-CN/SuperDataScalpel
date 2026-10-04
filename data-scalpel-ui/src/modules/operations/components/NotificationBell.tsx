@@ -9,7 +9,7 @@ import { readNotification } from '../api/operationsApi';
 import { eventLabels, type InAppNotification } from '../model/operations';
 import './operations.css';
 
-export const NotificationBell = () => {
+export const NotificationBell = ({ showLabel = false }: { showLabel?: boolean }) => {
   const [open, setOpen] = useState(false); const [page, setPage] = useState(0); const unread = useUnreadNotifications();
   const query = useNotifications({ page, size: 10, sort: '-createdAt' }, open); const read = useOperationsMutation(readNotification);
   const navigate = useNavigate(); const [notice, context] = message.useMessage();
@@ -20,8 +20,8 @@ export const NotificationBell = () => {
     } catch (error) { notice.error(error instanceof Error ? error.message : '通知更新失败'); }
   };
   return <>{context}<Tooltip title={unread.error ? '通知未读数暂不可用' : '站内通知'}>
-    <Badge count={unread.data?.unreadCount} overflowCount={99} dot={Boolean(unread.error)}><Button type="text" icon={<BellOutlined />} aria-label="打开站内通知" onClick={() => setOpen(true)} /></Badge>
-  </Tooltip><Drawer rootClassName="business-overlay business-drawer-overlay" title={<Space><BellOutlined />站内通知</Space>} open={open} onClose={() => setOpen(false)} width={500}
+    <Badge count={unread.data?.unreadCount} overflowCount={99} dot={Boolean(unread.error)}><Button type="text" icon={<BellOutlined />} aria-label="打开站内通知" onClick={() => setOpen(true)}>{showLabel ? '通知' : null}</Button></Badge>
+  </Tooltip><Drawer rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" title={<Space><BellOutlined />站内通知</Space>} open={open} onClose={() => setOpen(false)} width={500}
     footer={<Pagination current={page + 1} pageSize={10} total={query.data?.totalElements ?? 0} size="small" showSizeChanger={false} onChange={p => setPage(p - 1)} />}>
     {query.isPending && <Spin />}{query.error && <InlineFeedback tone="error" label="通知加载失败" detail={query.error.message} action={<Button type="link" onClick={() => void query.refetch()}>重试</Button>} />}
     <div className="ops-notification-list">{query.data?.content.map(n => <div className="ops-notification-row" key={n.id}>

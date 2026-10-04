@@ -32,7 +32,8 @@ public class ManagementTokenFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(INTERNAL_PREFIX);
+        String uri = request.getRequestURI();
+        return !uri.startsWith(INTERNAL_PREFIX) && !uri.equals("/v3/api-docs") && !uri.startsWith("/v3/api-docs/");
     }
 
     @Override

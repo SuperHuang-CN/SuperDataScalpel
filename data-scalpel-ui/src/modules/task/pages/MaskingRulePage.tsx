@@ -14,7 +14,7 @@ import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { useCurrentUser } from '../../system';
 import { MaskingRuleDrawer } from '../components/MaskingRuleDrawer';
@@ -104,7 +104,7 @@ export const MaskingRulePage = () => {
             icon={<Tooltip title={strategyLabel}>{visual.icon}</Tooltip>}
             iconLabel={`脱敏策略：${strategyLabel}`}
             iconTone={visual.tone}
-            primary={value}
+            primary={<ManagementName name={value} code={rule.code} description={rule.description}><Tooltip title={value}><span>{value}</span></Tooltip></ManagementName>}
             secondary={<ManagementCode value={rule.code} />}
           />
         );
@@ -134,7 +134,7 @@ export const MaskingRulePage = () => {
           <div className="management-row-actions-shortcuts">{canManage && <Tooltip title="修改规则"><Button type="text" icon={<EditOutlined />} aria-label={`修改脱敏规则${rule.name}`} onClick={() => setDrawerState({ rule, readOnly: false })} /></Tooltip>}</div>
           <Dropdown menu={{ items: [
             { key: 'view', label: '查看规则', onClick: () => setDrawerState({ rule, readOnly: true }) },
-            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除脱敏规则', content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
+            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: '删除脱敏规则', content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${rule.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),
@@ -150,11 +150,12 @@ export const MaskingRulePage = () => {
             autoComplete="off"
             form={form}
             layout="inline"
+            className="management-filter-form"
             onFinish={(values) => {
               setFilters(values);
               setPage(0);
             }}
-          >
+           id="masking-rule-page-filters-0">
             <Form.Item name="code"><ManagementSearchInput allowClear placeholder="搜索规则编码" /></Form.Item>
             <Form.Item name="name"><Input allowClear placeholder="搜索规则名称" /></Form.Item>
             <Form.Item name="strategy">
@@ -167,12 +168,7 @@ export const MaskingRulePage = () => {
               />
             </Form.Item>
           </Form>
-          <ManagementFilterActions form={form} appliedFilters={filters} loading={rulesQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-          <div className="management-result-title">脱敏规则 <span className="management-result-count">共 {rulesQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
+          <ManagementFilterActions form={form} appliedFilters={filters} loading={rulesQuery.isFetching} onReset={reset} commands={<Space size={4} className="management-result-actions">
             <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新脱敏规则" onClick={() => void rulesQuery.refetch()} /></Tooltip>
             {canManage && (
               <Button
@@ -183,7 +179,12 @@ export const MaskingRulePage = () => {
                 新建规则
               </Button>
             )}
-          </Space>
+          </Space>} formId="masking-rule-page-filters-0" />
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title">脱敏规则 <span className="management-result-count">共 {rulesQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {rulesQuery.error && (
             <Alert
@@ -201,7 +202,7 @@ export const MaskingRulePage = () => {
           columns={columns}
           dataSource={rulesQuery.data?.content ?? []}
           loading={rulesQuery.isFetching}
-          scroll={{ y: '100%' }}
+          scroll={{ x: 850, y: '100%' }}
           pagination={{
             current: page + 1,
             pageSize: size,

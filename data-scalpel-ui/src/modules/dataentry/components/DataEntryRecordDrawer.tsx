@@ -111,8 +111,9 @@ export const DataEntryRecordDrawer = ({ open, detail, recordKey, onClose, onUpda
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay"
       open={open}
-      width={760}
+      size="min(760px, 100vw)"
       title="记录详情"
       onClose={onClose}
       extra={<Space>{canEdit && !editing && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>编辑</Button>}

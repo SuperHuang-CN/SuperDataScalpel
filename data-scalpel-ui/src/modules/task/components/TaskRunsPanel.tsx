@@ -62,7 +62,7 @@ export const TaskRunsPanel = ({
   const runsQuery = useTaskRuns(task.id, request, true);
 
   const cancel = (run: TaskRun) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: '取消任务运行',
     content: `确认取消运行“${run.id}”吗？${run.taskType === 'WORKFLOW' ? '将停止本次工作流的活动子任务，并取消后续节点。' : '将停止本次执行。'}`,
     okText: '取消运行',
@@ -83,7 +83,7 @@ export const TaskRunsPanel = ({
   });
 
   const forceTerminate = (run: TaskRun) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: '强制终止任务运行',
     content: '确认立即强制终止该 Spark Application 吗？可能产生部分写入、重复数据，实时任务还可能重放当前微批。',
     okText: '强制终止',

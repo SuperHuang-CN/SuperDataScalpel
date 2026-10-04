@@ -1,6 +1,6 @@
-import { AimOutlined, ApartmentOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
+import { AimOutlined, CloseOutlined, FullscreenOutlined, FullscreenExitOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import { Graph } from '@antv/x6';
-import { Button, Descriptions, Empty, Space, Spin, Tag, Tooltip } from 'antd';
+import { Button, Descriptions, Empty, Space, Spin, Tag, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   LineageFieldDerivationType,
@@ -8,7 +8,6 @@ import type {
   LineageGraph,
   LineageGraphEdge,
   LineageGraphNode,
-  LineageGraphNodeKind,
   LineageFocusField,
   LineageOutputFieldEffect,
   LineageWriteMode,
@@ -18,6 +17,12 @@ import {
   registerLineageFieldCardNode,
   type LineageFieldCardData,
 } from './LineageFieldCardNode';
+
+import { LINEAGE_ASSET_SHAPE, registerLineageAssetNode, type LineageAssetData } from './LineageAssetNode';
+import { LineageKindIcon } from './LineageNodeAppearance';
+import { LINEAGE_ASSET_SIZE, lineageNodeKinds, lineageNodeKindLabels } from '../model/lineageAppearance';
+import { LineageNodeResourceDetails } from './LineageNodeResourceDetails';
+import './lineage-workspace.css';
 
 interface PositionedLineageNode extends LineageGraphNode { x: number; y: number; width: number; height: number }
 
@@ -56,26 +61,9 @@ interface LineageGraphCanvasProps {
   focusFields?: LineageFocusField[];
 }
 
-const lineageNodeKindLabels: Record<LineageGraphNodeKind, string> = {
-  MODEL: '数据模型',
-  JDBC_TABLE: 'JDBC 物理表',
-  EXTERNAL_RESOURCE: '外部资源',
-  TASK: '数据任务',
-  FIELD: '字段',
-  DATA_SERVICE: '数据服务',
-};
-
-const nodeThemes: Record<LineageGraphNodeKind, { fill: string; stroke: string }> = {
-  MODEL: { fill: '#eef2ff', stroke: '#6366f1' },
-  JDBC_TABLE: { fill: '#ecfeff', stroke: '#0891b2' },
-  EXTERNAL_RESOURCE: { fill: '#fdf4ff', stroke: '#c026d3' },
-  TASK: { fill: '#f0fdf4', stroke: '#16a34a' },
-  FIELD: { fill: '#fff7ed', stroke: '#ea580c' },
-  DATA_SERVICE: { fill: '#f9f0ff', stroke: '#722ed1' },
-};
-
 const writeLabels: Record<LineageWriteMode, string> = {
   APPEND: '追加', FULL_OVERWRITE: '全量覆盖', UPSERT: '更新或插入',
+  CONDITIONAL_OVERWRITE: '条件覆盖',
   PARTITION_OVERWRITE: '分区覆盖', SNAPSHOT_SYNC: '快照同步', CREATE_NEW: '新建写入',
 };
 
@@ -185,7 +173,7 @@ const layoutVisualGraph = (graph: LineageGraph): PositionedVisualGraph => {
   ordinary.forEach((node) => {
     const rank = ranks.get(node.id) ?? 0;
     const items = byRank.get(rank) ?? [];
-    items.push({ id: node.id, height: node.kind === 'TASK' ? 56 : 72, order: `${node.kind}:${node.label}:${node.id}` });
+    items.push({ id: node.id, height: LINEAGE_ASSET_SIZE.height, order: `${node.kind}:${node.label}:${node.id}` });
     byRank.set(rank, items);
   });
   const positions = new Map<string, { x: number; y: number }>();
@@ -202,8 +190,7 @@ const layoutVisualGraph = (graph: LineageGraph): PositionedVisualGraph => {
     ordinaryNodes: ordinary.map((node) => ({
       ...node,
       ...(positions.get(node.id) ?? { x: 70, y: 36 }),
-      width: node.kind === 'TASK' ? 176 : 220,
-      height: node.kind === 'TASK' ? 56 : 72,
+      ...LINEAGE_ASSET_SIZE,
     })),
     fieldCards: fieldCards.map((card) => ({ ...card, ...(positions.get(card.id) ?? { x: 70, y: 36 }) })),
     edges: visualEdges,
@@ -218,10 +205,6 @@ const edgeLabel = (edge: LineageGraphEdge) => {
   if (edge.derivationType && edge.derivationType !== 'DIRECT') return derivationLabels[edge.derivationType];
   return undefined;
 };
-
-const nodeSubtitleForCanvas = (node: LineageGraphNode) => (
-  node.kind === 'JDBC_TABLE' ? node.subtitle.split(' · ')[0] : node.subtitle
-);
 
 export const LineageGraphCanvas = ({
   graph,
@@ -238,6 +221,22 @@ export const LineageGraphCanvas = ({
   ],
   focusFields,
 }: LineageGraphCanvasProps) => {
+  const [expanded, setExpanded] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [messageApi, messageContext] = message.useMessage();
+  useEffect(() => {
+    const syncFullscreen = () => setExpanded(document.fullscreenElement === workspaceRef.current);
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === workspaceRef.current) await document.exitFullscreen();
+      else await workspaceRef.current?.requestFullscreen();
+    } catch {
+      messageApi.warning('浏览器暂时无法展开画布，请使用缩放和适应画布。');
+    }
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const [selectedNode, setSelectedNode] = useState<LineageGraphNode>();
@@ -254,38 +253,23 @@ export const LineageGraphCanvas = ({
     graphRef.current?.dispose();
     graphRef.current = null;
     const hasFieldCard = graph?.granularity === 'FIELD' && graph.nodes.some((node) => node.kind === 'FIELD');
-    if (!container || !graph || (!hasFieldCard && graph.nodes.length <= 1)) {
-      setSelectedNode(graph?.nodes.find((node) => node.id === graph.rootNodeId));
+    if (!container || !graph || (!hasFieldCard && graph.nodes.length === 0)) {
+      setSelectedNode(undefined);
       return undefined;
     }
     registerLineageFieldCardNode();
+    registerLineageAssetNode();
     const visual = layoutVisualGraph(graph);
-    const rootNode = graph.nodes.find((node) => node.id === graph.rootNodeId) ?? graph.nodes[0];
     const canvas = new Graph({
-      container, autoResize: true, background: { color: '#fafbff' },
-      grid: { visible: true, size: 10 }, interacting: false, panning: true,
-      mousewheel: { enabled: true, minScale: 0.65, maxScale: 1.6 },
+      container, autoResize: true, background: { color: '#f8fbfc' },
+      grid: { visible: true, size: 20, args: { color: '#dce7ed', thickness: 1 } }, interacting: false, panning: true,
+      mousewheel: { enabled: true, minScale: 0.15, maxScale: 2 },
     });
-    canvas.addNodes(visual.ordinaryNodes.map((node) => {
-      const theme = nodeThemes[node.kind];
-      const root = node.id === graph.rootNodeId;
-      return {
-        id: node.id, shape: 'rect', x: node.x, y: node.y, width: node.width,
-        height: node.height, data: node,
-        attrs: {
-          body: {
-            fill: theme.fill, stroke: node.stale ? '#fa8c16' : theme.stroke,
-            strokeWidth: root ? 2.5 : node.stale ? 2 : 1.2,
-            strokeDasharray: node.stale ? '5 3' : undefined, rx: 10, ry: 10,
-          },
-          label: {
-            text: `${node.label}\n${nodeSubtitleForCanvas(node) || lineageNodeKindLabels[node.kind]}`,
-            fill: '#1f2937', fontSize: 12, lineHeight: 19,
-            textWrap: { width: node.width - 24, height: 50, ellipsis: true },
-          },
-        },
-      };
-    }));
+    canvas.addNodes(visual.ordinaryNodes.map((node) => ({
+      id: node.id, shape: LINEAGE_ASSET_SHAPE, x: node.x, y: node.y,
+      width: node.width, height: node.height,
+      data: { ...node, current: node.id === graph.rootNodeId, onSelect: setSelectedNode } satisfies LineageAssetData,
+    })));
     const focusIndex = new Map<string, { nodes: Set<string>; edges: Set<string> }>();
     graph.nodes.forEach((node) => (node.focusFieldKeys ?? []).forEach((key) => {
       const entry = focusIndex.get(key) ?? { nodes: new Set<string>(), edges: new Set<string>() };
@@ -309,14 +293,10 @@ export const LineageGraphCanvas = ({
         entry?.edges.forEach((id) => activeEdges.add(id));
       });
       const focused = keys.length > 0;
-      canvas.getNodes().forEach((node) => {
-        const data = node.getData<LineageGraphNode | LineageFieldCardData>();
-        if ('visualKind' in data) return;
-        const active = !focused || activeNodes.has(node.id);
-        node.attr('body/opacity', active ? 1 : 0.16);
-        node.attr('label/opacity', active ? 1 : 0.22);
-        node.attr('body/strokeWidth', active && focused ? 2.8
-          : data.id === graph.rootNodeId ? 2.5 : data.stale ? 2 : 1.2);
+      container.querySelectorAll<HTMLElement>('.lineage-asset-node').forEach((element) => {
+        const active = !focused || activeNodes.has(element.dataset.lineageNodeId ?? '');
+        element.style.opacity = active ? '1' : '0.2';
+        element.classList.toggle('is-path-active', focused && active);
       });
       container.querySelectorAll<HTMLElement>('.lineage-field-card').forEach((cardElement) => {
         const card = visual.fieldCards.find((item) => item.id === cardElement.dataset.lineageCardId);
@@ -423,43 +403,83 @@ export const LineageGraphCanvas = ({
     canvas.on('blank:click', () => {
       lockedKeys = [];
       applyFocus([]);
-      setSelectedNode(rootNode);
+      setSelectedNode(undefined);
     });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      setSelectedNode(undefined);
       lockedKeys = [];
       applyFocus([]);
     };
     window.addEventListener('keydown', onKeyDown);
-    canvas.zoomToFit({ padding: 36, maxScale: 1 });
-    if (canvas.zoom() < 0.65) canvas.zoomTo(0.65);
+    canvas.zoomToFit({ padding: { top: 80, right: 48, bottom: 180, left: 48 }, maxScale: 1 });
     graphRef.current = canvas;
-    setSelectedNode(rootNode);
+    setSelectedNode(undefined);
     return () => { window.removeEventListener('keydown', onKeyDown); graphRef.current = null; canvas.dispose(); };
   }, [graph]);
 
-  const showCanvas = Boolean(graph && (graph.nodes.length > 1
-    || (graph.granularity === 'FIELD' && graph.nodes.some((node) => node.kind === 'FIELD'))));
+  useEffect(() => {
+    containerRef.current?.querySelectorAll<HTMLElement>('[data-lineage-node-id], [data-lineage-field-node-id]').forEach((element) => {
+      element.classList.toggle('is-selected', (element.dataset.lineageNodeId ?? element.dataset.lineageFieldNodeId) === selectedNode?.id);
+    });
+  }, [selectedNode]);
+
+  const showCanvas = Boolean(graph && graph.nodes.length > 0);
   return (
-    <div className="model-lineage-workspace">
-      <div className="model-lineage-canvas-shell">
+    <div ref={workspaceRef} className={`model-lineage-workspace lineage-resource-workspace${expanded ? ' is-expanded' : ''}`}>
+      {messageContext}
+      <div className={`model-lineage-canvas-shell${selectedNode ? ' has-inspector' : ''}`}>
         <div className="model-lineage-canvas-actions">
           <Tooltip title="重新加载"><Button icon={<ReloadOutlined />} aria-label="重新加载血缘" onClick={onRetry} /></Tooltip>
           <Button icon={<ZoomInOutlined />} aria-label="放大血缘图" disabled={!showCanvas} onClick={() => graphRef.current?.zoom(0.1)} />
           <Button icon={<ZoomOutOutlined />} aria-label="缩小血缘图" disabled={!showCanvas} onClick={() => graphRef.current?.zoom(-0.1)} />
-          <Button icon={<AimOutlined />} disabled={!showCanvas} onClick={() => graphRef.current?.zoomToFit({ padding: 36, maxScale: 1 })}>适应画布</Button>
+          <Button icon={<AimOutlined />} disabled={!showCanvas} onClick={() => graphRef.current?.zoomToFit({ padding: { top: 80, right: 48, bottom: 180, left: 48 }, maxScale: 1 })}>适应画布</Button>
+          <Tooltip title={expanded ? '退出展开' : '展开画布'}><Button icon={expanded ? <FullscreenExitOutlined /> : <FullscreenOutlined />} aria-label={expanded ? '退出展开画布' : '展开血缘画布'} disabled={!document.fullscreenEnabled} onClick={() => void toggleFullscreen()} /></Tooltip>
         </div>
         {loading && <div className="model-lineage-state"><Spin tip="正在加载血缘" /></div>}
         {!loading && errorMessage && <div className="model-lineage-state"><Empty description={errorMessage}><Button type="primary" onClick={onRetry}>重试</Button></Empty></div>}
         {!loading && !errorMessage && !showCanvas && <div className="model-lineage-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyDescription} /></div>}
-        <div ref={containerRef} className="model-lineage-canvas" aria-label={ariaLabel} />
-        <aside className="model-lineage-inspector">
-          <div className="model-lineage-inspector-title">节点信息</div>
-          {selectedNode ? (
+        <div className="lineage-graph-viewport"><div ref={containerRef} className="model-lineage-canvas" aria-label={ariaLabel} /></div>
+        {!loading && !errorMessage && graph?.nodes.length === 1 && graph.edges.length === 0 && <div className="lineage-no-relations">{emptyDescription}</div>}
+        <div className="lineage-canvas-hint">点击节点查看属性 · 拖动平移 · 滚轮缩放</div>
+        <details className="lineage-type-legend" open>
+          <summary>节点与连线图例</summary>
+          <div className="lineage-type-legend-items">{lineageNodeKinds.map((kind) => <span key={kind}><LineageKindIcon kind={kind} />{lineageNodeKindLabels[kind]}</span>)}</div>
+          <div className="lineage-edge-legend"><span><i />数据流向</span><span><i className="is-current" />当前对象</span><span><i className="is-stale" />旧结构</span><span><i className="is-usage" />字段用途</span></div>
+          <details className="lineage-legend-notes"><summary>关系说明与操作提示</summary>{legend.map((item) => <p key={item}>{item}</p>)}<p>点击字段锁定路径；点击空白处或按 Esc 取消。</p></details>
+        </details>
+        {selectedNode && <aside className="model-lineage-inspector" aria-label="血缘节点属性">
+          <div className="model-lineage-inspector-title"><span><LineageKindIcon kind={selectedNode.kind} />{lineageNodeKindLabels[selectedNode.kind]}</span><Button type="text" icon={<CloseOutlined />} aria-label="关闭节点属性" onClick={() => setSelectedNode(undefined)} /></div>
+          <div className="lineage-inspector-name">{selectedNode.label}</div>
+          {selectedNode.stale && <p className="lineage-snapshot-warning" role="status">该节点血缘基于旧结构，请核对当前资源属性。</p>}
+          <LineageNodeResourceDetails key={selectedNode.id} node={selectedNode} />
+          {(selectedNode.kind === 'JDBC_TABLE' || selectedNode.kind === 'EXTERNAL_RESOURCE' || selectedNode.kind === 'FIELD') && <section className="lineage-resource-properties">
+            <h4>{selectedNode.kind === 'FIELD' ? '字段来源 · 血缘快照' : '资源定位 · 血缘快照'}</h4>
+            {selectedNode.subtitle && selectedNode.subtitle !== selectedNode.label && <p className="lineage-resource-description">{selectedNode.subtitle}</p>}
+            {selectedNode.fieldOwner && <p className="lineage-resource-description">{selectedNode.fieldOwner.label}{selectedNode.fieldOwner.subtitle ? ` · ${selectedNode.fieldOwner.subtitle}` : ''}</p>}
+          </section>}
+          {selectedNode.writeMode && <div className="lineage-write-mode"><span>血缘写入方式</span><strong>{writeLabels[selectedNode.writeMode]}</strong></div>}
+          {selectedEdges.some((edge) => edge.usages.length > 0 || edge.derivationType || (edge.outputEffect && edge.outputEffect !== 'DERIVED')) && <section className="lineage-resource-properties"><h4>字段加工与用途</h4><Descriptions size="small" column={1}>
+              {selectedEdges.some((edge) => edge.usages.length > 0) && <Descriptions.Item label="字段用途"><Space size={[4, 4]} wrap>{Array.from(new Set(selectedEdges.flatMap((edge) => edge.usages))).map((usage) => <Tag key={usage}>{usageLabels[usage]}</Tag>)}</Space></Descriptions.Item>}
+              {selectedEdges.some((edge) => edge.derivationType) && <Descriptions.Item label="派生方式">{Array.from(new Set(selectedEdges.flatMap((edge) => edge.derivationType ? [edge.derivationType] : []))).map((type) => derivationLabels[type]).join('、')}</Descriptions.Item>}
+              {selectedEdges.some((edge) => edge.outputEffect && edge.outputEffect !== 'DERIVED') && <Descriptions.Item label="输出行为">{Array.from(new Set(selectedEdges.flatMap((edge) => edge.outputEffect ? [edge.outputEffect] : []))).map((effect) => effectLabels[effect]).join('、')}</Descriptions.Item>}
+          </Descriptions></section>}
+          <section className="lineage-resource-properties" aria-label="当前图直接关联">
+            <h4>当前图直接关联</h4>
+            {(['input', 'output'] as const).map((direction) => {
+              const ids = new Set(selectedEdges.filter((edge) => direction === 'input' ? edge.target === selectedNode.id : edge.source === selectedNode.id).map((edge) => direction === 'input' ? edge.source : edge.target));
+              const neighbors = graph?.nodes.filter((node) => ids.has(node.id)) ?? [];
+              return <div className="lineage-neighbor-group" key={direction}>
+                <div className="lineage-neighbor-caption">{direction === 'input' ? '上游来源' : '下游去向'}<span>{neighbors.length}</span></div>
+                {neighbors.length ? <div className="lineage-neighbor-list">{neighbors.map((node) => <button type="button" className="lineage-neighbor" key={node.id} onClick={() => setSelectedNode(node)}><LineageKindIcon kind={node.kind} /><span><strong>{node.label}</strong><small>{lineageNodeKindLabels[node.kind]}</small></span></button>)}</div> : <p className="lineage-property-note">当前图无直接{direction === 'input' ? '上游' : '下游'}关系</p>}
+              </div>;
+            })}
+          </section>
+          {selectedFocusSummaries.some((field) => field.truncated || field.coverage !== 'FIELD_COMPLETE') && <p className="lineage-snapshot-warning" role="status">部分字段路径不完整或已截断，可展开血缘上下文查看。</p>}
+          <details className="lineage-inspector-context">
+            <summary>血缘上下文与快照</summary>
             <Descriptions size="small" column={1}>
-              <Descriptions.Item label="名称">{selectedNode.label}</Descriptions.Item>
-              <Descriptions.Item label="类型">{lineageNodeKindLabels[selectedNode.kind]}</Descriptions.Item>
-              <Descriptions.Item label="说明">{selectedNode.subtitle || '—'}</Descriptions.Item>
+              {selectedNode.subtitle && selectedNode.subtitle !== selectedNode.label && <Descriptions.Item label="快照说明">{selectedNode.subtitle}</Descriptions.Item>}
               {selectedNode.fieldOwner && <Descriptions.Item label="所属资产">
                 {selectedNode.fieldOwner.label}{selectedNode.fieldOwner.subtitle ? ` · ${selectedNode.fieldOwner.subtitle}` : ''}
               </Descriptions.Item>}
@@ -472,17 +492,14 @@ export const LineageGraphCanvas = ({
               {selectedNode.dataServiceType && <Descriptions.Item label="服务类型">{serviceTypeLabels[selectedNode.dataServiceType]}</Descriptions.Item>}
               {selectedNode.dataServiceStatus && <Descriptions.Item label="服务状态"><Tag color={selectedNode.dataServiceStatus === 'ENABLED' ? 'success' : selectedNode.dataServiceStatus === 'DISABLED' ? 'warning' : 'default'}>{serviceStatusLabels[selectedNode.dataServiceStatus]}</Tag></Descriptions.Item>}
               {selectedNode.routePath && <Descriptions.Item label="服务路由"><code>{selectedNode.routePath}</code></Descriptions.Item>}
-              {selectedNode.taskStatus && <Descriptions.Item label="任务状态"><Tag>{selectedNode.taskStatus}</Tag></Descriptions.Item>}
+              {selectedNode.taskStatus && <Descriptions.Item label="任务状态"><Tag>{({ DRAFT: '草稿', PUBLISHED: '已发布', DISABLED: '已停用' })[selectedNode.taskStatus]}</Tag></Descriptions.Item>}
               {selectedNode.definitionVersion != null && <Descriptions.Item label="定义版本">v{selectedNode.definitionVersion}</Descriptions.Item>}
               {selectedNode.writeMode && <Descriptions.Item label="写入模式">{writeLabels[selectedNode.writeMode]}</Descriptions.Item>}
-              <Descriptions.Item label="结构状态">{selectedNode.stale ? <Tag color="warning">陈旧</Tag> : <Tag color="success">当前</Tag>}</Descriptions.Item>
-              {selectedEdges.some((edge) => edge.usages.length > 0) && <Descriptions.Item label="字段用途"><Space size={[4, 4]} wrap>{Array.from(new Set(selectedEdges.flatMap((edge) => edge.usages))).map((usage) => <Tag key={usage}>{usageLabels[usage]}</Tag>)}</Space></Descriptions.Item>}
-              {selectedEdges.some((edge) => edge.derivationType) && <Descriptions.Item label="派生方式">{Array.from(new Set(selectedEdges.flatMap((edge) => edge.derivationType ? [edge.derivationType] : []))).map((type) => derivationLabels[type]).join('、')}</Descriptions.Item>}
-              {selectedEdges.some((edge) => edge.outputEffect && edge.outputEffect !== 'DERIVED') && <Descriptions.Item label="输出行为">{Array.from(new Set(selectedEdges.flatMap((edge) => edge.outputEffect ? [edge.outputEffect] : []))).map((effect) => effectLabels[effect]).join('、')}</Descriptions.Item>}
+              <Descriptions.Item label="血缘结构">{selectedNode.stale ? <Tag color="warning">旧结构</Tag> : <span>未标记为旧结构</span>}</Descriptions.Item>
+
             </Descriptions>
-          ) : <div className="model-lineage-empty"><ApartmentOutlined /> 点击图中节点查看详情</div>}
-          <div className="model-lineage-legend">{legend.map((item) => <span key={item}>{item}</span>)}</div>
-        </aside>
+          </details>
+        </aside>}
       </div>
     </div>
   );

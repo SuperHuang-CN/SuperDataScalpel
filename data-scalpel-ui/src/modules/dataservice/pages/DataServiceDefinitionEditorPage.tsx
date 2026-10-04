@@ -298,7 +298,7 @@ export const DataServiceDefinitionEditorPage = () => {
       </Form>
 
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
         title="离开未保存的服务定义？"
         okText="离开"

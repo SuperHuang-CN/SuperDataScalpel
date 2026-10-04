@@ -54,11 +54,13 @@ public class GatewayAccessEventDecoder {
         GatewayAccessObjectReference service = requireObject(event.service(), "service");
         String serviceId = limitedRequired(service.id(), "service.id", 200);
         String serviceName = limitedRequired(service.name(), "service.name", 200);
-        UUID dataServiceId = parseManagedId(serviceName, SERVICE_PREFIX);
+        UUID dataServiceId = provider == GatewayProvider.DATASCALPEL
+                ? parseOptionalUuid(service.externalId()) : parseManagedId(serviceName, SERVICE_PREFIX);
 
         String routeId = event.route() == null ? null : limited(event.route().id(), 200);
         String routeName = event.route() == null ? null : limited(event.route().name(), 200);
-        UUID routeDataServiceId = routeName == null ? null : parseManagedId(routeName, ROUTE_PREFIX);
+        UUID routeDataServiceId = event.route() == null ? null : provider == GatewayProvider.DATASCALPEL
+                ? parseOptionalUuid(event.route().externalId()) : parseManagedId(routeName, ROUTE_PREFIX);
 
         String consumerCustomId = event.consumer() == null ? null : limited(event.consumer().customId(), 200);
         UUID consumerId = parseOptionalUuid(consumerCustomId);
@@ -72,10 +74,11 @@ public class GatewayAccessEventDecoder {
         String upstreamStatus = limited(event.upstreamStatus(), 64);
         boolean hasUpstreamStatus = upstreamStatus != null;
         boolean gatewayRejected = !hasUpstreamStatus
-                && (responseStatus == 401 || responseStatus == 403 || responseStatus == 429);
-        boolean gatewayError = !hasUpstreamStatus && responseStatus >= 500;
+                && (responseStatus == 401 || responseStatus == 403 || responseStatus == 413 || responseStatus == 429);
         boolean upstreamError = hasUpstreamStatus
                 && UPSTREAM_SERVER_ERROR.matcher(upstreamStatus).find();
+        boolean gatewayError = responseStatus >= 500 && (!hasUpstreamStatus
+                || (provider == GatewayProvider.DATASCALPEL && !upstreamError));
 
         GatewayAccessLatencies latencies = event.latencies();
         return new GatewayAccessRecord(
@@ -102,7 +105,8 @@ public class GatewayAccessEventDecoder {
                 nonNegative(request.sizeBytes()),
                 nonNegative(response.sizeBytes()),
                 latencies == null ? null : nonNegative(latencies.request()),
-                latencies == null ? null : nonNegative(latencies.kong()),
+                latencies == null ? null : nonNegative(provider == GatewayProvider.DATASCALPEL
+                        ? latencies.gateway() : latencies.kong()),
                 latencies == null ? null : nonNegative(latencies.proxy()),
                 latencies == null ? null : nonNegative(latencies.receive()),
                 limited(event.clientIp(), 64),

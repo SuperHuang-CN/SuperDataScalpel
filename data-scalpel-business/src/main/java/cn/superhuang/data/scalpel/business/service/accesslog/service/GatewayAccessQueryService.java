@@ -30,6 +30,22 @@ import java.util.UUID;
 @Service
 public class GatewayAccessQueryService {
 
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessUsageResponse usage(Instant from, Instant to) {
+        TimeWindow window=hourlyWindow(from,to);
+        var parameters=hourlyParameters(window);
+        String scope=" where hour_start>=:from and hour_start<:to";
+        long services=requiredLong(jdbcTemplate.queryForObject(
+            "select count(distinct data_service_id) from ds_gateway_access_service_hourly" + scope + " and status_2xx_count>0",parameters,Long.class));
+        long consumers=requiredLong(jdbcTemplate.queryForObject(
+            "select count(distinct consumer_id) from ds_gateway_access_consumer_service_hourly" + scope + " and status_2xx_count>0",parameters,Long.class));
+        return jdbcTemplate.queryForObject(
+            "select count(*) as samples,coalesce(sum(status_2xx_count),0) as successes,coalesce(sum(status_5xx_count),0) as errors,max(hour_start) as latest from ds_gateway_access_service_hourly" + scope,
+            parameters,(rs,row)->new cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessUsageResponse(
+                Instant.now(),window.fromInclusive(),window.toExclusive(),properties.enabled(),rs.getLong("samples")>0,
+                services,consumers,rs.getLong("successes"),rs.getLong("errors"),nullableInstant(rs,"latest")));
+    }
+
     private static final String HOURLY_COLUMNS = """
             hour_start, gateway_provider, data_service_id,
             request_count,
@@ -77,6 +93,33 @@ public class GatewayAccessQueryService {
     ) {
         this.properties = properties;
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @Transactional(readOnly = true)
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse recent(
+            UUID dataServiceId, UUID consumerId) {
+        Instant to = Instant.now();
+        Instant from = to.minus(15, ChronoUnit.MINUTES);
+        var parameters = new MapSqlParameterSource()
+                .addValue("from", timestamp(from)).addValue("to", timestamp(to));
+        String where = rawWhere(parameters, dataServiceId, consumerId, null, null, false);
+        return jdbcTemplate.queryForObject("""
+                select count(*) as requests,
+                    count(*) filter (where response_status between 200 and 299) as successes,
+                    count(*) filter (where response_status between 400 and 499) as client_errors,
+                    count(*) filter (where response_status >= 500) as server_errors,
+                    count(*) filter (where gateway_rejected) as rejected,
+                    avg(request_latency_ms) as average_latency,
+                    percentile_cont(0.95) within group (order by request_latency_ms) as p95,
+                    percentile_cont(0.99) within group (order by request_latency_ms) as p99,
+                    max(occurred_at) as last_request, max(received_at) as last_received
+                from ds_gateway_access_log l
+                """ + where, parameters, (rs, row) ->
+                new cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse(
+                        properties.enabled(), from, to, rs.getLong("requests"), rs.getLong("successes"),
+                        rs.getLong("client_errors"), rs.getLong("server_errors"), rs.getLong("rejected"),
+                        nullableDouble(rs, "average_latency"), nullableDouble(rs, "p95"), nullableDouble(rs, "p99"),
+                        nullableInstant(rs, "last_request"), nullableInstant(rs, "last_received")));
     }
 
     @Transactional(readOnly = true)

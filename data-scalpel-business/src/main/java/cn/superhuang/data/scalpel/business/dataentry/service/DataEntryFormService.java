@@ -1,5 +1,8 @@
 package cn.superhuang.data.scalpel.business.dataentry.service;
 
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryCandidateFiltersResponse;
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryCandidateFilterOptionResponse;
+import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryForm;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryFormStatus;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryModelLookup;
@@ -21,6 +24,7 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.standard.domain.StandardDictionary;
@@ -59,6 +63,7 @@ public class DataEntryFormService {
     private final DataEntryOperationLogRepository logRepository;
     private final DataEntryRecordChangeRepository changeRepository;
     private final DataModelRepository modelRepository;
+    private final ModelWarehouseLayerRepository layerRepository;
     private final DataModelFieldRepository fieldRepository;
     private final StandardDictionaryRepository dictionaryRepository;
     private final DataSourceRepository dataSourceRepository;
@@ -72,6 +77,7 @@ public class DataEntryFormService {
             DataEntryOperationLogRepository logRepository,
             DataEntryRecordChangeRepository changeRepository,
             DataModelRepository modelRepository,
+            ModelWarehouseLayerRepository layerRepository,
             DataModelFieldRepository fieldRepository,
             StandardDictionaryRepository dictionaryRepository,
             DataSourceRepository dataSourceRepository,
@@ -84,6 +90,7 @@ public class DataEntryFormService {
         this.logRepository = logRepository;
         this.changeRepository = changeRepository;
         this.modelRepository = modelRepository;
+        this.layerRepository = layerRepository;
         this.fieldRepository = fieldRepository;
         this.dictionaryRepository = dictionaryRepository;
         this.dataSourceRepository = dataSourceRepository;
@@ -147,6 +154,37 @@ public class DataEntryFormService {
                 .limit(100)
                 .map(model -> candidate(model))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DataEntryModelCandidateResponse> candidatePage(SearchRequest request) {
+        Set<UUID> used = formRepository.findAll().stream().map(DataEntryForm::getModelId).collect(Collectors.toSet());
+        Specification<DataModel> candidates = (root, query, builder) -> builder.and(
+                builder.equal(root.get("physicalTableMode"), PhysicalTableMode.MANAGED),
+                used.isEmpty() ? builder.conjunction() : builder.not(root.get("id").in(used)));
+        Page<DataModel> result = searchEngine.search(request, DataModel.class, modelRepository, candidates);
+        return new PageResponse<>(result.getContent().stream().map(this::candidate).toList(),
+                result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize());
+    }
+
+    @Transactional(readOnly = true)
+    public DataEntryCandidateFiltersResponse candidateFilters() {
+        Set<UUID> used = formRepository.findAll().stream().map(DataEntryForm::getModelId).collect(Collectors.toSet());
+        List<DataModel> models = modelRepository.findAll().stream()
+                .filter(model -> !used.contains(model.getId()) && model.getPhysicalTableMode() == PhysicalTableMode.MANAGED)
+                .toList();
+        Map<UUID, String> layers = layerRepository.findAll().stream()
+                .collect(Collectors.toMap(layer -> layer.getId(), layer -> layer.getCode() + " · " + layer.getName()));
+        Map<UUID, String> storages = dataSourceRepository.findAll().stream()
+                .collect(Collectors.toMap(DataSource::getId, DataSource::getName));
+        Comparator<DataEntryCandidateFilterOptionResponse> order = Comparator.comparing(DataEntryCandidateFilterOptionResponse::name)
+                .thenComparing(DataEntryCandidateFilterOptionResponse::id);
+        return new DataEntryCandidateFiltersResponse(
+                models.stream().map(DataModel::getWarehouseLayerId).filter(Objects::nonNull).distinct()
+                        .map(id -> new DataEntryCandidateFilterOptionResponse(id, layers.getOrDefault(id, id.toString()))).sorted(order).toList(),
+                models.stream().map(DataModel::getStorageDataSourceId).filter(Objects::nonNull).distinct()
+                        .map(id -> new DataEntryCandidateFilterOptionResponse(id, storages.getOrDefault(id, id.toString()))).sorted(order).toList(),
+                models.stream().anyMatch(model -> model.getWarehouseLayerId() == null));
     }
 
     public DataEntryFormDetailResponse get(UUID id) {
@@ -281,7 +319,11 @@ public class DataEntryFormService {
     private DataEntryModelCandidateResponse candidate(DataModel model) {
         List<DataEntryHealthIssueResponse> issues = knownIssues(model);
         return new DataEntryModelCandidateResponse(model.getId(), model.getCode(), model.getName(), model.getStatus().name(),
-                model.getSchemaVersion(), issues.isEmpty(), issues);
+                model.getSchemaVersion(), issues.isEmpty(), issues,
+                model.getWarehouseLayerId(), model.getWarehouseLayerId() == null ? null : layerRepository.findById(model.getWarehouseLayerId())
+                        .map(layer -> layer.getCode() + " · " + layer.getName()).orElse(null),
+                model.getStorageDataSourceId(), dataSourceRepository.findById(model.getStorageDataSourceId()).map(DataSource::getName).orElse(null),
+                model.getPhysicalTableMode().name(), model.getCatalogName(), model.getSchemaName(), model.getPhysicalTableName());
     }
 
     private List<DataEntryHealthIssueResponse> knownIssues(DataModel model) {

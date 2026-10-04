@@ -522,7 +522,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 dataset,
                 targetSchema,
                 geometryWriteSrids,
-                write.upsertKeyColumns()
+                write.upsertKeyColumns(),
+                write.batchWrite()
         );
     }
 
@@ -565,7 +566,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 dataset,
                 targetSchema,
                 geometryWriteSrids,
-                upsertKeyColumns
+                upsertKeyColumns,
+                write.batchWrite()
         );
     }
 

@@ -3,6 +3,8 @@ import type { Node } from '@antv/x6';
 import { register } from '@antv/x6-react-shape';
 import type { LineageGraphNode } from '../model/dataModel';
 
+import { LineageKindIcon } from './LineageNodeAppearance';
+
 export const LINEAGE_FIELD_CARD_SHAPE = 'data-scalpel-lineage-field-card';
 
 export interface LineageFieldCardData {
@@ -41,7 +43,7 @@ const LineageFieldCardView = ({ node }: LineageFieldCardViewProps) => {
       style={{ width: size.width, height: size.height }}
     >
       <div className="lineage-field-card-header" title={data.ownerSubtitle ?? data.ownerLabel}>
-        <span className="lineage-field-card-kind">{ownerKindLabels[data.ownerKind]}</span>
+        <span className="lineage-field-card-kind"><LineageKindIcon kind={data.ownerKind} /> {ownerKindLabels[data.ownerKind]}</span>
         <strong>{data.ownerLabel}</strong>
         {ownerSubtitle && <span>{ownerSubtitle}</span>}
       </div>
@@ -54,6 +56,8 @@ const LineageFieldCardView = ({ node }: LineageFieldCardViewProps) => {
             data-lineage-field-node-id={field.id}
             onMouseEnter={() => data.onFieldEnter(field)}
             onMouseLeave={data.onFieldLeave}
+            onFocus={() => data.onFieldEnter(field)}
+            onBlur={data.onFieldLeave}
             onClick={(event) => {
               event.stopPropagation();
               data.onFieldClick(field);

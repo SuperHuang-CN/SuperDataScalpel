@@ -162,6 +162,10 @@ GPKG 是独立的单文件多表数据集类型。准备任务先校验 SQLite �
 
 ## 5. 预览与运行
 
+空间文件地图已经按[统一预览设计](model-management.md#spatial-preview-design)实现：六类格式完整读取几何、受控准备副本和概览、按视口输出 PNG。属性样本数和 SCHEMA_READY 不等同于地图容量或就绪状态；地图不使用截断的属性样本。
+
+GDB ZIP 支持直接包含组件的根目录。初始 GDB/SHP 缺失可识别 EPSG 时进入 WAITING_CRS，保留原文件并提供确认后继续校验，不猜投影，不重写坐标；只有地图派生副本通过 Proj4J 转为 EPSG:3857。确认前不能执行任务。详见[实施验收](../verification/spatial-preview-implementation-20261003.md)。
+
 SHP/GDB/GeoJSON/GEOJSONL/GeoParquet/GPKG 属性预览按当前来源的 `sourceOrder` 读取，累计到 limit 后停止，不返回 Geometry 字段和
 坐标值；任一来源不支持安全预览时整表返回 `409`。GDB 图层可以处于 `SCHEMA_READY`，此时允许
 作为 Canvas 输入但管理端不提供预览。

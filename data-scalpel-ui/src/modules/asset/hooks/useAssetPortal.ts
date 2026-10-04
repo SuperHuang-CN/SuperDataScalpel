@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   fetchAssetPortalAssets,
   fetchAssetPortalDetail,
@@ -15,13 +15,9 @@ export const useAssetPortalOverview = () => useQuery({
   queryFn: fetchAssetPortalOverview,
 });
 
-export const useAssetPortalAssets = (filters: AssetPortalFilters) => useInfiniteQuery({
-  queryKey: [...ASSET_PORTAL_QUERY_KEY, 'assets', filters],
-  queryFn: ({ pageParam }) => fetchAssetPortalAssets(filters, pageParam, PAGE_SIZE),
-  initialPageParam: 0,
-  getNextPageParam: (lastPage) => (
-    lastPage.page + 1 < lastPage.totalPages ? lastPage.page + 1 : undefined
-  ),
+export const useAssetPortalAssets = (filters: AssetPortalFilters, page = 0, size = PAGE_SIZE) => useQuery({
+  queryKey: [...ASSET_PORTAL_QUERY_KEY, 'assets', filters, page, size],
+  queryFn: () => fetchAssetPortalAssets(filters, page, size),
 });
 
 export const useAssetPortalDetail = (id: string | undefined) => useQuery({

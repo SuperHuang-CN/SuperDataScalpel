@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { taskPageHref } from '../model/taskViews';
 import { sparkJarReadSnippet } from '../model/sparkJarCodeResource';
 import { replaceSparkJarResource, type SparkJarResourceSelection } from '../model/sparkJarResourceConfiguration';
@@ -497,7 +498,7 @@ const OnlineWorkbench = ({
               <div><span>运行 ID</span><strong>{trialRun.id}</strong></div>
               <div><span>计算引擎</span><strong>{trialRun.computeEngineId ?? '—'}</strong></div>
               {trialRun.deadlineAt && (
-                <div><span>最晚停止时间</span><strong>{new Date(trialRun.deadlineAt).toLocaleString()}</strong></div>
+                <div><span>最晚停止时间</span><strong>{formatManagementDateTime(trialRun.deadlineAt)}</strong></div>
               )}
               {trialRun.message && <div><span>执行消息</span><strong>{trialRun.message}</strong></div>}
               {executionError && (
@@ -808,7 +809,7 @@ const OnlineWorkbench = ({
                             {streaming && <Typography.Text type="secondary">每个输出保留最近 100 条已捕获样例</Typography.Text>}
                             {previewQuery.data?.capturedAt && (
                               <Typography.Text type="secondary">
-                                最后样例更新于 {new Date(previewQuery.data.capturedAt).toLocaleString()}
+                                最后样例更新于 {formatManagementDateTime(previewQuery.data.capturedAt)}
                               </Typography.Text>
                             )}
                           </Space>

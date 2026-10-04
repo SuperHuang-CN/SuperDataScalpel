@@ -71,7 +71,7 @@ function McpAccessTokenDrawerForm({ tokenId, onClose, onIssued }: Props) {
   };
 
   const rows = servers.data?.content ?? [];
-  return <Drawer open width={760} rootClassName="business-overlay business-drawer-overlay" title={tokenId ? '编辑访问凭证' : '新建访问凭证'}
+  return <Drawer open width={760} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" title={tokenId ? '编辑访问凭证' : '新建访问凭证'}
     onClose={onClose} closable={!saving} maskClosable={!saving} keyboard={!saving} footer={<div className="mcp-drawer-footer"><Typography.Text type="secondary">已授权 {selected.size} 个 Server</Typography.Text><Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} onClick={() => void submit()}>确定</Button></Space></div>}>
     {context}
     {tokenId && detail.isLoading ? <div>正在加载凭证…</div> : tokenId && detail.isError ? <Space><Typography.Text type="danger">凭证加载失败：{detail.error.message}</Typography.Text><Button onClick={() => void detail.refetch()}>重试</Button></Space> : <Form form={form} layout="vertical" autoComplete="off" initialValues={{ name: '', description: '', expiresAt: undefined }}>

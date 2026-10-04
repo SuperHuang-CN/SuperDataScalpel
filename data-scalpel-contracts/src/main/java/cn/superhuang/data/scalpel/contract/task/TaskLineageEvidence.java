@@ -46,7 +46,7 @@ public record TaskLineageEvidence(
         OBJECT_STORAGE_PATH,
         JDBC_QUERY_RESULT
     }
-    public enum WriteMode { APPEND, FULL_OVERWRITE, UPSERT, SNAPSHOT_SYNC, CREATE_NEW }
+    public enum WriteMode { APPEND, FULL_OVERWRITE, CONDITIONAL_OVERWRITE, UPSERT, SNAPSHOT_SYNC, CREATE_NEW }
     public enum OutputEffect {
         DERIVED,
         WRITTEN_UNKNOWN_SOURCE,

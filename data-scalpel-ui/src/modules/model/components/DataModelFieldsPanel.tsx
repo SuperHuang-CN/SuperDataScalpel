@@ -1,3 +1,4 @@
+import '../../../shared/components/schema-table.css';
 import { CompactAlert as Alert, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined, FileSearchOutlined, FontSizeOutlined, PlusOutlined, ProfileOutlined, SafetyCertificateOutlined, SaveOutlined, SearchOutlined, TagsOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
@@ -276,7 +277,7 @@ const FieldEditorDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay data-model-field-editor-drawer"
+      rootClassName="business-overlay business-drawer-overlay data-model-field-editor-drawer workspace-resource-overlay model-detail-overlay"
       className="data-model-drawer data-model-field-editor-surface"
       title={(
         <div className="data-model-drawer-title">
@@ -534,7 +535,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   const [selectedChange, setSelectedChange] = useState<DataModelPhysicalChange | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [tableDataWidth, setTableDataWidth] = useState(1240);
+  const [tableDataWidth, setTableDataWidth] = useState(960);
   const tableShellRef = useRef<HTMLDivElement>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
@@ -591,16 +592,16 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
     && Boolean(inspectionQuery.data)
     && !directSaveAllowed
     && !requiresPhysicalChangePlan;
-  const fixedColumnsWidth = 604 + (readOnly ? 0 : 76);
-  const flexibleColumnWidth = (tableDataWidth - fixedColumnsWidth) / 4;
-  const descriptionColumnWidth = flexibleColumnWidth * 2;
+  const fixedColumnsWidth = 580 + (readOnly ? 0 : 76);
+  const flexibleColumnWidth = (tableDataWidth - fixedColumnsWidth) / 2;
+  const descriptionColumnWidth = flexibleColumnWidth;
 
   useEffect(() => {
     const shell = tableShellRef.current;
     if (!shell) return undefined;
     const updateWidth = () => {
       const body = shell.querySelector<HTMLElement>('.ant-table-body');
-      const nextWidth = Math.max(1240, Math.floor(body?.clientWidth ?? shell.clientWidth));
+      const nextWidth = Math.max(960, Math.floor(body?.clientWidth ?? shell.clientWidth));
       setTableDataWidth((current) => current === nextWidth ? current : nextWidth);
     };
     const observer = new ResizeObserver(updateWidth);
@@ -625,7 +626,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
       title: '放弃当前字段修改？',
       content: '字段编辑抽屉中的修改尚未应用，关闭后会丢失。',
       okText: '放弃修改',
@@ -731,7 +732,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
       title: '放弃未保存的字段修改？',
       content: '刷新后将重新加载最后保存的字段定义，当前修改会丢失。',
       okText: '放弃修改并刷新',
@@ -762,30 +763,31 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   };
 
   const columns: TableProps<EditableField>['columns'] = [
-    { title: '字段编码', dataIndex: 'code', width: flexibleColumnWidth, ellipsis: true, fixed: 'left', render: (value: string) => <code>{value}</code> },
-    { title: '字段名称', dataIndex: 'name', width: flexibleColumnWidth, ellipsis: true },
-    { title: '类型', key: 'type', width: 136, ellipsis: true, render: (_value, field) => fieldTypeDescription(field) },
     {
-      title: '物理角色',
-      dataIndex: 'physicalColumnRole',
-      width: 96,
-      ellipsis: true,
-      render: (value?: DataModelField['physicalColumnRole']) => value === 'TIME_KEY'
-        ? <Tag color="blue">时间主列</Tag>
-        : value === 'TAG' ? <Tag color="purple">TAG</Tag> : '普通列',
+      title: '字段 / 名称', key: 'identity', width: flexibleColumnWidth, fixed: 'left',
+      render: (_value, field) => (
+        <div className="schema-field-identity">
+          <Typography.Text className="schema-field-code" ellipsis={{ tooltip: field.code }}>{field.code}</Typography.Text>
+          {field.name !== field.code && <Typography.Text type="secondary" ellipsis={{ tooltip: field.name }}>{field.name}</Typography.Text>}
+        </div>
+      ),
     },
     {
-      title: clickHouseModel ? '平台主键' : '主键',
-      dataIndex: 'primaryKey',
-      width: clickHouseModel ? 84 : 56,
-      align: 'center',
-      render: (value: boolean) => value
-        ? clickHouseModel
-          ? <Tooltip title="仅作为平台元数据，不生成 ClickHouse 约束"><Tag color="blue">平台</Tag></Tooltip>
-          : <Tag color="blue">是</Tag>
-        : '—',
+      title: '数据类型', key: 'type', width: 160,
+      render: (_value, field) => <Tooltip title={fieldTypeDescription(field)}><span className="schema-type-label">{fieldTypeDescription(field)}</span></Tooltip>,
     },
-    { title: '允许为空', dataIndex: 'nullable', width: 80, align: 'center', render: (value: boolean) => value ? '是' : '否' },
+    {
+      title: '约束 / 物理角色', key: 'constraints', width: 184,
+      render: (_value, field) => (
+        <div className="schema-constraints">
+          <Space size={4} wrap>
+            {field.primaryKey && <Tooltip title={clickHouseModel ? '仅作为平台元数据，不生成 ClickHouse 约束' : '模型主键'}><Tag className="schema-key-tag">{clickHouseModel ? '平台主键' : '主键'}</Tag></Tooltip>}
+            <span className={field.nullable ? 'schema-muted' : 'schema-required'}>{field.nullable ? '允许为空' : '不可为空'}</span>
+          </Space>
+          <span className="schema-muted">{field.physicalColumnRole === 'TIME_KEY' ? '时间主列' : field.physicalColumnRole === 'TAG' ? 'TAG' : '普通列'}</span>
+        </div>
+      ),
+    },
     { title: '排序', dataIndex: 'sortOrder', width: 56, align: 'center' },
     {
       title: '关联码表',
@@ -958,7 +960,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       <div ref={tableShellRef} className="model-fields-table-shell">
         <Table<EditableField>
           size="small"
-          className="management-table model-fields-table"
+          className="management-table model-fields-table schema-definition-table"
           rowKey="rowKey"
           columns={columns}
           dataSource={pagedFields}

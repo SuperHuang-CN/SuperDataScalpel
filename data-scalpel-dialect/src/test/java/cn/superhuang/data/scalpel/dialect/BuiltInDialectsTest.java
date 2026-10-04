@@ -233,7 +233,7 @@ class BuiltInDialectsTest {
                         + "VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `amount` = VALUES(`amount`)",
                 registry.require("MYSQL").renderRowUpsert(table, columns, keys)
         );
-        for (String id : java.util.List.of("HIGHGO", "OPENGAUSS", "KINGBASE")) {
+        for (String id : java.util.List.of("HIGHGO", "KINGBASE")) {
             assertEquals(
                     "INSERT INTO \"public\".\"order_fact\" (\"tenant_id\", \"order_no\", \"amount\") "
                             + "VALUES (?, ?, ?) ON CONFLICT (\"tenant_id\", \"order_no\") "
@@ -252,6 +252,14 @@ class BuiltInDialectsTest {
                         + "VALUES (incoming.\"tenant_id\", incoming.\"order_no\", incoming.\"amount\")",
                 registry.require("DAMENG").renderRowUpsert(table, columns, keys)
         );
+        assertEquals(registry.require("ORACLE").renderRowUpsert(table, columns, keys).replace(" FROM DUAL", ""),
+                registry.require("OPENGAUSS").renderRowUpsert(table, columns, keys));
+        String openGaussKeysOnly = registry.require("OPENGAUSS").renderRowUpsert(table, columns.subList(0, 2), keys);
+        assertFalse(openGaussKeysOnly.contains("WHEN MATCHED"));
+        assertTrue(openGaussKeysOnly.contains("WHEN NOT MATCHED THEN INSERT"));
+        String openGaussSpatial = registry.require("OPENGAUSS").renderRowUpsert(table,
+                java.util.List.of(columns.getFirst(), new JdbcUpsertColumn("geom", 4326)), java.util.List.of("tenant_id"));
+        assertTrue(openGaussSpatial.contains("ST_GeomFromWKB(?, 4326) AS \"geom\""));
         assertEquals(
                 "MERGE INTO \"public\".\"order_fact\" target_row USING (SELECT ? AS \"tenant_id\", "
                         + "? AS \"order_no\", ? AS \"amount\" FROM DUAL) incoming ON ("

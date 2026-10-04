@@ -1,0 +1,276 @@
+/* Five modeling workspaces share the resource palette; canvas geometry and state colors stay intact. */
+.modeling-workspace,
+.modeling-overlay {
+  --ds-primary-gradient: #287f9e;
+  --ds-standard-control-height: 36px;
+  --ds-compact-control-height: 32px;
+  --modeling-border: #e1ebf0;
+  color: #263d4c;
+  font-family: var(--ds-ui-font);
+}
+
+.modeling-workspace :is(.management-results-surface, .management-filter-strip),
+.app-content-detail .modeling-workspace :is(.business-detail-header, .business-detail-tabs) {
+  border: 1px solid var(--modeling-border);
+  border-radius: var(--ds-radius-panel);
+  box-shadow: none;
+  background: #fff;
+}
+.modeling-workspace .management-filter-strip { background: #f7fbfd; padding: 12px 16px; }
+.modeling-workspace .management-filter-form { flex: 1; min-width: 0; gap: 8px; flex-wrap: wrap; }
+.modeling-workspace .management-filter-form > .ant-space { margin-inline-start: auto; }
+.management-page.modeling-workspace { display: flex; flex: 1; flex-direction: column; min-height: 0; height: 100%; }
+/* Query and resource actions form one consistent toolbar, including fragment-based Excel actions. */
+.modeling-workspace .modeling-list-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.modeling-workspace .modeling-list-controls > .ant-form-inline {
+  flex: 1 1 420px;
+  min-width: 0;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters) { flex-wrap: nowrap; }
+.modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters) > .ant-form-inline { flex: 1 1 340px; min-width: 280px; max-width: 470px; }
+.modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters) > .ant-form-inline:not(:has(> .ant-form-item:nth-child(2))) { min-width: 220px; max-width: 320px; }
+.modeling-workspace .modeling-list-controls > .ant-form-inline .ant-form-item { margin: 0; }
+.modeling-workspace .modeling-list-controls > .ant-form-inline .ant-form-item:first-child { flex: 1 1 180px; min-width: 0; max-width: 320px; }
+.modeling-workspace .modeling-list-controls > .ant-form-inline .ant-form-item:not(:first-child) { flex: 0 1 140px; min-width: 120px; }
+.modeling-workspace .modeling-list-controls > .management-adaptive-more-filters { margin-inline-start: 0; }
+.modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters.is-collapsed) { flex-wrap: wrap; }
+.modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters.is-collapsed) > .ant-form-inline { flex-basis: 220px; }
+.modeling-workspace .modeling-list-controls > .ant-form-inline :is(.ant-input-affix-wrapper, .ant-select) { width: 100%; max-width: none; min-width: 0; }
+.modeling-workspace .modeling-page-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 100%;
+  margin-inline-start: auto;
+}
+.modeling-workspace .modeling-list-controls > .modeling-page-actions { flex-wrap: nowrap; flex-shrink: 0; margin-inline-start: auto; }
+.modeling-workspace .modeling-page-actions .management-filter-actions { flex: none; gap: 8px; margin: 0; padding: 0; }
+.modeling-workspace .modeling-page-commands {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-inline-start: 12px;
+  border-inline-start: 1px solid #d5e4eb;
+}
+.modeling-workspace .modeling-page-actions .ant-btn {
+  flex: none;
+  height: 36px;
+  min-height: 36px;
+  padding-inline: 14px;
+  border-radius: var(--ds-radius-control);
+  font-size: 14px;
+  box-shadow: none;
+}
+.modeling-workspace .modeling-page-actions .ant-btn-icon-only { width: 36px; padding-inline: 0; }
+.modeling-workspace .modeling-page-actions .management-filter-actions > .ant-btn-default { color: #287f9e; border-color: #b8d2de; }
+.modeling-workspace .modeling-page-actions .management-filter-actions .ant-btn-primary:not(:disabled) { color: #287f9e; background: #fff; border-color: #b8d2de; }
+.modeling-workspace .modeling-page-actions .management-filter-actions .ant-btn-primary:not(:disabled):hover { color: #216c88; background: #f0f7fa; border-color: #287f9e; }
+@media (max-width: 600px) {
+  .modeling-workspace .modeling-list-controls > .ant-form-inline { flex-wrap: wrap; }
+  .modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters) { flex-wrap: wrap; }
+  .modeling-workspace .modeling-list-controls:has(> .management-adaptive-more-filters) > .ant-form-inline { flex-basis: 100%; }
+  .modeling-workspace .modeling-list-controls > .modeling-page-actions { flex-wrap: wrap; }
+  .modeling-workspace .modeling-page-actions { flex-basis: 100%; justify-content: flex-end; }
+  .modeling-workspace .modeling-page-commands { padding-inline-start: 0; border-inline-start: 0; }
+}
+.modeling-workspace .management-result-toolbar { min-height: 58px; padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
+.modeling-workspace .management-result-toolbar > .ant-space { flex-wrap: wrap; margin-inline-start: auto; }
+.modeling-workspace .management-result-title { display: flex; align-items: center; gap: 10px; color: #263d4c; font-size: 16px; }
+.modeling-workspace .management-result-title > .anticon { color: #287f9e; font-size: 20px; }
+.modeling-workspace .management-result-count { color: #5b7180; font-size: 12px; font-weight: 400; }
+.modeling-workspace .management-list-cell-icon { width: 32px; height: 32px; background: #edf5f8; color: #287f9e; border: 0; border-radius: var(--ds-radius-control); box-shadow: none; }
+.modeling-workspace .management-list-cell-primary .ant-btn-link { font-weight: 600; }
+.modeling-workspace .management-list-cell-secondary { color: #5b7180; line-height: 20px; }
+.modeling-workspace .management-table .ant-table-cell { padding-block: 10px; line-height: 22px; }
+.modeling-workspace .management-table .ant-table-thead > tr > th { padding-block: 10px; }
+.modeling-workspace .management-row-actions { min-width: 0; }
+.modeling-workspace .management-row-actions-shortcuts { width: auto; flex: 1; }
+:is(.modeling-workspace, .modeling-overlay) .ant-table-thead > tr > th { color: var(--ds-table-header-color); background: var(--ds-table-header-background); border-bottom-color: var(--modeling-border); font-weight: 600; }
+:is(.modeling-workspace, .modeling-overlay) .ant-table-tbody > tr > td { border-bottom-color: #edf2f5; }
+:is(.modeling-workspace, .modeling-overlay) .ant-table-cell { font-variant-numeric: tabular-nums; }
+:is(.modeling-workspace, .modeling-overlay) .ant-table-cell code { font-family: inherit; }
+:is(.modeling-workspace, .modeling-overlay) .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) { background: #287f9e; border-color: #287f9e; box-shadow: none; transform: none; }
+:is(.modeling-workspace, .modeling-overlay) .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover { background: #216c88; border-color: #216c88; }
+:is(.modeling-workspace, .modeling-overlay) .ant-tag { border-radius: var(--ds-radius-tag); }
+:is(.modeling-workspace, .modeling-overlay) .ant-empty-description { color: #5b7180; }
+.modeling-workspace .management-results-surface .ant-table-pagination { padding-inline: 16px; border-top-color: var(--modeling-border); background: #fff; }
+
+/* One identity header and quiet section dividers, without decorative card nesting. */
+.app-content-detail .modeling-workspace .business-detail-header { padding: 16px 20px; gap: 16px; flex-wrap: wrap; }
+.app-content-detail .modeling-workspace .business-detail-header [class$='-detail-title'] { color: #263d4c; font-size: 18px; line-height: 26px; overflow-wrap: anywhere; }
+.app-content-detail .modeling-workspace .business-detail-header :is(code, [class$='-detail-subtitle']) { color: #5b7180; font-family: inherit; }
+.app-content-detail .modeling-workspace .business-detail-resource-icon { width: 40px; height: 40px; background: #edf5f8; color: #287f9e; border: 0; border-radius: var(--ds-radius-control); box-shadow: none; }
+.app-content-detail .modeling-workspace .business-detail-tabs > .ant-tabs-nav { background: #fff; padding-inline: 16px; }
+.app-content-detail .modeling-workspace .business-detail-tabs > .ant-tabs-nav .ant-tabs-tab { padding: 13px 0; margin: 0 24px 0 0; color: #5b7180; border-radius: 0; }
+.app-content-detail .modeling-workspace .business-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active { background: transparent; }
+.app-content-detail .modeling-workspace .business-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn { color: #287f9e; }
+.app-content-detail .modeling-workspace .business-detail-tabs > .ant-tabs-nav .ant-tabs-ink-bar { height: 2px; background: #287f9e; box-shadow: none; }
+.app-content-detail .modeling-workspace .business-detail-section,
+.modeling-overlay .business-detail-section {
+  background: #fff; border: 0; border-bottom: 1px solid var(--modeling-border); border-radius: 0; box-shadow: none;
+}
+.app-content-detail .modeling-workspace .business-detail-section-header,
+.modeling-overlay .business-detail-section-header { min-height: 52px; padding: 12px 4px; background: #fff; border-bottom: 1px solid #edf2f5; }
+.app-content-detail .modeling-workspace .business-detail-section-header::before,
+.modeling-overlay .business-detail-section-header::before { display: none; }
+.app-content-detail .modeling-workspace .business-detail-section-icon,
+.modeling-overlay .business-detail-section-icon { width: 28px; height: 28px; color: #287f9e; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.app-content-detail .modeling-workspace .business-detail-section-title,
+.modeling-overlay .business-detail-section-title { color: #263d4c; font-size: 15px; line-height: 22px; }
+.app-content-detail .modeling-workspace .business-detail-section-description,
+.modeling-overlay .business-detail-section-description { color: #5b7180; font-size: 12px; }
+.app-content-detail .modeling-workspace .business-detail-section-content,
+.modeling-overlay .business-detail-section-content { padding: 12px 4px 16px; }
+.app-content-detail .modeling-workspace .business-detail-description-item { border-color: #edf2f5; background: transparent; }
+.app-content-detail .modeling-workspace .business-detail-section code { color: #466071; font-family: inherit; }
+.modeling-workspace .metric-detail-content { padding: 0; }
+.modeling-workspace .ontology-header-actions { flex-wrap: wrap; margin-inline-start: auto; }
+
+/* Portal classes are explicit so task canvases and other domains are unaffected. */
+.modeling-overlay.business-overlay :is(.ant-drawer-header, .ant-modal-header) { min-height: 64px; padding: 16px 24px; background: #fff; border-bottom-color: var(--modeling-border); backdrop-filter: none; }
+.modeling-overlay.business-overlay :is(.ant-drawer-title, .ant-modal-title) { color: #263d4c; font-size: 17px; font-weight: 600; line-height: 26px; }
+.modeling-overlay.business-overlay .ant-drawer-body { padding: 20px 24px; background: #fff; }
+.modeling-overlay.business-overlay .ant-modal-container { padding: 0; overflow: hidden; background: #fff; border-radius: var(--ds-radius-panel); }
+.modeling-overlay.business-overlay .ant-modal { top: 32px; padding-bottom: 32px; }
+.modeling-overlay.business-overlay .ant-modal-body { padding: 20px 24px; max-height: calc(100dvh - 220px); overflow-y: auto; background: #fff; }
+.modeling-overlay.business-overlay :is(.ant-drawer-footer, .ant-modal-footer) { margin: 0; padding: 12px 24px; background: #fff; border-top: 1px solid var(--modeling-border); box-shadow: none; backdrop-filter: none; }
+.modeling-overlay.business-overlay .ant-modal-confirm-btns { margin-top: 24px; }
+.modeling-overlay.business-overlay .ant-form-item { margin-bottom: 20px; }
+.modeling-overlay.business-overlay .ant-form-item-label > label { color: #263d4c; font-size: 14px; font-weight: 500; }
+.modeling-overlay.business-overlay .ant-form-item-extra { color: #5b7180; font-size: 12px; line-height: 20px; margin-top: 4px; }
+.modeling-overlay.business-overlay .data-model-form .ant-select { min-height: 40px; }
+.modeling-overlay.business-overlay .data-model-form .ant-select-multiple { align-items: center; }
+.modeling-overlay.business-overlay .data-model-form .ant-select-single { height: 40px; }
+/* Legacy drawer footers declare their minimum with !important. Keep this override scoped. */
+.modeling-overlay.business-overlay :is(.ant-drawer-footer, .ant-modal-footer) .ant-btn { height: 36px; min-height: 36px !important; border-radius: var(--ds-radius-control); }
+.modeling-overlay.business-overlay .context-help-trigger.ant-btn { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; }
+.modeling-overlay.business-overlay .ant-btn-default:not(:disabled):not(.ant-btn-dangerous) { color: #466071; background: #fff; border-color: #d5e4eb; box-shadow: none; }
+.modeling-overlay.business-overlay .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):hover { color: #287f9e; border-color: #9ebfce; background: #f5fafc; }
+.modeling-dialog-title { display: flex; align-items: center; gap: 10px; }
+.modeling-dialog-title > .anticon { color: #287f9e; font-size: 22px; }
+.modeling-overlay .metric-drawer-actions { display: flex; width: 100%; justify-content: flex-end; }
+.modeling-overlay .ant-drawer-footer .metric-editor-footer { position: static; padding: 0; border: 0; }
+.modeling-overlay .metric-editor-footer { background: #fff; }
+.modeling-overlay .metric-reference-row { padding: 16px 0; }
+.modeling-overlay .metric-version-comparison { align-items: start; }
+.modeling-overlay .metric-version-comparison .business-detail-description-item { overflow-wrap: anywhere; }
+.modeling-overlay .business-detail-section-header { display: flex; align-items: center; gap: 10px; }
+.modeling-overlay .business-detail-section-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; }
+.modeling-overlay .business-detail-section-heading { flex: 1; min-width: 0; }
+.modeling-overlay .business-detail-section-title { font-weight: 600; }
+.modeling-overlay .business-detail-descriptions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.modeling-overlay .business-detail-descriptions-columns-1,
+.modeling-overlay .metric-version-comparison .business-detail-descriptions { grid-template-columns: minmax(0, 1fr); }
+.modeling-overlay .business-detail-description-item { min-width: 0; padding: 10px 8px; border-bottom: 1px solid #edf2f5; overflow-wrap: anywhere; }
+.modeling-overlay :is(.business-detail-description-item-span-2, .business-detail-description-item-span-3, .business-detail-description-item-span-4) { grid-column: 1 / -1; }
+.modeling-overlay .business-detail-description-label,
+.app-content-detail .modeling-workspace .business-detail-description-label { margin: 0 0 6px; color: #5b7180; font-size: 12px; }
+.modeling-overlay .business-detail-description-value,
+.app-content-detail .modeling-workspace .business-detail-description-value { margin: 0; color: #263d4c; font-size: 14px; line-height: 22px; }
+.modeling-overlay .business-detail-description-value code { font-family: inherit; }
+.modeling-overlay .ant-drawer-footer > .ant-space { display: flex; justify-content: flex-end; }
+.modeling-overlay .metric-import-upload { align-items: flex-start; gap: 10px; }
+.modeling-overlay .metric-import-upload > .context-help-trigger { margin-top: 6px; }
+.modeling-overlay .detail-table-result-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; min-height: 48px; padding: 8px 0; }
+.modeling-overlay :is(.detail-table-result-title, .detail-table-result-actions) { display: flex; align-items: center; gap: 10px; }
+.modeling-overlay .detail-table-result-title { color: #263d4c; font-size: 14px; font-weight: 600; }
+.modeling-overlay .detail-table-result-count { color: #5b7180; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.modeling-overlay .detail-table-result-actions { margin-inline-start: auto; flex-wrap: wrap; }
+.modeling-overlay .detail-table-result-actions .ant-btn { height: 32px; min-height: 32px; }
+.modeling-overlay .detail-table-page-size { width: 104px; }
+.modeling-overlay .detail-table-pagination { margin: 0; }
+.modeling-overlay .detail-table-refresh-divider { width: 1px; height: 20px; background: #d5e4eb; }
+.modeling-overlay .metric-import-upload .ant-btn:not(.context-help-trigger),
+.app-content-detail .modeling-workspace .business-detail-section-header .ant-btn:not(.context-help-trigger) { height: 32px; min-height: 32px; padding-inline: 12px; border-radius: var(--ds-radius-control); }
+.app-content-detail .modeling-workspace .business-detail-tabs:not(.task-detail-tabs-definition) .ontology-editor-collapse > .ant-collapse-item > .ant-collapse-header { background: #f3f7f9; }
+
+/* Existing multi-section editors keep every field and conditional branch. */
+.modeling-overlay :is(.data-model-drawer-title-icon, .standard-dictionary-drawer-title-icon, .standard-dictionary-import-title-icon, .standard-dictionary-move-title-icon) { width: 40px; height: 40px; color: #287f9e; background: #edf5f8; border: 0; border-radius: var(--ds-radius-control); box-shadow: none; }
+.modeling-overlay :is(.data-model-drawer-title-copy, .standard-dictionary-drawer-title-copy, .standard-dictionary-import-title-copy, .standard-dictionary-move-title-copy) > span { color: #263d4c; font-size: 17px; font-weight: 600; }
+.modeling-overlay :is(.data-model-drawer-title-copy, .standard-dictionary-drawer-title-copy, .standard-dictionary-import-title-copy, .standard-dictionary-move-title-copy) .ant-typography { color: #5b7180; font-size: 12px; font-weight: 400; }
+.modeling-overlay :is(.data-model-form-section, .standard-dictionary-form-section, .standard-dictionary-import-section) { background: #fff; border: 0; border-bottom: 1px solid var(--modeling-border); border-radius: 0; box-shadow: none; }
+.modeling-overlay :is(.data-model-form-section-header, .standard-dictionary-form-section-header, .standard-dictionary-import-section-header) { padding: 12px 0; background: #fff; border-bottom: 1px solid #edf2f5; }
+.modeling-overlay :is(.data-model-form-section-icon, .standard-dictionary-form-section-icon, .standard-dictionary-import-section-icon) { width: 28px; height: 28px; color: #287f9e; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.modeling-overlay :is(.data-model-form-section-title, .standard-dictionary-form-section-copy > span, .standard-dictionary-import-section-copy > strong, .standard-dictionary-import-section-title-row > strong) { color: #263d4c; font-size: 15px; }
+.modeling-overlay :is(.data-model-form-section-copy, .standard-dictionary-form-section-copy, .standard-dictionary-import-section-copy) > .ant-typography { color: #5b7180; font-size: 12px; }
+.modeling-overlay :is(.data-model-form-section-body, .standard-dictionary-form-section-body, .standard-dictionary-import-section-body) { padding: 16px 0 4px; }
+.modeling-overlay :is(.data-model-drawer-header-tag, .standard-dictionary-drawer-header-tag, .standard-dictionary-import-header-tag) { color: #466071; background: #f3f7f9; border: 0; border-radius: var(--ds-radius-tag); }
+.modeling-overlay .field-template-field-card.ant-card { background: #fff; border: 1px solid var(--modeling-border); border-radius: var(--ds-radius-control); box-shadow: none; }
+.modeling-overlay .field-template-field-card.ant-card > .ant-card-head { min-height: 40px; background: #f3f7f9; border-bottom-color: var(--modeling-border); }
+.modeling-overlay :is(.field-template-field-card-title, .field-template-field-index) { color: #466071; background: transparent; border: 0; box-shadow: none; }
+.modeling-overlay .standard-dictionary-import-progress { background: #f7fafc; border-color: var(--modeling-border); box-shadow: none; }
+.modeling-overlay .standard-dictionary-import-uploader.ant-upload-wrapper .ant-upload-drag { background: #f7fbfd; border-color: #b6cdd8; box-shadow: none; }
+.modeling-overlay .standard-dictionary-import-uploader .ant-upload-drag-icon .anticon { color: #287f9e; }
+.modeling-overlay .standard-dictionary-move-context { background: #f3f7f9; border-color: var(--modeling-border); box-shadow: none; }
+.modeling-overlay .standard-dictionary-move-context-icon { color: #287f9e; background: transparent; box-shadow: none; }
+.modeling-overlay .standard-dictionary-move-form { grid-template-columns: minmax(0, 1fr) 170px; background: #fff; border: 0; padding: 16px 0 0; box-shadow: none; }
+
+/* Business modeling editors and graph chrome, not X6 nodes or layout. */
+.modeling-workspace :is(.ontology-filter-surface, .ontology-supplement-editor, .ontology-capability-editor, .ontology-relation-editor, .ontology-group-card) { background: #f7fafc; border-color: var(--modeling-border); box-shadow: none; }
+.modeling-workspace .ontology-editor-collapse { border-color: var(--modeling-border); }
+.modeling-workspace .ontology-editor-collapse > .ant-collapse-item > .ant-collapse-header,
+.modeling-workspace .ontology-preview-group > .ontology-subsection-title { background: #f3f7f9; }
+.modeling-workspace :is(.ontology-subsection-title, .ontology-collapse-summary > strong, .ontology-group-card strong) { color: #263d4c; }
+.modeling-workspace .ontology-object-navigation-list > button:is(:hover, :focus-visible, .is-active) { background: #e8f3f8; border-color: #bdd6e1; box-shadow: none; }
+.modeling-workspace .ontology-object-navigation-list > button strong { color: #263d4c; }
+.modeling-workspace .ontology-result-heading { flex-wrap: wrap; }
+.modeling-workspace .ontology-graph-toolbar { background: #f7fafc; border-bottom-color: var(--modeling-border); }
+.modeling-workspace .ontology-graph-stage { background: #f7fafc; }
+.modeling-workspace .ontology-graph-counts > span { color: #466071; background: #eaf2f6; border-radius: var(--ds-radius-control); }
+:is(.modeling-workspace, .modeling-overlay) .ontology-graph-inspector-icon { color: #287f9e; background: #edf5f8; }
+:is(.modeling-workspace, .modeling-overlay) :is(.ontology-graph-direction-card, .ontology-graph-property-groups > div, .ontology-graph-capabilities > div, .ontology-graph-mapping-code) { background: #f7fafc; border-color: #e1ebf0; }
+:is(.modeling-workspace, .modeling-overlay) .ontology-graph-direction-card :is(strong, .anticon) { color: #466071; }
+.modeling-overlay.ontology-graph-inspector-drawer .ant-drawer-body { padding: 0; }
+:is(.modeling-workspace, .modeling-overlay) .ontology-graph-inspector-footer { bottom: 0; margin-bottom: 0; background: #fff; border-top-color: #e1ebf0; }
+:is(.modeling-workspace, .modeling-overlay) .ontology-graph-inspector-footer .ant-btn { height: 32px; min-height: 32px; border-radius: var(--ds-radius-control); }
+:is(.modeling-workspace, .modeling-overlay) :is(button, a, [role='tab']):focus-visible { outline: 2px solid #287f9e; outline-offset: 2px; }
+:is(.modeling-workspace, .modeling-overlay) ::selection { color: #174e65; background: #cde5f0; }
+:is(.modeling-workspace, .modeling-overlay) :is(input, textarea) { caret-color: #287f9e; }
+:is(.modeling-workspace, .modeling-overlay) :is(.ant-table-body, .ant-drawer-body, .ant-modal-body) { scrollbar-width: thin; scrollbar-color: #afc7d3 transparent; }
+@media (max-width: 720px) {
+  .modeling-overlay.business-overlay :is(.ant-drawer-header, .ant-drawer-body, .ant-drawer-footer, .ant-modal-header, .ant-modal-body, .ant-modal-footer) { padding-inline: 16px; }
+  .modeling-overlay :is(.field-template-form, .warehouse-layer-form) .ant-col { flex: 0 0 50%; max-width: 50%; }
+  .modeling-overlay :is(.field-template-form, .warehouse-layer-form) .ant-col-24 { flex-basis: 100%; max-width: 100%; }
+  .modeling-workspace .management-result-toolbar { align-items: flex-start; }
+}
+@media (max-width: 480px) {
+  .modeling-overlay :is(.field-template-form, .warehouse-layer-form) .ant-col { flex-basis: 100%; max-width: 100%; }
+  .modeling-overlay .business-detail-descriptions { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Advanced conditions stay a compact, opaque resource panel. */
+.management-more-filter-overlay:has(.modeling-advanced-filters) :is(.ant-popover-container, .ant-popover-inner) {
+  background: #fff;
+  border: 0;
+  border-radius: var(--ds-radius-panel);
+  box-shadow: 0 8px 24px rgb(31 62 78 / 16%);
+  backdrop-filter: none;
+}
+.management-more-filter-overlay:has(.modeling-advanced-filters) .management-more-filter-popover { width: min(320px, calc(100vw - 48px)); }
+.management-more-filter-overlay:has(.modeling-advanced-filters) .ant-form-item { margin-bottom: 16px; }
+
+/* Sticky actions must mask the scrolling text beneath them. */
+.modeling-workspace .management-table .ant-table-tbody > tr > td.ant-table-cell-fix { background: #fff; }
+.modeling-workspace .management-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix { background: #f1f7fa; }
+.modeling-workspace .management-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix { background: #e9f4f8; }
+.modeling-workspace .management-table .ant-table-cell-fix-end-shadow { border-inline-start: 1px solid #e1ebf0; }
+
+/* Small action sets stay explicit, including on touch screens. */
+.modeling-workspace .modeling-row-actions { display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.modeling-workspace .modeling-row-actions .ant-btn { display: inline-flex; align-items: center; gap: 5px; width: 28px; min-width: 28px; height: 32px; min-height: 32px; padding: 0; font-size: 14px; color: #287f9e; border-radius: var(--ds-radius-control); }
+.modeling-workspace .modeling-row-actions .ant-btn-dangerous:not(:disabled) { color: #b54747; }
+.modeling-workspace .modeling-row-actions .ant-btn:disabled { color: #a8b2b8; }
+.modeling-workspace .modeling-row-actions .ant-btn:not(:disabled):hover { background: #edf5f8; }
+.modeling-workspace .modeling-row-actions .ant-btn-dangerous:not(:disabled):hover { background: #fdf0f0; }
+.modeling-workspace .modeling-disabled-action { display: inline-flex; }

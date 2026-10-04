@@ -3,13 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   use: {
-    baseURL: 'http://127.0.0.1:8887',
+    baseURL: process.env.DATASCALPEL_TEST_BASE_URL ?? 'http://localhost:8887',
     trace: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'pnpm dev --host 127.0.0.1',
-    url: 'http://127.0.0.1:8887',
-    reuseExistingServer: !process.env.CI,
-  },
+  // Reuse the development environment started with the root start-local-dev.sh.
+  // Tests must never silently start a second frontend or backend.
 });

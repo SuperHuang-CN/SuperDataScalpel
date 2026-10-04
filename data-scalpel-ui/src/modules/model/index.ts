@@ -75,3 +75,10 @@ export type {
   ModelQualityRuleType,
   ViolationMetric,
 } from './model/modelQualityRule';
+export { useModelStatistics } from './hooks/useModelStatistics';
+export type { ModelStatistics } from './model/modelStatistics';
+export { useQualityStatistics, useQualityModels } from './hooks/useQualityStatistics';
+export type { QualityStatistics, QualityStatisticsItem, QualityResultFilter } from './model/qualityStatistics';
+export { ModelQualityStatisticsDrawer } from './components/ModelQualityStatisticsDrawer';
+
+export { SpatialPreviewPanel } from "./components/DataModelSpatialPreviewPanel";

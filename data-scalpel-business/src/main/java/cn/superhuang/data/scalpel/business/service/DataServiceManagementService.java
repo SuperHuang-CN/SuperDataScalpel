@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.service;
 
+import cn.superhuang.data.scalpel.business.service.web.response.DataServiceStatisticsResponse;
+
 import cn.superhuang.data.scalpel.business.cartography.model.SpatialStyleDocument;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
@@ -118,6 +120,29 @@ import java.util.stream.Collectors;
 /** Control-plane CRUD and deployment lifecycle for all data service types. */
 @Service
 public class DataServiceManagementService {
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public DataServiceStatisticsResponse statistics() {
+        var groups = repository.statisticsGroups();
+        var types = new java.util.ArrayList<DataServiceStatisticsResponse.TypeCount>();
+        for (var type : cn.superhuang.data.scalpel.contract.service.DataServiceType.values()) {
+            long enabled = 0, failed = 0, unconfirmed = 0;
+            for (var row : groups) {
+                if (row[0] != type) continue;
+                long count = ((Number) row[2]).longValue();
+                enabled += count;
+                if (row[1] == cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus.FAILED) failed += count;
+                else if (row[1] != cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus.DEPLOYED) unconfirmed += count;
+            }
+            types.add(new DataServiceStatisticsResponse.TypeCount(type, enabled, failed, unconfirmed));
+        }
+        return new DataServiceStatisticsResponse(java.time.Instant.now(),
+            types.stream().mapToLong(DataServiceStatisticsResponse.TypeCount::enabled).sum(),
+            types.stream().mapToLong(DataServiceStatisticsResponse.TypeCount::failed).sum(),
+            types.stream().mapToLong(DataServiceStatisticsResponse.TypeCount::unconfirmed).sum(),
+            gatewayBindingRepository.countPublishedServices(), types);
+    }
+
 
     private final DataServiceRepository repository;
     private final DataServiceDeploymentRepository deploymentRepository;

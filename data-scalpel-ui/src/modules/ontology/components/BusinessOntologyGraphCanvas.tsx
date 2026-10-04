@@ -1,4 +1,5 @@
 import { Graph } from '@antv/x6';
+import { workspaceFontFamily } from '../../../shared/theme/workspaceResourceTheme';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { BusinessObjectTypeGraphNode, BusinessObjectTypeGraphRelation } from '../model/businessObjectType';
 import { relationCardinalityLabels } from '../model/businessObjectType';
@@ -154,7 +155,7 @@ export const BusinessOntologyGraphCanvas = forwardRef<BusinessOntologyGraphCanva
         visible: true,
         type: 'doubleMesh',
         size: 20,
-        args: [{ color: '#e8ebf7', thickness: 1 }, { color: '#f4f5fb', thickness: 1, factor: 5 }],
+        args: [{ color: '#e1ebf0', thickness: 1 }, { color: '#f3f7f9', thickness: 1, factor: 5 }],
       },
       panning: { enabled: true, eventTypes: ['leftMouseDown', 'mouseWheel'] },
       mousewheel: { enabled: true, modifiers: ['ctrl', 'meta'], minScale: 0.42, maxScale: 1.8 },
@@ -186,14 +187,14 @@ export const BusinessOntologyGraphCanvas = forwardRef<BusinessOntologyGraphCanva
           { tagName: 'title', selector: 'tooltip' },
         ],
         attrs: {
-          body: { refWidth: '100%', refHeight: '100%', rx: 12, ry: 12, fill: node.enabled ? '#fff' : '#f6f7fa', stroke: node.enabled ? '#cbd4ee' : '#d5d8e0', strokeWidth: 1.2 },
-          accent: { x: 0, y: 0, width: 4, refHeight: '100%', rx: 2, fill: node.enabled ? '#596fe7' : '#a8afc2' },
-          title: { refX: 16, refY: 23, text: clipped(node.name, 12), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#202b49' : '#626a79', fontSize: 15, fontWeight: 600 },
-          code: { refX: 16, refY: 46, text: clipped(node.code, outOfScope ? 17 : 25), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#73809e' : '#969daa', fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
-          scopeBackground: { x: 158, y: 37, width: 50, height: 18, rx: 9, ry: 9, fill: '#f0edff', stroke: '#d9d2ff', strokeWidth: 0.8, opacity: outOfScope ? 1 : 0 },
-          scope: { refX: 183, refY: 46, text: '范围外', textAnchor: 'middle', textVerticalAnchor: 'middle', fill: '#6b5acb', fontSize: 9, opacity: outOfScope ? 1 : 0 },
-          source: { refX: 16, refY: 73, text: clipped(`主来源：${node.mainSourceModelId ? node.mainSourceModelName ?? '来源信息不可用' : '尚未配置'}`, 23), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#52617f' : '#858c99', fontSize: 12 },
-          counts: { refX: 16, refY: 96, text: `${node.propertyCount} 个属性 · ${node.groupCount} 个组`, textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#7c87a0' : '#a0a5af', fontSize: 11 },
+          body: { refWidth: '100%', refHeight: '100%', rx: 12, ry: 12, fill: node.enabled ? '#fff' : '#f6f7fa', stroke: node.enabled ? '#bfd5df' : '#d5d8e0', strokeWidth: 1.2 },
+          accent: { x: 0, y: 0, width: 4, refHeight: '100%', rx: 2, fill: node.enabled ? '#287f9e' : '#a8afc2' },
+          title: { refX: 16, refY: 23, text: clipped(node.name, 12), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#263d4c' : '#626a79', fontSize: 15, fontWeight: 600 },
+          code: { refX: 16, refY: 46, text: clipped(node.code, outOfScope ? 17 : 25), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#5b7180' : '#969daa', fontSize: 11, fontFamily: workspaceFontFamily },
+          scopeBackground: { x: 158, y: 37, width: 50, height: 18, rx: 9, ry: 9, fill: '#edf4f7', stroke: '#cbdde6', strokeWidth: 0.8, opacity: outOfScope ? 1 : 0 },
+          scope: { refX: 183, refY: 46, text: '范围外', textAnchor: 'middle', textVerticalAnchor: 'middle', fill: '#466071', fontSize: 9, opacity: outOfScope ? 1 : 0 },
+          source: { refX: 16, refY: 73, text: clipped(`主来源：${node.mainSourceModelId ? node.mainSourceModelName ?? '来源信息不可用' : '尚未配置'}`, 23), textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#466071' : '#858c99', fontSize: 12 },
+          counts: { refX: 16, refY: 96, text: `${node.propertyCount} 个属性 · ${node.groupCount} 个组`, textAnchor: 'start', textVerticalAnchor: 'middle', fill: node.enabled ? '#5b7180' : '#a0a5af', fontSize: 11 },
           statusBackground: { x: 169, y: 12, width: 39, height: 20, rx: 10, ry: 10, fill: node.enabled ? '#edf8f2' : '#f1f2f5', stroke: 'none' },
           status: { refX: 188.5, refY: 22, text: node.enabled ? '启用' : '停用', textAnchor: 'middle', textVerticalAnchor: 'middle', fill: node.enabled ? '#2f8a5e' : '#7c8493', fontSize: 10 },
           diagnostic: { refX: 204, refY: 96, text: validation === 'valid' ? '已校验' : validation === 'invalid' ? '有问题' : '未校验', textAnchor: 'end', textVerticalAnchor: 'middle', fill: validation === 'valid' ? '#2f8a5e' : validation === 'invalid' ? '#c47a24' : '#9aa2b3', fontSize: 10 },
@@ -233,13 +234,13 @@ export const BusinessOntologyGraphCanvas = forwardRef<BusinessOntologyGraphCanva
           }],
         } : { connector: { name: 'rounded' } }),
         attrs: {
-          line: { stroke: '#7588ce', strokeWidth: 1.5, targetMarker: { name: 'block', width: 8, height: 7 }, strokeLinejoin: 'round' },
+          line: { stroke: '#7a9aaa', strokeWidth: 1.5, targetMarker: { name: 'block', width: 8, height: 7 }, strokeLinejoin: 'round' },
         },
         labels: [{
           position: selfLoop ? 0.58 : 0.5,
           attrs: {
-            label: { text: defaultLabel, fill: '#52617f', fontSize: 11 },
-            body: { fill: '#f8f9ff', stroke: '#d9def1', strokeWidth: 1, rx: 5, ry: 5, refWidth: '112%', refHeight: '150%', refX: '-6%', refY: '-25%' },
+            label: { text: defaultLabel, fill: '#466071', fontSize: 11 },
+            body: { fill: '#f7fafc', stroke: '#d5e4eb', strokeWidth: 1, rx: 5, ry: 5, refWidth: '112%', refHeight: '150%', refX: '-6%', refY: '-25%' },
           },
         }],
       });
@@ -270,14 +271,14 @@ export const BusinessOntologyGraphCanvas = forwardRef<BusinessOntologyGraphCanva
         const scopeOpacity = outOfScope ? (active ? 1 : 0.34) : 0;
         cell.attr('scopeBackground/opacity', scopeOpacity);
         cell.attr('scope/opacity', scopeOpacity);
-        cell.attr('body/stroke', cell.id === selectedNodeId ? '#5068dc' : node.enabled ? '#cbd4ee' : '#d5d8e0');
+        cell.attr('body/stroke', cell.id === selectedNodeId ? '#287f9e' : node.enabled ? '#bfd5df' : '#d5d8e0');
         cell.attr('body/strokeWidth', cell.id === selectedNodeId ? 2 : 1.2);
       });
       canvas.getEdges().forEach((cell) => {
         const data = cell.getData<{ relation: BusinessObjectTypeGraphRelation; defaultLabel: string }>();
         const active = !selection || data.relation.id === selectedRelationId || connectedRelationIds.has(data.relation.id ?? '');
         cell.attr('line/opacity', active ? 1 : 0.16);
-        cell.attr('line/stroke', data.relation.id === selectedRelationId ? '#5b4ed5' : '#7588ce');
+        cell.attr('line/stroke', data.relation.id === selectedRelationId ? '#216c88' : '#7a9aaa');
         cell.attr('line/strokeWidth', data.relation.id === selectedRelationId ? 2.4 : 1.5);
         cell.setLabels(cell.getLabels().map((label) => ({ ...label, attrs: { ...label.attrs, label: { ...label.attrs?.label, opacity: active ? 1 : 0.22 } } })));
       });
@@ -334,14 +335,14 @@ export const BusinessOntologyGraphCanvas = forwardRef<BusinessOntologyGraphCanva
       const scopeOpacity = outOfScope ? (active ? 1 : 0.34) : 0;
       cell.attr('scopeBackground/opacity', scopeOpacity);
       cell.attr('scope/opacity', scopeOpacity);
-      cell.attr('body/stroke', cell.id === selectedNodeId ? '#5068dc' : node.enabled ? '#cbd4ee' : '#d5d8e0');
+      cell.attr('body/stroke', cell.id === selectedNodeId ? '#287f9e' : node.enabled ? '#bfd5df' : '#d5d8e0');
       cell.attr('body/strokeWidth', cell.id === selectedNodeId ? 2 : 1.2);
     });
     canvas.getEdges().forEach((cell) => {
       const data = cell.getData<{ relation: BusinessObjectTypeGraphRelation; defaultLabel: string }>();
       const active = !selected || data.relation.id === selectedRelationId || connectedRelationIds.has(data.relation.id ?? '');
       cell.attr('line/opacity', active ? 1 : 0.16);
-      cell.attr('line/stroke', data.relation.id === selectedRelationId ? '#5b4ed5' : '#7588ce');
+      cell.attr('line/stroke', data.relation.id === selectedRelationId ? '#216c88' : '#7a9aaa');
       cell.attr('line/strokeWidth', data.relation.id === selectedRelationId ? 2.4 : 1.5);
       cell.setLabelAt(0, { attrs: { label: { text: data.relation.id === selectedRelationId ? `${data.relation.forwardName || '未命名'} / ${data.relation.reverseName || '未命名'}` : data.defaultLabel, opacity: active ? 1 : 0.22 } } });
     });

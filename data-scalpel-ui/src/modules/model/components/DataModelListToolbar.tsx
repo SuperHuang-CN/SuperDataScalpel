@@ -1,11 +1,10 @@
 import {
-  DownOutlined,
   DownloadOutlined,
-  PlusOutlined,
+  TableOutlined,
   ReloadOutlined,
   SendOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Space, Tooltip, type MenuProps } from 'antd';
+import { Button, Space, Tooltip } from 'antd';
 import {
   MAX_BATCH_PUBLISH_COUNT,
   MAX_STATISTICS_REFRESH_COUNT,
@@ -17,32 +16,27 @@ export const DataModelListToolbar = ({
   list,
   actions,
   canPublish,
-  canCreate,
-  createMenuItems,
 }: {
   list: DataModelListState;
   actions: DataModelListActions;
   canPublish: boolean;
-  canCreate: boolean;
-  createMenuItems: MenuProps['items'];
 }) => (
   <div className="management-result-toolbar">
     <div className="management-result-title">
+      <TableOutlined aria-hidden />
       模型列表
       {' '}
       <span className="management-result-count">
         共 {list.modelsQuery.data?.totalElements ?? 0} 项
       </span>
     </div>
-    <Space size={4} className="management-result-actions">
-      <Tooltip title="刷新列表">
-        <Button
-          type="text"
-          icon={<ReloadOutlined />}
-          aria-label="刷新模型列表"
-          onClick={() => void list.modelsQuery.refetch()}
-        />
-      </Tooltip>
+    <Space size={8} wrap className="management-result-actions">
+      {list.selectedModelIds.length > 0 && (
+        <span className="model-list-selection">
+          已选 {list.selectedModelIds.length} 项
+          <Button type="link" onClick={() => list.replaceSelection([])}>取消选择</Button>
+        </span>
+      )}
       {canPublish && (
         <Tooltip title={
           list.selectedModelIds.length === 0
@@ -65,7 +59,7 @@ export const DataModelListToolbar = ({
               }
               onClick={actions.confirmBatchPublish}
             >
-              批量发布{list.selectedModelIds.length ? `（${list.selectedModelIds.length}）` : ''}
+              批量发布
             </Button>
           </span>
         </Tooltip>
@@ -90,7 +84,7 @@ export const DataModelListToolbar = ({
             }
             onClick={() => void actions.refreshSelectedStatistics()}
           >
-            刷新统计{list.selectedModelIds.length ? `（${list.selectedModelIds.length}）` : ''}
+            刷新统计
           </Button>
         </span>
       </Tooltip>
@@ -106,17 +100,10 @@ export const DataModelListToolbar = ({
             disabled={list.selectedModelIds.length === 0 || list.selectedIncludesExternal}
             onClick={() => void actions.exportModels(list.selectedModelIds)}
           >
-            导出结构{list.selectedModelIds.length ? `（${list.selectedModelIds.length}）` : ''}
+            导出结构
           </Button>
         </span>
       </Tooltip>
-      {canCreate && (
-        <Dropdown menu={{ items: createMenuItems }} trigger={['click']} placement="bottomRight">
-          <Button type="primary" icon={<PlusOutlined />}>
-            新建模型 <DownOutlined />
-          </Button>
-        </Dropdown>
-      )}
     </Space>
   </div>
 );

@@ -19,6 +19,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SparkJobTestContextTest {
     @Test
+    void capturesAtomicPolicyAndRejectsEmptyAndOutOfScopeWrites() {
+        StructType schema = new StructType().add("id", DataTypes.IntegerType, true);
+        try (SparkJobTestContext context = SparkJobTestContext.builder()
+                .modelInput("source", schema, List.of(RowFactory.create(1)))
+                .modelOutput("target", TestModelTarget.builder(schema).build()).build()) {
+            var input = context.models().read("source");
+            var condition = cn.superhuang.datascalpel.sdk.WriteCondition.compare("id",
+                    cn.superhuang.datascalpel.sdk.WriteCondition.Operator.EQ, 1);
+            var policy = cn.superhuang.datascalpel.sdk.BatchWriteOptions.overwriteWhere(condition);
+            context.models().write("target", input).mapSameName().mode(ModelWriteMode.OVERWRITE).batchWrite(policy).execute();
+            assertEquals(policy, context.modelWrites("target").getFirst().batchWrite());
+            assertThrows(SparkJobTestException.class, () -> context.models().write("target", input)
+                    .mapSameName().mode(ModelWriteMode.APPEND).batchWrite(policy).execute());
+            assertThrows(SparkJobTestException.class, () -> context.models().write("target", input.limit(0))
+                    .mapSameName().mode(ModelWriteMode.OVERWRITE).batchWrite(policy).execute());
+            var outside = cn.superhuang.datascalpel.sdk.BatchWriteOptions.overwriteWhere(
+                    cn.superhuang.datascalpel.sdk.WriteCondition.compare("id",
+                            cn.superhuang.datascalpel.sdk.WriteCondition.Operator.EQ, 2));
+            assertThrows(SparkJobTestException.class, () -> context.models().write("target", input)
+                    .mapSameName().mode(ModelWriteMode.OVERWRITE).batchWrite(outside).execute());
+            assertEquals(1, context.modelWrites("target").size());
+        }
+    }
+    @Test
     void mapsSameNamedColumnsAndChecksSchemaWithoutRequiringOrderOrNullability() {
         StructType sourceSchema = new StructType()
                 .add("amount", DataTypes.createDecimalType(10, 2), true)

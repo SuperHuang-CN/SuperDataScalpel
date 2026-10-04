@@ -115,6 +115,7 @@ const countConditions = (condition: CanvasFilterCondition): number => (
 );
 
 interface ConditionEditorProps {
+  allowedOperators?: FilterOperator[];
   condition: CanvasFilterCondition;
   columns: CanvasColumnSchema[];
   depth: number;
@@ -124,12 +125,14 @@ interface ConditionEditorProps {
 }
 
 const PredicateEditor = ({
+  allowedOperators,
   predicate,
   columns,
   onChange,
   onRemove,
 }: {
   predicate: CanvasFieldPredicate;
+  allowedOperators?: FilterOperator[];
   columns: CanvasColumnSchema[];
   onChange: (condition: CanvasFilterCondition) => void;
   onRemove?: () => void;
@@ -174,7 +177,7 @@ const PredicateEditor = ({
         />
         <Select
           value={predicate.operator}
-          options={filterOperatorOptions}
+          options={filterOperatorOptions.filter(option => !allowedOperators || allowedOperators.includes(option.value))}
           onChange={(operator) => onChange({
             ...predicate,
             operator,
@@ -235,6 +238,7 @@ const PredicateEditor = ({
 };
 
 const ConditionEditor = ({
+  allowedOperators,
   condition,
   columns,
   depth,
@@ -245,6 +249,7 @@ const ConditionEditor = ({
   if (condition.kind === 'PREDICATE') {
     return (
       <PredicateEditor
+        allowedOperators={allowedOperators}
         predicate={condition}
         columns={columns}
         onChange={onChange}
@@ -302,6 +307,7 @@ const ConditionEditor = ({
         {condition.children.map((child, index) => (
           <div className="canvas-filter-child-row" key={index}>
             <ConditionEditor
+              allowedOperators={allowedOperators}
               condition={child}
               columns={columns}
               depth={depth + 1}
@@ -371,6 +377,7 @@ const ConditionEditor = ({
 };
 
 export const FilterConditionTreeEditor = ({
+  allowedOperators,
   condition,
   columns,
   onChange,
@@ -378,8 +385,10 @@ export const FilterConditionTreeEditor = ({
   condition: CanvasFilterCondition;
   columns: CanvasColumnSchema[];
   onChange: (condition: CanvasFilterCondition) => void;
+  allowedOperators?: FilterOperator[];
 }) => (
   <ConditionEditor
+    allowedOperators={allowedOperators}
     condition={condition}
     columns={columns}
     depth={1}

@@ -15,6 +15,8 @@ const hooks = vi.hoisted(() => ({
   update: vi.fn(),
 }));
 
+vi.mock('../../model', () => ({ SpatialPreviewPanel: () => <div>空间地图预览</div> }));
+
 vi.mock('../hooks/useFileDatasets', () => ({
   useFileDatasetSchema: (...args: unknown[]) => hooks.schema(...args),
   useFileDatasetPreview: (...args: unknown[]) => hooks.preview(...args),
@@ -216,7 +218,8 @@ describe('FileDatasetTableResultPanel', () => {
     />);
 
     expect(await screen.findByText('当前表仅支持 Schema')).toBeInTheDocument();
-    expect(screen.getByText('空间几何超过预览安全上限，仅保留 Schema')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('当前表仅支持 Schema'));
+    expect(await screen.findByText('空间几何超过预览安全上限，仅保留 Schema')).toBeInTheDocument();
     expect(screen.getByText('Schema 2')).toBeInTheDocument();
     expect(screen.queryByText(/数据预览/)).not.toBeInTheDocument();
     expect(hooks.preview).toHaveBeenCalledWith(dataset.id, 'table-1', false);

@@ -132,7 +132,7 @@ export const ComputeEngineDiscoveryDrawer = ({ initialUrl, onClose }: { initialU
   };
 
   return <Drawer open width={1000} onClose={onClose} closable={!busy} maskClosable={!busy} keyboard={!busy}
-    rootClassName="business-overlay business-drawer-overlay"
+    rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
     title={<Space><CloudServerOutlined /><span>连接 Dispatcher<Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>发现执行目标，勾选后逐个注册为计算引擎</Typography.Text></span></Space>}
     footer={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <Typography.Text type="secondary">已选 {selected.length} 个目标 · 成功项保留，失败项可重试</Typography.Text>

@@ -28,6 +28,7 @@ public class EngineSecurityConfiguration {
                         .requestMatchers("/interface-ui/**").permitAll()
                         .requestMatchers("/open-api/v1/**").permitAll()
                         .requestMatchers("/internal/v1/**").hasAuthority("engine.manage")
+                        .requestMatchers("/v3/api-docs", "/v3/api-docs/**").hasAuthority("engine.manage")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->

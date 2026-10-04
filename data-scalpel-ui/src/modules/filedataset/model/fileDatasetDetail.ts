@@ -3,7 +3,7 @@ import type {
   FileDatasetTable,
 } from './fileDataset';
 
-export type FileDatasetDetailTabKey = 'overview' | 'files' | 'tables';
+export type FileDatasetDetailTabKey = 'overview' | 'files' | 'tables' | 'history';
 
 export interface FileDatasetParsingOptionEntry {
   label: string;
@@ -25,7 +25,7 @@ const visibleCharacter = (value: string | undefined): string => {
 };
 
 export const normalizeFileDatasetDetailTab = (value: string | null): FileDatasetDetailTabKey => {
-  if (value === 'files' || value === 'tables') return value;
+  if (value === 'files' || value === 'tables' || value === 'history') return value;
   return 'overview';
 };
 

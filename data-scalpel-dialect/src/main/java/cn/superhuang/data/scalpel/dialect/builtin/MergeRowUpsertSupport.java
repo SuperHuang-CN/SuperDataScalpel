@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Controlled scalar MERGE rendering shared by databases with compatible single-row semantics. */
+/** Controlled MERGE rendering shared by databases with compatible single-row semantics. */
 final class MergeRowUpsertSupport {
 
     private MergeRowUpsertSupport() {
@@ -30,6 +30,17 @@ final class MergeRowUpsertSupport {
                 "(SELECT " + sourceColumns + " FROM DUAL) incoming",
                 false
         );
+    }
+
+    static String renderOpenGauss(AbstractJdbcDialect dialect, TableIdentifier target,
+                                  List<JdbcUpsertColumn> columns, List<String> keyColumns) {
+        validate(columns, keyColumns, "openGauss");
+        String sourceColumns = columns.stream().map(column -> {
+            Integer srid = column.geometrySpatialReferenceId();
+            String value = srid == null ? "?" : "ST_GeomFromWKB(?, " + srid + ")";
+            return value + " AS " + dialect.quoteIdentifier(column.name());
+        }).collect(Collectors.joining(", "));
+        return renderMerge(dialect, target, columns, keyColumns, "(SELECT " + sourceColumns + ") incoming", false);
     }
 
     static String renderSqlServer(

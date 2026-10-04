@@ -14,6 +14,10 @@ import java.util.Optional;
 
 public interface DataModelRepository extends SearchRepository<DataModel, UUID> {
 
+    @Query("select m.status, m.warehouseLayerId, m.physicalTableMode, count(m) from DataModel m group by m.status, m.warehouseLayerId, m.physicalTableMode")
+    List<Object[]> statisticsGroups();
+
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select model from DataModel model where model.id = :id")
     Optional<DataModel> findByIdForUpdate(@Param("id") UUID id);

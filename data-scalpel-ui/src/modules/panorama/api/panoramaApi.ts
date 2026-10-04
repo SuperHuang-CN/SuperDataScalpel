@@ -1,7 +1,7 @@
 import { requestBlob, requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams } from '../../../shared/search';
-import type { MapBounds, Panorama, PanoramaAction, PanoramaMapConfig, PanoramaMapPoints, PanoramaQuery, UpdatePanorama } from '../model/panorama';
+import type { MapBounds, Panorama, PanoramaAction, PanoramaMapPoints, PanoramaQuery, UpdatePanorama } from '../model/panorama';
 const path = '/v1/panoramas';
 const params = (query: PanoramaQuery) => {
   const value = toSearchParams(query);
@@ -19,7 +19,6 @@ export const uploadPanorama = (file: File, clientRequestId: string, directoryId?
   return requestJson<Panorama>(target ? `${path}/${target.id}/actions/replace` : path, { method: 'POST', body, signal }, 600_000);
 };
 export const fetchPanoramaImage = (id: string, version: number, kind: 'thumbnail' | 'preview' | 'content', signal?: AbortSignal) => requestBlob(`${path}/${id}/${kind}?version=${version}`, { signal }, kind === 'content' ? 600_000 : 120_000);
-export const fetchPanoramaMapConfig = (signal?: AbortSignal) => requestJson<PanoramaMapConfig>(`${path}/map-config`, { signal });
 export const fetchPanoramaMapPoints = (query: PanoramaQuery, bounds: MapBounds, signal?: AbortSignal) => {
   const value = params(query); Object.entries(bounds).forEach(([key, number]) => value.set(key, String(number)));
   return requestJson<PanoramaMapPoints>(`${path}/map-points?${value}`, { signal });

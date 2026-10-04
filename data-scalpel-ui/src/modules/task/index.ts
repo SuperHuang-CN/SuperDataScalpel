@@ -35,3 +35,5 @@ export type { CanvasDefinition } from './canvas/canvasTypes';
 
 export { taskViews, getTaskView, resolveTaskView, taskIdFromPath, taskPageHref } from './model/taskViews';
 export type { TaskListView, TaskViewConfiguration } from './model/taskViews';
+export { useTaskStatistics } from './hooks/useTaskStatistics';
+export type { TaskStatistics } from './model/taskStatistics';

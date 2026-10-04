@@ -260,15 +260,17 @@ final class StreamingCanvasTaskExecutor {
         }
     }
 
-    private static void writeJdbcBatch(CanvasPreparedOutput output, Dataset<Row> batch) {
+    private static void writeJdbcBatch(CanvasPreparedOutput output, Dataset<Row> batch) throws Exception {
         if (output.writeMode() != JdbcWriteMode.UPSERT) {
-            CanvasTaskExecutor.write(output.runtimeDataSource(), output.qualifiedTableName(), batch);
+            DirectJdbcWriter.append(output.runtimeDataSource(), output.qualifiedTableName(), batch);
             return;
         }
         Dataset<Row> cached = batch.persist(StorageLevel.MEMORY_AND_DISK());
         try {
             SpatialJdbcRuntimeSupport.validateUpsertKeys(output, cached);
-            SpatialJdbcRuntimeSupport.writeUpsert(output, cached);
+            var srids = SpatialJdbcRuntimeSupport.directWriteSrids(output, cached);
+            DirectJdbcWriter.write(output.runtimeDataSource(), output.targetTable(), output.qualifiedTableName(),
+                    cached, output.writeMode().name(), output.upsertKeyColumns(), srids);
         } finally {
             cached.unpersist();
         }

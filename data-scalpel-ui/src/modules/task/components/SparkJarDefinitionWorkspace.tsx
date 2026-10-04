@@ -170,7 +170,7 @@ export const SparkJarArtifactSummary = ({
       </Space>
 
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         width={680}
         open={detailOpen}
         title="用户作业 JAR 详情"
@@ -267,7 +267,7 @@ export const SparkJarDevelopmentKitPanel = ({
           ) : artifact ? (
             <>
               <Typography.Text>{formatSparkJarBytes(artifact.sizeBytes)}</Typography.Text>
-              <Typography.Text type="secondary">生成于 {new Date(artifact.generatedAt).toLocaleString()}</Typography.Text>
+              <Typography.Text type="secondary">生成于 {formatManagementDateTime(artifact.generatedAt)}</Typography.Text>
               {usesPreviousArtifact && <Typography.Text type="warning">当前为上一次成功生成的开发包</Typography.Text>}
             </>
           ) : (
@@ -424,7 +424,7 @@ export const SparkJarRuntimeConfiguration = ({
       )}
 
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay spark-jar-runtime-drawer"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay spark-jar-runtime-drawer"
         title={<div className="spark-jar-drawer-title"><span className="spark-jar-drawer-icon"><SettingOutlined /></span><div>高级运行配置<small>按需调整 JVM、任务参数与 Spark Conf</small></div></div>}
         width={960}
         open={Boolean(activeAdvanced)}

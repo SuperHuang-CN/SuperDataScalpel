@@ -225,6 +225,47 @@ public class PostgreSqlDialect extends AbstractJdbcDialect implements JdbcIncrem
     }
 
     @Override
+    public void streamSpatialPreview(Connection connection, TableIdentifier table, SpatialPreviewColumn column,
+            int maximumRows, Duration timeout, java.util.function.Consumer<byte[]> consumer) throws SQLException {
+        // Metadata only: even a newly bound model must not probe a table already known to be too large.
+        var statistics=readTablePhysicalStatistics(connection,table,Duration.ofSeconds(5));
+        if(statistics.rowCount()!=null && statistics.rowCount()>maximumRows)
+            throw new IllegalArgumentException("数据库统计记录数超过直接预览上限，请使用已发布的空间服务");
+        String schema=postGisSchema(connection,timeout);
+        if(schema==null) throw new IllegalArgumentException("数据库未启用 PostGIS");
+        resolveSpatialPreviewSrid(connection,schema,column.geometry().crs().code(),timeout);
+        String p=quoteIdentifier(schema)+".";
+        // No clip, simplify, count or viewport query against the source. One bounded read-only cursor.
+        String geom=quoteIdentifier(column.name());
+        String oversized=p+"ST_MemSize("+geom+") > 16777216";
+        String sql="SELECT CASE WHEN "+geom+" IS NULL OR "+oversized+" THEN NULL ELSE "+p+"ST_AsBinary("
+                +p+"ST_Transform("+geom+",3857)) END, "+oversized+" FROM "+qualifiedName(table)+" LIMIT ?";
+        long deadline=System.nanoTime()+timeout.toNanos();
+        try (var setup=connection.createStatement()) {
+            setup.execute("SET LOCAL max_parallel_workers_per_gather = 0");
+            setup.execute("SET LOCAL statement_timeout = '"+Math.max(1,timeout.toMillis())+"ms'");
+        }
+        try(PreparedStatement statement=connection.prepareStatement(sql)) {
+            statement.setFetchSize(256);
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setInt(1,Math.addExact(maximumRows,1));
+            try(ResultSet rows=statement.executeQuery()) {
+                int count=0;
+                while(rows.next()) {
+                    if(Thread.currentThread().isInterrupted() || System.nanoTime()>deadline)
+                        throw new java.sql.SQLTimeoutException("空间预览读取超过时间预算");
+                    if(++count>maximumRows) throw new IllegalArgumentException("记录数超过直接预览上限，请使用已发布的空间服务");
+                    if(rows.getBoolean(2)) throw new IllegalArgumentException("单个几何超过 16 MiB 预览上限");
+                    byte[] wkb=rows.getBytes(1);
+                    if(wkb!=null && wkb.length>16*1024*1024)
+                        throw new IllegalArgumentException("单个几何超过 16 MiB 预览上限");
+                    consumer.accept(wkb);
+                }
+            }
+        }
+    }
+
+    @Override
     public SpatialPreviewData readSpatialPreview(
             Connection connection,
             TableIdentifier table,

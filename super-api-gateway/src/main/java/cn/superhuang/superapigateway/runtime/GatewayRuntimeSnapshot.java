@@ -26,7 +26,7 @@ public final class GatewayRuntimeSnapshot {
     private final long revision;
     private final Map<RouteIndexKey, List<RuntimeRoute>> routeIndex;
     private final Map<String, RuntimeConsumer> apiKeys;
-    private final Set<SubscriptionKey> subscriptions;
+    private final Map<SubscriptionKey, AccessValidity> subscriptions;
 
     public GatewayRuntimeSnapshot(
             long revision,
@@ -34,6 +34,12 @@ public final class GatewayRuntimeSnapshot {
             Map<String, RuntimeConsumer> apiKeys,
             Set<SubscriptionKey> subscriptions
     ) {
+        this(revision, routeIndex, apiKeys, subscriptions.stream().collect(java.util.stream.Collectors.toMap(
+                key -> key, key -> AccessValidity.unlimited())));
+    }
+
+    public GatewayRuntimeSnapshot(long revision, Map<RouteIndexKey, List<RuntimeRoute>> routeIndex,
+                                  Map<String, RuntimeConsumer> apiKeys, Map<SubscriptionKey, AccessValidity> subscriptions) {
         this.revision = revision;
         this.routeIndex = routeIndex.entrySet().stream().collect(
                 java.util.stream.Collectors.toUnmodifiableMap(
@@ -42,7 +48,7 @@ public final class GatewayRuntimeSnapshot {
                 )
         );
         this.apiKeys = Map.copyOf(apiKeys);
-        this.subscriptions = Set.copyOf(subscriptions);
+        this.subscriptions = Map.copyOf(subscriptions);
     }
 
     public static GatewayRuntimeSnapshot empty() {
@@ -60,11 +66,18 @@ public final class GatewayRuntimeSnapshot {
     }
 
     public RuntimeConsumer consumer(String hash) {
-        return hash == null ? null : apiKeys.get(hash);
+        var consumer = hash == null ? null : apiKeys.get(hash);
+        return consumer != null && consumer.validity().validAt(java.time.Instant.now()) ? consumer : null;
     }
 
     public boolean subscribed(UUID consumerId, UUID serviceId) {
-        return subscriptions.contains(new SubscriptionKey(consumerId, serviceId));
+        var validity = subscriptions.get(new SubscriptionKey(consumerId, serviceId));
+        return validity != null && validity.validAt(java.time.Instant.now());
+    }
+
+    public int subscriptionRate(UUID consumerId, UUID serviceId) {
+        var validity = subscriptions.get(new SubscriptionKey(consumerId, serviceId));
+        return validity == null ? 0 : validity.requestsPerSecond();
     }
 
     public long revision() {
@@ -80,7 +93,10 @@ public final class GatewayRuntimeSnapshot {
     public record RouteIndexKey(String method, String firstSegment) {
     }
 
-    public record RuntimeConsumer(UUID id, String code, boolean enabled) {
+    public record RuntimeConsumer(UUID id, String code, boolean enabled, String externalId, AccessValidity validity) {
+        public RuntimeConsumer(UUID id, String code, boolean enabled) {
+            this(id, code, enabled, null, AccessValidity.unlimited());
+        }
     }
 
     public record SubscriptionKey(UUID consumerId, UUID serviceId) {
@@ -97,7 +113,17 @@ public final class GatewayRuntimeSnapshot {
             int order,
             int stripPrefixSegments,
             String upstreamPath,
-            Route gatewayRoute
+            Route gatewayRoute,
+            String serviceExternalId,
+            String routeExternalId,
+            RuntimeTrafficPolicy trafficPolicy
     ) {
+        public RuntimeRoute(UUID routeId, String routeCode, UUID serviceId, String serviceCode,
+                            AccessMode accessMode, String pathTemplate, PathPattern pathPattern,
+                            int order, int stripPrefixSegments, String upstreamPath, Route gatewayRoute) {
+            this(routeId, routeCode, serviceId, serviceCode, accessMode, pathTemplate, pathPattern,
+                    order, stripPrefixSegments, upstreamPath, gatewayRoute, null, null,
+                    RuntimeTrafficPolicy.compile(cn.superhuang.superapigateway.controlplane.web.request.TrafficPolicyRequest.unrestricted()));
+        }
     }
 }

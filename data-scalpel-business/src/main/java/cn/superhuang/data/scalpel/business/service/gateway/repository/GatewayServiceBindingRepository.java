@@ -17,6 +17,10 @@ import java.util.UUID;
 
 public interface GatewayServiceBindingRepository extends JpaRepository<GatewayServiceBinding, UUID> {
 
+    @Query("select count(distinct b.dataServiceId) from GatewayServiceBinding b where b.publicationStatus='PUBLISHED' and exists (select s.id from DataService s where s.id=b.dataServiceId)")
+    long countPublishedServices();
+
+
     List<GatewayServiceBinding> findAllByDataServiceId(UUID dataServiceId);
 
     List<GatewayServiceBinding> findAllByDataServiceIdIn(Collection<UUID> dataServiceIds);

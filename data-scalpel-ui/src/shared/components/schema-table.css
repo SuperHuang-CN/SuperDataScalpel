@@ -1,0 +1,70 @@
+/* Field definitions in model details and JDBC metadata share one reading rhythm. */
+.management-table.schema-definition-table .ant-table-thead > tr > th {
+  height: 40px;
+  color: var(--ds-table-header-color);
+  background: var(--ds-table-header-background);
+  border-bottom-color: #dfe9ee;
+}
+.management-table.schema-definition-table .ant-table-tbody > tr > td {
+  height: 54px;
+  padding: 8px 12px;
+  vertical-align: middle;
+  border-bottom-color: #edf2f5;
+}
+.schema-field-identity, .schema-constraints {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  line-height: 20px;
+}
+.schema-field-identity > .ant-typography { display: block; max-width: 100%; margin: 0; }
+.schema-field-identity .schema-field-code { color: #263d4c; font-weight: 600; }
+.schema-field-identity > .ant-typography-secondary, .schema-muted {
+  color: #607482;
+  font-size: 12px;
+}
+.schema-type-label {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 6px;
+  overflow: hidden;
+  color: #485f6d;
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  background: #f1f4f6;
+  border-radius: var(--ds-radius-control);
+}
+.schema-required { color: #364e5e; font-size: 12px; font-weight: 500; }
+.schema-definition-table .schema-key-tag {
+  margin: 0;
+  color: #536348;
+  background: #f2f6ed;
+  border: 1px solid #dfe7d5;
+  border-radius: var(--ds-radius-control);
+  font-size: 12px;
+  line-height: 19px;
+}
+.schema-definition-table .metadata-feature-tags { gap: 4px !important; }
+.schema-definition-table .metadata-field-name code { font-family: inherit; font-weight: 600; }
+.management-table.schema-data-table .ant-table-thead > tr > th {
+  padding: 10px 12px;
+  background: var(--ds-table-header-background);
+  color: var(--ds-table-header-color);
+  border-bottom-color: #dfe9ee;
+}
+.management-table.schema-data-table .ant-table-tbody > tr > td {
+  height: 40px;
+  padding: 7px 12px;
+  border-bottom-color: #edf2f5;
+  font-variant-numeric: tabular-nums;
+}
+.schema-data-table.model-preview-resizable-table .ant-table-container table { min-width: 100% !important; }
+.schema-data-table .model-preview-column-type { color: #607482; font-size: 12px; font-weight: 400; }
+.schema-data-table .model-preview-column-name { color: #344f60; font-weight: 600; }
+.schema-null-value { color: #687b86; font-size: 11px; letter-spacing: .03em; }
+.schema-data-table .ant-table-container { border: 1px solid #e1ebf0; border-radius: var(--ds-radius-control); }

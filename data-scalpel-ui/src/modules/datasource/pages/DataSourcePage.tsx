@@ -1,27 +1,27 @@
 import {
   ApiOutlined,
-  DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
-  ImportOutlined,
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
-  ShareAltOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Button, ConfigProvider, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { ConnectionTestResultModal } from '../components/ConnectionTestResultModal';
+import { dataSourceDeleteConfirmation } from '../components/dataSourceDeleteConfirmation';
 import { DataSourceDrawer } from '../components/DataSourceDrawer';
 import { DataSourceTypeIcon } from '../components/DataSourceTypeIcon';
+import { DataSourcePurposeIcon } from '../components/DataSourcePurposeIcon';
 import { useDataSourceTypes, useDataSources, useDeleteDataSource, useTestSavedDataSourceConnection } from '../hooks/useDataSources';
 import {
   dataSourceTypeLabels,
@@ -30,53 +30,44 @@ import {
   type ConnectionTestResult,
   type DataSourceFilters,
   type DataSourcePurpose,
-  type DataSourcePurposeFilter,
   type DataSourceType,
 } from '../model/dataSource';
 import { buildDataSourceSearch } from '../model/dataSourceSearch';
+import './data-source-list.css';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
 
 const DEFAULT_PAGE_SIZE = 20;
 
-const purposeFilterOptions: { value: DataSourcePurposeFilter; label: string }[] = [
+const purposeFilterOptions: { value: DataSourcePurpose; label: string }[] = [
   { value: 'SOURCE', label: '数据源' },
   { value: 'STORAGE', label: '数据存储' },
   { value: 'DISTRIBUTION', label: '数据分发' },
-  { value: 'BOTH', label: '源端 + 存储' },
 ];
 
 const purposeOrder: DataSourcePurpose[] = ['SOURCE', 'STORAGE', 'DISTRIBUTION'];
 
-const purposeIcons = {
-  SOURCE: <ImportOutlined />,
-  STORAGE: <DatabaseOutlined />,
-  DISTRIBUTION: <ShareAltOutlined />,
-} satisfies Record<DataSourcePurpose, ReactNode>;
-
-const dataSourceTypeIconTones = {
-  MYSQL: 'orange',
-  POSTGRESQL: 'blue',
-  HIGHGO: 'violet',
-  ORACLE: 'rose',
-  SQL_SERVER: 'rose',
-  CLICKHOUSE: 'slate',
-  DAMENG: 'blue',
-  KINGBASE: 'rose',
-  OPENGAUSS: 'orange',
-  TDENGINE_WEBSOCKET: 'cyan',
-  TDENGINE_RESTFUL: 'slate',
-  KAFKA: 'slate',
-  S3: 'rose',
-  HTTP_API: 'blue',
-  ARCGIS_REST: 'green',
-  WFS: 'cyan',
-} satisfies Record<DataSourceType, 'blue' | 'violet' | 'cyan' | 'green' | 'orange' | 'rose' | 'slate'>;
+const filterPopupProps = {
+  popupMatchSelectWidth: 300,
+  classNames: { popup: { root: 'data-source-filter-popup' } },
+  virtual: false,
+};
 
 export const DataSourcePage = () => {
   const navigate = useNavigate();
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [resultsWidth, setResultsWidth] = useState(960);
+  useEffect(() => {
+    const results = resultsRef.current;
+    if (!results) return;
+    const observer = new ResizeObserver(([entry]) => setResultsWidth(Math.floor(entry.contentRect.width)));
+    observer.observe(results);
+    return () => observer.disconnect();
+  }, []);
   const [filterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
   const [advancedFilters, setAdvancedFilters] = useState<DataSourceFilters>({});
+  const advancedDraft = Form.useWatch((values: DataSourceFilters) => values, { form: advancedFilterForm, preserve: true });
   const [filters, setFilters] = useState<DataSourceFilters>({});
   const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(undefined);
   const [page, setPage] = useState(0);
@@ -88,6 +79,7 @@ export const DataSourcePage = () => {
   } | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
+  const [modal, modalContext] = Modal.useModal();
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
   const canViewDirectories = permissions.has('directory.view');
@@ -112,9 +104,9 @@ export const DataSourcePage = () => {
   const dataSourceTypeOptions = dataSourceTypesQuery.data?.map((definition) => ({
     value: definition.id,
     label: definition.displayName,
-  })) ?? Object.entries(dataSourceTypeLabels).map(([value, label]) => ({ value, label }));
+  })) ?? (Object.keys(dataSourceTypeLabels) as DataSourceType[]).map((value) => ({ value, label: dataSourceTypeLabels[value] }));
   const dataSourceTypeDefinition = new Map(dataSourceTypesQuery.data?.map((definition) => [definition.id, definition]) ?? []);
-  const advancedFilterCount = Number(Boolean(advancedFilters.type)) + Number(typeof advancedFilters.enabled === 'boolean');
+  const advancedFilterCount = Number(Boolean(advancedDraft?.type)) + Number(typeof advancedDraft?.enabled === 'boolean');
   const search = (nextFilters: DataSourceFilters) => {
     setFilters(nextFilters);
     setPage(0);
@@ -135,19 +127,19 @@ export const DataSourcePage = () => {
   };
 
   const applyDirectFilters = (values: DataSourceFilters) => {
-    const advancedValues = advancedFilterForm.getFieldsValue();
+    const advancedValues = advancedFilterForm.getFieldsValue(true);
     const nextAdvancedFilters = { type: advancedValues.type, enabled: advancedValues.enabled };
     setAdvancedFilters(nextAdvancedFilters);
     search({
       ...filters,
       keyword: values.keyword,
-      purpose: values.purpose,
+      purposesAny: values.purposesAny,
       ...nextAdvancedFilters,
     });
   };
 
   const confirmAdvancedFilters = () => {
-    const values = advancedFilterForm.getFieldsValue();
+    const values = advancedFilterForm.getFieldsValue(true);
     setAdvancedFilters({ type: values.type, enabled: values.enabled });
     setAdvancedFilterOpen(false);
   };
@@ -172,7 +164,7 @@ export const DataSourcePage = () => {
   const closeDrawer = () => {
     setEditingDataSource(null);
     setCreateDrawerOpen(false);
-    };
+  };
 
   const testConnection = async (dataSource: DataSource) => {
     try {
@@ -201,56 +193,64 @@ export const DataSourcePage = () => {
       messageApi.success('数据源已删除');
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '删除数据源失败');
+      throw error;
     }
   };
-  const confirmRemove = (dataSource: DataSource) => Modal.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除数据源', content: `确认删除“${dataSource.name}”吗？`, okText: '删除', cancelText: '取消',
-    okButtonProps: { danger: true }, onOk: () => remove(dataSource),
-  });
+  const confirmRemove = (dataSource: DataSource) => modal.confirm(dataSourceDeleteConfirmation(dataSource, () => remove(dataSource)));
 
+  // Numeric widths also work in Firefox colgroups. Leave room for the body's scrollbar.
+  const informationWidth = Math.max(960, resultsWidth - 16) - 112;
   const columns: TableProps<DataSource>['columns'] = [
     {
-      title: '数据源', dataIndex: 'name', width: 260,
+      title: '数据源 / 编码', dataIndex: 'name', width: informationWidth * 0.25,
       render: (value: string, dataSource) => (
         <ManagementListCell
           icon={<DataSourceTypeIcon type={dataSource.type} />}
           iconLabel={`数据源类型：${dataSourceTypeLabels[dataSource.type]}`}
-          iconTone={dataSourceTypeIconTones[dataSource.type]}
           primary={(
-            <Button
+            <div className="data-source-name-row">
+            <Tooltip title={value} trigger={['hover', 'focus']}><Button
               type="link"
               size="small"
               className="data-source-name-button"
               onClick={() => navigate(`/datasource/${dataSource.id}`, { state: { fromDataSourceList: true } })}
             >
               {value}
-            </Button>
+            </Button></Tooltip>
+            <ContextHelp
+              ariaLabel={`${dataSource.name}的编码与说明`}
+              presentation="popover"
+              placement="right"
+              content={(
+                <div className="data-source-identity-detail">
+                  <div><span>编码</span><strong>{dataSource.code}</strong></div>
+                  <div><span>说明</span><p>{dataSource.description || '暂无说明'}</p></div>
+                </div>
+              )}
+            />
+            </div>
           )}
           secondary={<ManagementCode value={dataSource.code} />}
         />
       ),
     },
     {
-      title: '说明', dataIndex: 'description', width: 240,
-      render: (value: string | null) => value ? (
-        <Tooltip title={value}>
-          <div className="data-source-description">{value}</div>
-        </Tooltip>
-      ) : <span className="data-source-description-empty">—</span>,
+      title: '连接类型 / 用途', width: informationWidth * 0.17,
+      render: (_value: unknown, dataSource) => (
+        <div className="data-source-connection-kind">
+          <span>{dataSourceTypeDefinition.get(dataSource.type)?.displayName ?? dataSourceTypeLabels[dataSource.type]}</span>
+          <div className="data-source-purpose-badges">
+            {purposeOrder.filter((purpose) => dataSource.purposes.includes(purpose)).map((purpose) => (
+              <span key={purpose} className={`data-source-purpose-badge purpose-${purpose.toLowerCase()}`}>
+                <DataSourcePurposeIcon purpose={purpose} />{dataSourcePurposeLabels[purpose]}
+              </span>
+            ))}
+          </div>
+        </div>
+      ),
     },
     {
-      title: '用途', width: 110,
-      render: (_value: unknown, dataSource) => <Space size={4}>
-        {purposeOrder.filter((purpose) => dataSource.purposes.includes(purpose)).map((purpose) => (
-          <Tooltip key={purpose} title={dataSourcePurposeLabels[purpose]}>
-            <span className="management-enum-icon" aria-label={dataSourcePurposeLabels[purpose]}>{purposeIcons[purpose]}</span>
-          </Tooltip>
-        ))}
-      </Space>,
-    },
-    {
-      title: '连接目标', width: 300,
+      title: '连接目标 / 地址', width: informationWidth * 0.25,
       render: (_: unknown, dataSource: DataSource) => {
         let endpoint = '';
         let target = '';
@@ -260,17 +260,28 @@ export const DataSourcePage = () => {
           case 'S3': endpoint = dataSource.connection.endpoint; target = dataSource.connection.rootPrefix ? `${dataSource.connection.bucket}/${dataSource.connection.rootPrefix}` : dataSource.connection.bucket; break;
           case 'HTTP_API': endpoint = dataSource.connection.configuration.baseUrl; target = 'API 资源中配置路径'; break;
         }
-        return <ManagementListCell primary={<ManagementCode value={endpoint} />} secondary={target} />;
+        return <ManagementListCell primary={target} secondary={<ManagementCode value={endpoint} />} />;
       },
     },
     {
-      title: '状态 / 更新时间', width: 160,
-      render: (_value: unknown, dataSource) => <ManagementListCell primary={<ManagementStatusIndicator label={dataSource.enabled ? '启用' : '停用'} tone={dataSource.enabled ? 'success' : 'default'} />} secondary={formatManagementDateTime(dataSource.updatedAt)} />,
+      title: '启用状态 / 更新时间', width: informationWidth * 0.19,
+      render: (_value: unknown, dataSource) => <ManagementListCell primary={<ManagementStatusIndicator label={dataSource.enabled ? '启用' : '停用'} tone={dataSource.enabled ? 'success' : 'default'} />} secondary={<Tooltip title={formatManagementDateTime(dataSource.updatedAt)}><span>{formatManagementDateTime(dataSource.updatedAt)}</span></Tooltip>} />,
+    },
+    {
+      title: '说明', dataIndex: 'description', width: informationWidth * 0.14,
+      render: (value: string | null) => value ? (
+        <Tooltip title={value}>
+          <div className="data-source-description">{value}</div>
+        </Tooltip>
+      ) : <span className="data-source-description-empty">—</span>,
     },
     {
       title: '操作',
       key: 'action',
       width: 112,
+      fixed: 'right',
+      align: 'center',
+      className: 'data-source-actions-column',
       render: (_: unknown, dataSource: DataSource) => {
         const definition = dataSourceTypeDefinition.get(dataSource.type);
         const canTestConnection = canTest && Boolean(definition?.connectionTestAvailable);
@@ -286,14 +297,12 @@ export const DataSourcePage = () => {
                 : definition?.resourceBrowserKind === 'KAFKA_TOPICS'
                   ? 'Topic'
                   : definition?.resourceBrowserKind === 'TDENGINE_SUPERTABLES' ? '超级表' : '数据表',
-            icon: definition?.resourceBrowserKind === 'API_RESOURCES' ? <ApiOutlined /> : <DatabaseOutlined />,
+            icon: definition?.resourceBrowserKind === 'API_RESOURCES' ? <ApiOutlined /> : <DataSourcePurposeIcon purpose="STORAGE" />,
           }
           : undefined;
         const moreItems = [
-          ...(resourceItem ? [resourceItem] : []),
-          ...(canUpdate ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
           ...(canTestConnection ? [{ key: 'test', label: '测试连接', icon: <ApiOutlined /> }] : []),
-          ...(canDelete ? [{ type: 'divider' as const }] : []),
+          ...(canDelete && canTestConnection ? [{ type: 'divider' as const }] : []),
           ...(canDelete ? [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
         ];
         const openResources = () => navigate(`/datasource/${dataSource.id}?tab=resources`, { state: { fromDataSourceList: true } });
@@ -302,7 +311,7 @@ export const DataSourcePage = () => {
             {resourceItem && <Tooltip title={String(resourceItem.label)}><Button type="text" size="small" aria-label={`${resourceItem.label}${dataSource.name}`} icon={resourceItem.icon} onClick={openResources} /></Tooltip>}
             {canUpdate && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${dataSource.name}`} icon={<EditOutlined />} onClick={() => setEditingDataSource(dataSource)} /></Tooltip>}
           </div>
-          {moreItems.length > 0 && <Dropdown trigger={['click']} menu={{ items: moreItems, onClick: ({ key }) => { if (key === 'resources') openResources(); if (key === 'edit') setEditingDataSource(dataSource); if (key === 'test') void testConnection(dataSource); if (key === 'delete') confirmRemove(dataSource); } }}>
+          {moreItems.length > 0 && <Dropdown classNames={{ root: 'workspace-resource-menu' }} trigger={['click']} menu={{ items: moreItems, onClick: ({ key }) => { if (key === 'test') void testConnection(dataSource); if (key === 'delete') confirmRemove(dataSource); } }}>
             <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" aria-label={`${dataSource.name}的更多操作`} icon={<MoreOutlined />} loading={testMutation.isPending && testMutation.variables === dataSource.id} /></Tooltip>
           </Dropdown>}
         </div>;
@@ -313,9 +322,12 @@ export const DataSourcePage = () => {
   return (
     <>
       {messageContext}
-      <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
+      <ConfigProvider theme={workspaceResourceTheme}>
+      {modalContext}
+      <div className={`data-source-list-page ${canViewDirectories ? 'directory-management-layout' : 'page-stack'}`}>
         {canViewDirectories && <DirectoryTreePanel
           scope="DATA_SOURCE"
+          showFolderIcons
           tree={directoriesQuery.data ?? []}
           loading={directoriesQuery.isFetching}
           selection={directorySelection}
@@ -333,8 +345,19 @@ export const DataSourcePage = () => {
               <Form.Item name="keyword">
                 <ManagementSearchInput allowClear placeholder="搜索数据源名称或编码" className="data-source-keyword-input" />
               </Form.Item>
-              <Form.Item name="purpose">
-                <Select allowClear placeholder="全部用途" options={purposeFilterOptions} className="data-source-filter-select" />
+              <Form.Item name="purposesAny">
+                <Select
+                  {...filterPopupProps}
+                  mode="multiple"
+                  size="middle"
+                  allowClear
+                  showSearch={false}
+                  aria-label="用途，匹配任一已选用途"
+                  placeholder="全部用途"
+                  options={purposeFilterOptions}
+                  optionRender={(option) => <span className="data-source-filter-option"><DataSourcePurposeIcon purpose={option.data.value} />{option.data.label}</span>}
+                  className="data-source-purpose-select"
+                />
               </Form.Item>
             </Form>
               <ManagementAdaptiveMoreFilters
@@ -343,8 +366,8 @@ export const DataSourcePage = () => {
                 onOpenChange={(open) => {
                   setAdvancedFilterOpen(open);
                   if (open) {
-                    advancedFilterForm.resetFields();
-                    advancedFilterForm.setFieldsValue({ type: advancedFilters.type, enabled: advancedFilters.enabled });
+                    const values = advancedFilterForm.getFieldsValue(true);
+                    setAdvancedFilters({ type: values.type, enabled: values.enabled });
                   }
                 }}
                 onClear={clearAdvancedFilters}
@@ -355,25 +378,44 @@ export const DataSourcePage = () => {
                 onConfirm={confirmAdvancedFilters}
               >
                 <Form<DataSourceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
-                  <Form.Item name="type" label="连接类型"><Select allowClear placeholder="全部类型" options={dataSourceTypeOptions} className="advanced-filter-select" /></Form.Item>
-                  <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" className="advanced-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
+                  <Form.Item name="type" label="连接类型" className="data-source-type-filter-item"><Select
+                    {...filterPopupProps}
+                    allowClear
+                    size="middle"
+                    aria-label="连接类型"
+                    placeholder="全部类型"
+                    options={dataSourceTypeOptions}
+                    optionRender={(option) => <span className="data-source-filter-option"><DataSourceTypeIcon type={option.data.value} /><span>{option.data.label}</span></span>}
+                    className="advanced-filter-select data-source-type-select"
+                  /></Form.Item>
+                  <Form.Item name="enabled" label="状态" className="data-source-status-filter-item"><Select {...filterPopupProps} size="middle" aria-label="启用状态" allowClear placeholder="全部状态" className="advanced-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
                 </Form>
               </ManagementAdaptiveMoreFilters>
             <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0 || directorySelection !== undefined} loading={dataSourcesQuery.isFetching} onReset={reset} />
+            <div className="data-source-list-commands">
+              <Tooltip title="刷新列表"><Button size="middle" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>
+              {canCreate && <Button size="middle" type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建数据源</Button>}
+            </div>
           </div>
-          <div className="management-results-surface">
+          <div className="management-results-surface" ref={resultsRef}>
             <div className="management-result-toolbar">
-            <span className="management-result-title">数据源列表 <span className="management-result-count">共 {dataSourcesQuery.data?.totalElements ?? 0} 项</span></span>
-            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setCreateDrawerOpen(true); }}>新建</Button>}</div>
+            <span className="management-result-title"><DataSourcePurposeIcon purpose="STORAGE" size={24} /> 数据源列表 <span className="management-result-count">共 {dataSourcesQuery.data?.totalElements ?? 0} 项</span></span>
+            {dataSourcesQuery.isError && <InlineFeedback
+              tone="error"
+              label="数据源加载失败"
+              detail={dataSourcesQuery.error instanceof ApiError ? dataSourcesQuery.error.message : '请重试加载数据源列表'}
+              action={<Button type="link" size="small" onClick={() => void dataSourcesQuery.refetch()}>重试</Button>}
+            />}
             </div>
             <Table<DataSource>
             size="small"
-            className="management-table"
+            tableLayout="fixed"
+            className="management-table management-table-comfortable"
             rowKey="id"
             columns={columns}
             dataSource={dataSourcesQuery.data?.content ?? []}
             loading={dataSourcesQuery.isFetching}
-            scroll={{ x: 1_152, y: '100%' }}
+            scroll={{ x: 960, y: '100%' }}
             pagination={{
               current: page + 1,
               pageSize: size,
@@ -408,6 +450,7 @@ export const DataSourcePage = () => {
           onClose={() => setTestFailure(null)}
         />
       )}
+      </ConfigProvider>
     </>
   );
 };

@@ -43,6 +43,11 @@ public class GatewayApiKeyEntity extends BaseEntity {
 
     @Column(name = "rotated_at")
     private Instant rotatedAt;
+    private Instant validFrom;
+    private Instant expiresAt;
+    public Instant getValidFrom() { return validFrom; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public void setValidity(Instant from, Instant to) { validFrom = from; expiresAt = to; }
 
     @Column(nullable = false, length = 64)
     private String source;

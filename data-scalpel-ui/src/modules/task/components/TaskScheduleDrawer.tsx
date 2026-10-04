@@ -72,7 +72,7 @@ export const TaskScheduleDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="data-model-drawer task-schedule-drawer"
       title={(
         <div className="data-model-drawer-title">

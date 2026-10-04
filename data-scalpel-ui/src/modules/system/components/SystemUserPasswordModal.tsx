@@ -47,7 +47,7 @@ export const SystemUserPasswordModal = ({ user, onClose }: SystemUserPasswordMod
     <>
       {messageContext}
       <Modal
-        rootClassName="business-overlay business-modal-overlay system-user-password-modal"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay system-user-password-modal"
         title={(
           <div className="system-user-password-title">
             <span className="system-user-password-title-icon" aria-hidden="true"><KeyOutlined /></span>

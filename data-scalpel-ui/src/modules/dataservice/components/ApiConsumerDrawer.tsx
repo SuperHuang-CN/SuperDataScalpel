@@ -83,7 +83,7 @@ export const ApiConsumerDrawer = ({ open, consumer, onClose }: ApiConsumerDrawer
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer api-consumer-drawer"
         title={(
           <div className="data-model-drawer-title">

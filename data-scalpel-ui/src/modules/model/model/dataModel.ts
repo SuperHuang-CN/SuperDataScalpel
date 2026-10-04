@@ -17,7 +17,7 @@ export interface DataModelReferenceTask {
 export interface DataModelReferenceService {
   id: string;
   name: string;
-  type: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
+  type: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | 'SPATIAL_SERVICE';
   status: 'DRAFT' | 'ENABLED' | 'DISABLED';
   role: 'PRIMARY' | 'REFERENCE';
   ordinal: number | null;
@@ -470,6 +470,8 @@ export interface DataModel {
   schemaName: string | null;
   physicalTableName: string;
   physicalTableMode: PhysicalTableMode;
+  /** Whether the model definition contains a GEOMETRY field; absent on older servers. */
+  spatial?: boolean;
   clickHouseOrderByColumns: string[];
   status: DataModelStatus;
   schemaVersion: number;
@@ -510,7 +512,7 @@ export type LineageCoverage = 'MODEL_ONLY' | 'FIELD_PARTIAL' | 'FIELD_COMPLETE';
 export type LineageGraphNodeKind = 'MODEL' | 'JDBC_TABLE' | 'EXTERNAL_RESOURCE' | 'TASK' | 'FIELD' | 'DATA_SERVICE';
 export type LineageGraphNodeSide = 'UPSTREAM' | 'CURRENT' | 'DOWNSTREAM';
 export type LineageGraphEdgeType = 'READS' | 'WRITES' | 'DERIVES' | 'FIELD_EFFECT' | 'EXPOSES';
-export type LineageWriteMode = 'APPEND' | 'FULL_OVERWRITE' | 'UPSERT' | 'PARTITION_OVERWRITE' | 'SNAPSHOT_SYNC' | 'CREATE_NEW';
+export type LineageWriteMode = 'APPEND' | 'FULL_OVERWRITE' | 'CONDITIONAL_OVERWRITE' | 'UPSERT' | 'PARTITION_OVERWRITE' | 'SNAPSHOT_SYNC' | 'CREATE_NEW';
 export type LineageExternalResourceType =
   | 'KAFKA_TOPIC'
   | 'FILE_DATASET_TABLE'

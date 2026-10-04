@@ -27,9 +27,7 @@ final class FileDatasetCrsResolver {
         if (configuredEpsgCode != null) {
             return CrsReference.epsg(configuredEpsgCode);
         }
-        throw new FileDatasetParsingException(
-                sourceLabel + " 没有可识别的 EPSG 标识，请在文件数据集解析参数中指定 EPSG code"
-        );
+        throw new FileDatasetMissingCrsException(sourceLabel + " 的空间参考需要确认，请填写 EPSG 编码", wkt);
     }
 
     static Optional<CrsReference> detectEpsg(String wkt) {

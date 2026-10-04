@@ -29,6 +29,8 @@ OutputFieldMappingFields,
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import { orderOutputFieldMappings } from '../../components/outputFieldMappings';
 import { jdbcWriteModeUnavailableReason } from '../../jdbcDatabaseCapabilities';
+import { BatchWriteFields } from '../../components/BatchWriteFields';
+import { activeBatchWrite, batchWriteIssue } from '../batchWriteOptions';
 
 interface CanvasNodeInspectorProps {
   node: CanvasNodeDefinition | null;
@@ -91,6 +93,7 @@ const modelUnavailableMessage = (
 
 
 interface ModelOutputFormValues {
+  batchWrite?: import('../../canvasTypes').BatchWriteOptions | null;
   sourceTableName: string;
   targetModelId: string;
   writeMode: ModelOutputConfiguration['writeMode'];
@@ -164,7 +167,7 @@ export const ModelOutputInspector = ({
       ?? (mode === 'UPSERT' && upsertUnavailable ? '目标模型未定义主键' : null);
     const action = mode === 'APPEND'
       ? '追加'
-      : mode === 'OVERWRITE' ? '清空后写入' : '按模型主键插入或更新';
+      : mode === 'OVERWRITE' ? '覆盖' : '按模型主键插入或更新';
     return {
       value: mode,
       label: `${mode} · ${modelReason ?? action}`,
@@ -184,6 +187,7 @@ export const ModelOutputInspector = ({
       })),
     ),
     writes: [{
+      batchWrite: activeBatchWrite(values.batchWrite, values.writeMode),
       writeId: node.configuration.writes?.[0]?.writeId ?? createUuid(),
       sourceTableName: values.sourceTableName ?? '', targetModelId: values.targetModelId ?? '',
       writeMode: values.writeMode ?? null,
@@ -204,7 +208,10 @@ export const ModelOutputInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = form.getFieldsValue(true);
+        const values: ModelOutputFormValues = form.getFieldsValue(true);
+        const batchIssue = batchWriteIssue(values.batchWrite, values.writeMode, targetColumns,
+          (values.columnMappings ?? []).map(m => m.targetColumnName), targetDatabaseType);
+        if (batchIssue) { form.setFields([{ name: 'batchWrite', errors: [batchIssue] }]); return false; }
         void form.validateFields().catch(() => undefined);
         const currentModelMessage = validateExternalState();
         if (currentModelMessage) {
@@ -256,6 +263,7 @@ export const ModelOutputInspector = ({
         layout="vertical"
         className={splitLayout ? 'canvas-output-write-editor-form' : undefined}
         initialValues={{
+          batchWrite: node.configuration.writes?.[0]?.batchWrite ?? null,
           sourceTableName: node.configuration.sourceTableName,
           targetModelId: node.configuration.targetModelId,
           writeMode: node.configuration.writeMode,
@@ -308,6 +316,9 @@ export const ModelOutputInspector = ({
         >
           <Select options={modelWriteModeOptions} />
         </Form.Item>
+        {executionMode === 'BATCH' && <Form.Item name="batchWrite" label="提交保障">
+          <BatchWriteFields mode={writeMode} columns={targetColumns} databaseType={targetDatabaseType} />
+        </Form.Item>}
         {writeMode === 'UPSERT' && (
           <div className="canvas-compact-key-summary">
             <Typography.Text type="secondary">模型主键：</Typography.Text>

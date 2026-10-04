@@ -1,0 +1,6 @@
+Mode: built-in image_gen, transparent-background edit.
+Final asset: data-scalpel-ui/src/shared/assets/login-spatiotemporal-cutout.png
+Reference: login-spatiotemporal-governance.png
+
+Edit this existing illustration into a clean TRANSPARENT-BACKGROUND cutout for a light enterprise login page. Preserve the same complete central river terrain model, the two aligned floating spatial planes, all observation nodes and dotted time trajectory, three incoming data tiles on the left, two outgoing service tiles on the right, and their connectors. Remove the entire blue rectangular background and all blue atmospheric haze OUTSIDE the illustration, replacing it with genuinely transparent alpha. Keep internal translucent map planes and their fine linework readable. Preserve composition and colors, but reduce the heavy ground shadow to a very subtle soft contact shadow with transparent feathered edges. Do not add a checkerboard image, colored backing, border, lettering, icons or any new object. Leave transparent breathing room around every edge; no clipped tiles. Output a real RGBA image with alpha transparency.
+

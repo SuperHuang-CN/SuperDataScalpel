@@ -79,6 +79,14 @@ import java.util.UUID;
 @Tag(name = "任务管理")
 public class DataTaskResource {
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询建设统计", description = "全部生命周期状态的任务定义类型计数，不代表投产数量。无查看权限返回403。")
+    public cn.superhuang.data.scalpel.business.task.web.response.DataTaskStatisticsResponse statistics() {
+        return service.statistics();
+    }
+
+
     private final WorkflowTaskDefinitionService workflowDefinitions;
     private final DataTaskService service;
     private final CanvasTaskDefinitionService canvasDefinitionService;

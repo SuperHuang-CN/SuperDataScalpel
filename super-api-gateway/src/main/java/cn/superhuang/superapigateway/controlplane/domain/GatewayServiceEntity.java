@@ -52,6 +52,13 @@ public class GatewayServiceEntity extends BaseEntity {
     @Column(nullable = false)
     private long revision;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LONG32VARCHAR)
+    @Column(name = "traffic_policy")
+    private String trafficPolicy;
+
+    public String getTrafficPolicy() { return trafficPolicy; }
+    public void setTrafficPolicy(String trafficPolicy) { this.trafficPolicy = trafficPolicy; revision++; }
+
     protected GatewayServiceEntity() {
     }
 

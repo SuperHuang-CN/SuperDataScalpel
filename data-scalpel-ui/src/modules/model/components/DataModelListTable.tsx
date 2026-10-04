@@ -1,4 +1,5 @@
 import {
+  DatabaseOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -9,7 +10,7 @@ import {
   SendOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Table, Tooltip, type TableProps } from 'antd';
+import { Button, Dropdown, Empty, Table, Tooltip, type TableProps } from 'antd';
 import {
   ManagementCode,
   ManagementDateTime,
@@ -17,6 +18,8 @@ import {
   ManagementStatusIndicator,
   type ManagementStatusTone,
 } from '../../../shared/components/ManagementListCells';
+import { ContextHelp } from '../../../shared/components/ContextualFeedback';
+import { DataSourceTypeIcon, type DataSourceType } from '../../datasource';
 import type { DataModelListActions } from '../hooks/useDataModelListActions';
 import {
   DEFAULT_DATA_MODEL_PAGE_SIZE,
@@ -46,6 +49,7 @@ const lifecycleLabel = (status: DataModelStatus) => (
 
 export const DataModelListTable = ({
   list,
+  storageTypes,
   actions,
   canUpdate,
   canDelete,
@@ -54,6 +58,7 @@ export const DataModelListTable = ({
   onEdit,
 }: {
   list: DataModelListState;
+  storageTypes: ReadonlyMap<string, DataSourceType>;
   actions: DataModelListActions;
   canUpdate: boolean;
   canDelete: boolean;
@@ -63,9 +68,9 @@ export const DataModelListTable = ({
 }) => {
   const columns: TableProps<DataModel>['columns'] = [
     {
-      title: '模型',
+      title: '模型 / 分层',
+      width: '36%',
       dataIndex: 'name',
-      width: 245,
       render: (value: string, model: DataModel) => (
         <ManagementListCell
           icon={model.warehouseLayer
@@ -78,62 +83,95 @@ export const DataModelListTable = ({
             ? `${model.name}所属数仓分层：${model.warehouseLayer.code}`
             : `${model.name}尚未设置数仓分层`}
           iconTone="slate"
+          className="model-list-identity"
           primary={(
-            <Button
-              type="link"
-              size="small"
-              className="data-model-name-button"
-              onClick={() => onOpenDetail(model)}
-            >
-              {value}
-            </Button>
+            <div className="model-list-name-row">
+            <Tooltip title={value} trigger={['hover', 'focus']}>
+              <Button
+                type="link"
+                size="small"
+                className="data-model-name-button"
+                onClick={() => onOpenDetail(model)}
+              >
+                {value}
+              </Button>
+            </Tooltip>
+            <ContextHelp ariaLabel={`${model.name}的编码与说明`} presentation="popover" placement="right"
+              content={(
+                <div className="model-list-identity-detail">
+                  <div><span>编码</span><strong>{model.code}</strong></div>
+                  <div><span>数仓分层</span><strong>{model.warehouseLayer ? `${model.warehouseLayer.code} · ${model.warehouseLayer.name}` : '未分层'}</strong></div>
+                  <div><span>说明</span><p>{model.description || '暂无说明'}</p></div>
+                </div>
+              )} />
+            </div>
           )}
-          secondary={<><ManagementCode value={model.code} /> {model.description || ''}</>}
+          secondary={(
+            <div className="model-list-identity-meta">
+              {model.code !== model.name && <ManagementCode value={model.code} />}
+              <span className="model-list-layer-name" title={model.warehouseLayer ? `${model.warehouseLayer.code} · ${model.warehouseLayer.name}` : '未分层'}>
+                {model.warehouseLayer
+                  ? model.code !== model.name ? model.warehouseLayer.code : `${model.warehouseLayer.code} · ${model.warehouseLayer.name}`
+                  : '未分层'}
+              </span>
+              <span className="model-list-version" title={`模型结构版本：Schema v${model.schemaVersion}`}>v{model.schemaVersion}</span>
+            </div>
+          )}
         />
       ),
     },
     {
-      title: '状态',
-      width: 100,
+      title: '状态 / 类型',
+      width: 140,
       render: (_value, model) => (
-        <ManagementStatusIndicator
-          label={dataModelStatusLabels[model.status]}
-          tone={statusColor[model.status]}
-        />
+        <div className="model-list-state-cell">
+          <ManagementStatusIndicator
+            label={dataModelStatusLabels[model.status]}
+            tone={statusColor[model.status]}
+          />
+          <span className="model-list-type-tags" role="group" aria-label={`${model.name}的管理模式与数据类型`}>
+            <Tooltip title={model.physicalTableMode === 'MANAGED' ? '管理模式：平台托管物理表' : '管理模式：逻辑注册已有外部表'}>
+              <span className={`model-list-type-tag is-${model.physicalTableMode === 'MANAGED' ? 'managed' : 'external'}`}>{model.physicalTableMode === 'MANAGED' ? '托管表' : '外部表'}</span>
+            </Tooltip>
+            {typeof model.spatial === 'boolean' && <Tooltip title={model.spatial ? '数据类型：空间表，模型包含空间字段' : '数据类型：属性表，模型不含空间字段'}>
+              <span className={`model-list-type-tag is-${model.spatial ? 'spatial' : 'attribute'}`}>{model.spatial ? '空间表' : '属性表'}</span>
+            </Tooltip>}
+          </span>
+        </div>
       ),
     },
     {
       title: '存储位置',
-      width: 310,
-      render: (_value, model) => (
-        <ManagementListCell
-          primary={model.storageDataSourceName}
-          secondary={<ManagementCode value={model.physicalTableName} />}
-        />
-      ),
-    },
-    {
-      title: '模式 / 版本',
-      width: 120,
-      render: (_value, model) => (
-        <ManagementListCell
-          primary={model.physicalTableMode === 'MANAGED' ? '托管表' : '外部表'}
-          secondary={`Schema v${model.schemaVersion}`}
-        />
-      ),
+      render: (_value, model) => {
+        const sourceType = storageTypes.get(model.storageDataSourceId);
+        return (
+          <ManagementListCell
+            className="model-list-storage-cell"
+            icon={sourceType ? <DataSourceTypeIcon type={sourceType} /> : <DatabaseOutlined />}
+            iconLabel={sourceType ? `数据库类型：${sourceType}` : '数据存储'}
+            primary={<span className="model-list-storage" title={model.storageDataSourceName}>{model.storageDataSourceName}</span>}
+            secondary={(
+              <div className="model-list-physical-table">
+                <TableOutlined aria-hidden />
+                <ManagementCode value={model.physicalTableName} title={[model.catalogName, model.schemaName, model.physicalTableName].filter(Boolean).join(' / ')} />
+              </div>
+            )}
+          />
+        );
+      },
     },
     {
       title: '数据统计',
-      width: 180,
+      width: 112,
       align: 'right',
       render: (_value, model) => (
-        <DataModelPhysicalStatisticsCell statistics={model.physicalStatistics} />
+        <DataModelPhysicalStatisticsCell statistics={model.physicalStatistics} compact />
       ),
     },
     {
       title: '更新时间',
       dataIndex: 'updatedAt',
-      width: 160,
+      width: 140,
       render: (value: string) => <ManagementDateTime value={value} />,
     },
     {
@@ -170,6 +208,7 @@ export const DataModelListTable = ({
           </div>
           <Dropdown
             trigger={['click']}
+            classNames={{ root: 'workspace-directory-menu model-actions-menu' }}
             menu={{
               items: [
                 {
@@ -234,17 +273,21 @@ export const DataModelListTable = ({
   return (
     <Table<DataModel>
       size="small"
+      tableLayout="fixed"
       className="management-table"
       rowKey="id"
       columns={columns}
       dataSource={list.modelsQuery.data?.content ?? []}
+      locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={list.modelsQuery.isError ? '暂时无法显示模型' : '暂无符合条件的模型'} /> }}
       loading={list.modelsQuery.isFetching && actions.refreshingModelIds.size === 0}
       rowSelection={{
         preserveSelectedRowKeys: true,
+        columnWidth: 40,
         selectedRowKeys: list.selectedModelIds,
         onChange: list.updateSelection,
       }}
-      scroll={{ y: '100%' }}
+      scroll={{ x: 1040, y: '100%' }}
       pagination={{
         current: list.page + 1,
         pageSize: list.size,

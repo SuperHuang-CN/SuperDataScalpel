@@ -203,6 +203,8 @@ Dispatcher / Docker 已部署在远端时，使用 `./start-local-dev.sh --remot
 
 ### Admin 独立部署
 
+本地只重启 Admin 和前端、复用已启动的 Service Engine / Task Engine 时，可在根目录使用 `./start-local-dev.sh --admin-only`。该模式仍读取原 `local` 配置，不启动/停止其他引擎或更换数据库，不改写引擎登记；启动前应先检查 8080 / 8887 端口归属。
+
 以下单服务启动命令用于独立部署与运维；当前工作区的功能调试使用上节的统一脚本。
 
 准备 PostgreSQL 数据库 `data_scalpel`，或者通过环境变量覆盖连接信息：

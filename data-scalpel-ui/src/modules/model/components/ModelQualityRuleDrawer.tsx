@@ -410,7 +410,7 @@ export const ModelQualityRuleDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-detail-overlay model-quality-overlay"
       className="data-model-drawer model-quality-rule-drawer"
       title={(
         <div className="data-model-drawer-title">

@@ -102,9 +102,6 @@ import org.apache.spark.storage.StorageLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -117,7 +114,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -355,17 +351,29 @@ final class CanvasTaskExecutor {
                     spark.sparkContext().setJobGroup(
                             jobGroup, "DataScalpel " + node.nodeType() + " " + node.id(), true);
                     Dataset<Row> writeDataset = output.dataset();
-                    if (output.writeMode() == JdbcWriteMode.UPSERT) {
+                    if (output.writeMode() == JdbcWriteMode.UPSERT
+                            && (output.jdbcOutput() == null || output.jdbcOutput().batchWrite() == null)) {
                         cachedUpsert = writeDataset.persist(StorageLevel.MEMORY_AND_DISK());
                         SpatialJdbcRuntimeSupport.validateUpsertKeys(output.jdbcOutput(), cachedUpsert);
                         writeDataset = cachedUpsert;
                     }
-                    observed = metricsCollector.observe(
-                            manifest.execution().executionId(), manifest.execution().attempt(),
-                            node.id() + "." + output.writeId(), writeDataset);
-                    executePreparedOutput(spark, manifest, output, observed.dataset());
-                    SparkOutputMetricsCollector.OutputWriteMetrics metrics =
-                            metricsCollector.completeSuccess(observed);
+                    SparkOutputMetricsCollector.OutputWriteMetrics metrics;
+                    if (output.jdbcOutput() != null && output.jdbcOutput().batchWrite() != null) {
+                        long startedWrite = System.nanoTime();
+                        var jdbc = output.jdbcOutput();
+                        long rows = BatchJdbcWriter.write(jdbc.runtimeDataSource(), jdbc.targetTable(), writeDataset,
+                                jdbc.writeMode().name(), jdbc.upsertKeyColumns(), jdbc.geometryWriteSrids(),
+                                cn.superhuang.datascalpel.taskengine.canvas.BatchWritePolicy.predicate(jdbc.batchWrite().overwriteCondition()),
+                                jdbc.batchWrite().allowEmptyOverwrite());
+                        metrics = new SparkOutputMetricsCollector.OutputWriteMetrics(
+                                rows, (System.nanoTime() - startedWrite) / 1_000_000, true);
+                    } else {
+                        observed = metricsCollector.observe(
+                                manifest.execution().executionId(), manifest.execution().attempt(),
+                                node.id() + "." + output.writeId(), writeDataset);
+                        executePreparedOutput(spark, manifest, output, observed.dataset());
+                        metrics = metricsCollector.completeSuccess(observed);
+                    }
                     Long previousAffectedRows = affectedRows;
                     affectedRows = addAffectedRows(affectedRows, metrics.rowsWritten());
                     nodeAffectedRows = addAffectedRows(nodeAffectedRows, metrics.rowsWritten());
@@ -671,18 +679,10 @@ final class CanvasTaskExecutor {
             writeFile(spark, output.fileOutput(), dataset, manifest.execution().executionId());
             return;
         }
-        if (output.writeMode() == JdbcWriteMode.OVERWRITE) {
-            requireOverwriteSupported(output.runtimeDataSource());
-            truncate(output.runtimeDataSource(), output.qualifiedTableName());
-        }
-        if (output.writeMode() == JdbcWriteMode.UPSERT) {
-            SpatialJdbcRuntimeSupport.writeUpsert(output.jdbcOutput(), dataset);
-        } else if (output.jdbcOutput() != null
-                && SpatialJdbcRuntimeSupport.requiresSpatialWriter(output.jdbcOutput())) {
-            SpatialJdbcRuntimeSupport.writeSpatial(output.jdbcOutput(), dataset);
-        } else {
-            write(output.runtimeDataSource(), output.qualifiedTableName(), dataset);
-        }
+        var jdbc = output.jdbcOutput();
+        Map<String, Integer> srids = SpatialJdbcRuntimeSupport.directWriteSrids(jdbc, dataset);
+        DirectJdbcWriter.write(output.runtimeDataSource(), jdbc.targetTable(), output.qualifiedTableName(),
+                dataset, output.writeMode().name(), jdbc.upsertKeyColumns(), srids);
     }
 
     private static OutputWriteExecutionResult outputWriteResult(
@@ -732,46 +732,6 @@ final class CanvasTaskExecutor {
         return reader;
     }
 
-    static void write(RuntimeDataSource source, String qualifiedTableName, Dataset<Row> dataset) {
-        PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
-        RuntimeJdbcConnection connection = source.connection();
-        DataFrameWriter<Row> writer = dataset.write().format("jdbc")
-                .mode(SaveMode.Append)
-                .option("url", connection.jdbcUrl())
-                .option("dbtable", qualifiedTableName)
-                .option("driver", connection.driverClassName())
-                .option("user", connection.username())
-                .option("password", connection.password());
-        connection.properties().forEach(writer::option);
-        writer.save();
-    }
-
-    static void truncate(RuntimeDataSource source, String qualifiedTableName) throws Exception {
-        PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
-        RuntimeJdbcConnection runtime = source.connection();
-        Class.forName(runtime.driverClassName());
-        Properties properties = new Properties();
-        properties.setProperty("user", runtime.username());
-        if (runtime.password() != null) properties.setProperty("password", runtime.password());
-        runtime.properties().forEach(properties::setProperty);
-        try (Connection connection = DriverManager.getConnection(runtime.jdbcUrl(), properties);
-             Statement statement = connection.createStatement()) {
-            statement.executeUpdate("TRUNCATE TABLE " + qualifiedTableName);
-        }
-    }
-
-    static void requireOverwriteSupported(RuntimeDataSource source) {
-        switch (source.databaseType()) {
-            case TDENGINE_WEBSOCKET, TDENGINE_RESTFUL -> throw new RunnerExecutionException(
-                    "OVERWRITE_DATABASE_NOT_SUPPORTED",
-                    "TDengine 不支持普通 JDBC OVERWRITE 输出",
-                    null
-            );
-            default -> {
-                return;
-            }
-        }
-    }
 
     static String qualifiedTable(RuntimeDataSource source, String tableName) {
         RuntimeJdbcConnection connection = source.connection();

@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ApiOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Form, Select, Table } from 'antd';
@@ -126,7 +127,7 @@ export const ServiceEngineServicesPanel = ({ engineId, geoServerWorkspace }: Ser
       width: 180,
       render: (_: unknown, service) => (
         <ManagementListCell
-          primary={service.deployedAt ? `部署 ${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(service.deployedAt))}` : '尚未部署'}
+          primary={service.deployedAt ? `部署 ${formatManagementDateTime(service.deployedAt).split(' ')[0]}` : '尚未部署'}
           secondary={<ManagementDateTime value={service.updatedAt} />}
         />
       ),

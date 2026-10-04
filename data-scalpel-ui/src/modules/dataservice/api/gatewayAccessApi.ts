@@ -12,6 +12,25 @@ import type {
 const GATEWAY_ACCESS_LOG_PATH = '/v1/gateway-access-logs';
 const GATEWAY_ACCESS_STATISTICS_PATH = '/v1/gateway-access-statistics';
 
+export interface GatewayAccessRecent {
+  ingestionEnabled: boolean;
+  from: string;
+  to: string;
+  requestCount: number;
+  successCount: number;
+  clientErrorCount: number;
+  serverErrorCount: number;
+  rejectedCount: number;
+  averageLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  p99LatencyMs: number | null;
+  lastRequestAt: string | null;
+  lastReceivedAt: string | null;
+}
+
+export const fetchGatewayAccessRecent = (query: { dataServiceId?: string; consumerId?: string }) =>
+  requestJson<GatewayAccessRecent>(queryPath(`${GATEWAY_ACCESS_STATISTICS_PATH}/recent`, query));
+
 export interface GatewayAccessScope {
   from: string;
   to: string;

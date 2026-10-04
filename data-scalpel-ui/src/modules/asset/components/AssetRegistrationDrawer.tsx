@@ -4,6 +4,7 @@ import type { TableProps } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { ManagementListCell, ManagementName, ManagementCode } from '../../../shared/components/ManagementListCells';
 import { useAssetCandidates, useRegisterAssets } from '../hooks/useAssets';
 import { assetTypeLabels, type AssetCandidate, type AssetType } from '../model/asset';
 
@@ -44,13 +45,13 @@ export const AssetRegistrationDrawer = ({ open, onClose }: AssetRegistrationDraw
     {
       title: '来源资源',
       render: (_, row) => (
-        <div className="asset-primary-cell">
-          <Typography.Text strong ellipsis={{ tooltip: row.name }}>{row.name}</Typography.Text>
-          <Typography.Text type="secondary" ellipsis={{ tooltip: row.code ?? '无编码' }}>{row.code ?? '无编码'}</Typography.Text>
-        </div>
+        <ManagementListCell
+          primary={<ManagementName name={row.name} code={row.code ?? undefined}><Typography.Text ellipsis={{ tooltip: row.name }}>{row.name}</Typography.Text></ManagementName>}
+          secondary={<ManagementCode value={row.code ?? '无编码'} />}
+        />
       ),
     },
-    { title: '来源状态', dataIndex: 'sourceStatus', width: 130, render: (value: string) => <Tag>{value}</Tag> },
+    { title: '来源状态', dataIndex: 'sourceStatus', width: 130, render: (value: string) => <Tag color={value === 'PUBLISHED' || value === 'ENABLED' ? 'success' : 'default'}>{value}</Tag> },
     {
       title: '登记条件',
       width: 220,
@@ -75,7 +76,7 @@ export const AssetRegistrationDrawer = ({ open, onClose }: AssetRegistrationDraw
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer asset-registration-drawer"
         title={(
           <div className="data-model-drawer-title">
@@ -137,7 +138,9 @@ export const AssetRegistrationDrawer = ({ open, onClose }: AssetRegistrationDraw
               </div>
               {candidatesQuery.isError && <InlineFeedback tone="error" label="候选资源加载失败" detail={candidatesQuery.error instanceof Error ? candidatesQuery.error.message : undefined} />}
               <Table<AssetCandidate>
+                className="management-table"
                 size="small"
+                scroll={{ x: 720, y: '100%' }}
                 rowKey="resourceId"
                 columns={columns}
                 dataSource={currentRows}

@@ -36,7 +36,7 @@ export const PublishDataServiceModal = ({
 
   return (
     <Modal
-      rootClassName="business-overlay business-modal-overlay publish-data-service-modal"
+      rootClassName="business-overlay business-modal-overlay resource-workspace-overlay publish-data-service-modal"
       title={(
         <div className="publish-data-service-title">
           <span className="publish-data-service-title-icon" aria-hidden="true"><CloudUploadOutlined /></span>

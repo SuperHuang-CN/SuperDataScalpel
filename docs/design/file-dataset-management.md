@@ -142,6 +142,10 @@ Excel/GDB/GPKG 整文件替换采用破坏性语义：新文件提交后立即�
 
 ## 5. 预览和 Canvas
 
+空间地图已接入“数据表 → 选择逻辑表 → 空间预览”，模型和文件共用[统一预览流程](model-management.md#spatial-preview-design)。地图独立读取完整几何准备副本，属性样本接口和 Canvas Manifest 不变。产品实测见[实施验收](../verification/spatial-preview-implementation-20261003.md)。
+
+初始 GDB/SHP 缺失可识别 EPSG 时是一般失败清理规则的例外：逻辑表进入 `WAITING_CRS`，保存待确认的文件 UUID、图层键及原 WKT，保留安全物化后的文件；原解析任务记录失败原因，不创建生效来源。确认 CRS 后重新提交初始校验任务，沿用原文件，成功才进入 READY。期间不能用于 Canvas 运行；删除文件/数据集仍会清理待确认表。启动时同步旧 PostgreSQL 状态检查约束，不要求重建数据集。
+
 预览按 `source_order` 读取当前来源，累计到请求 limit 后停止。任一来源不能安全预览时整表返回
 `409`，不得返回部分结果。GDB、SHP、GeoJSON、GEOJSONL、GeoParquet 和 GPKG 的管理端预览只返回属性字段，不返回 Geometry 字段及其
 坐标值；权威 Schema、Canvas 元数据和任务运行仍保留完整 Geometry 定义和值读取能力。
@@ -167,13 +171,14 @@ APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删�
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/replace` | 替换来源 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/files/{fileId}/actions/delete` | 删除物理文件及其贡献的来源，按剩余来源决定是否删除逻辑表 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/delete` | 删除来源 |
-| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/update-spatial-reference` | 确认 SHP/GDB 表的 EPSG 并重新解析 Schema |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/update-spatial-reference` | 确认 EPSG；就绪表重新解析 Schema，WAITING_CRS 表继续后台初始校验 |
+| `GET` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/spatial-preview`、`/spatial-preview/status`、`/spatial-preview/map` | 地图能力、准备状态、PNG |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/prepare-spatial-preview` | 准备/强制刷新地图，202；权限沿用 filedataset.view |
 
 装载接口返回 `202 Accepted` 和 `jobId/file/table`，校验成功前不存在来源记录。初始上传响应增加
 `jobIds`。表响应使用 `sourceCount/totalRowCount/currentLoadJobId/previewSupported`。
 
-表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息统一
-在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；GPKG 来源只能下载，替换和
+表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息可在数据集详情的“最近解析”和“解析记录”中查看，也保留全局解析队列入口。详情复用现有队列查询，固定附加 `fileDatasetId` 条件，支持状态筛选、分页及完整错误展开；只展示系统保留期内任务，自动尝试次数不等同于逐次重试日志。列表可直接打开上传窗口，复用文件页上传逻辑并在提交前重新核对单文件限制。来源页签只展示当前来源及下载、替换和删除操作；GPKG 来源只能下载，替换和
 删除必须从整文件操作发起。危险确认明确提示不可恢复、
 旧对象立即删除以及旧 Canvas 任务可能失败。
 

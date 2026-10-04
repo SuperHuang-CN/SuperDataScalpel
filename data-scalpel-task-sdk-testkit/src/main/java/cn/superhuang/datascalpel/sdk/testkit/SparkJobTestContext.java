@@ -238,6 +238,11 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         private final Dataset<Row> source;
         private final LinkedHashMap<String, String> mappings = new LinkedHashMap<>();
         private ModelWriteMode mode = ModelWriteMode.APPEND;
+        private BatchWriteOptions batchWrite;
+        @Override public ModelWriteOperation batchWrite(BatchWriteOptions options) {
+            if (streaming) throw error("TESTKIT_STREAMING_ATOMIC_NOT_ALLOWED", "Atomic writes are batch only");
+            batchWrite = Objects.requireNonNull(options); return this;
+        }
 
         private ModelWriter(String bindingName, TestModelTarget target, Dataset<Row> source) {
             this.bindingName = bindingName; this.target = target; this.source = source;
@@ -282,9 +287,11 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
             if (mode == ModelWriteMode.UPSERT) {
                 validateKeys(projected, target.primaryKeyColumns(), mappings.keySet());
             }
+            validateBatchOptions(batchWrite, mode.name(), projected);
             List<Row> rows = capture(projected);
+            validateEmptyBatch(batchWrite, mode.name(), rows);
             CapturedModelWrite write = new CapturedModelWrite(
-                    bindingName, mode, mappings, projected.schema(), rows, rows.size());
+                    bindingName, mode, mappings, projected.schema(), rows, rows.size(), batchWrite);
             modelWrites.computeIfAbsent(bindingName, ignored -> new CopyOnWriteArrayList<>()).add(write);
             if (!streaming) affectedRows.addAndGet(rows.size());
             return WriteResult.known(rows.size());
@@ -297,6 +304,16 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         private final Dataset<Row> source;
         private final LinkedHashMap<String, String> mappings = new LinkedHashMap<>();
         private JdbcWriteMode mode = JdbcWriteMode.APPEND;
+        private BatchWriteOptions batchWrite;
+        private final Map<String, Integer> geometrySrids = new LinkedHashMap<>();
+        @Override public JdbcWriteOperation batchWrite(BatchWriteOptions options) {
+            if (streaming) throw error("TESTKIT_STREAMING_ATOMIC_NOT_ALLOWED", "Atomic writes are batch only");
+            batchWrite = Objects.requireNonNull(options); return this;
+        }
+        @Override public JdbcWriteOperation geometrySrid(String targetColumn, int epsg) {
+            if (streaming || epsg <= 0) throw new IllegalArgumentException("Geometry requires batch mode and a positive EPSG");
+            geometrySrids.put(Objects.requireNonNull(targetColumn), epsg); return this;
+        }
         private JdbcTableIdentifier table;
         private List<String> keys = List.of();
 
@@ -344,13 +361,58 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
                 throw error("TESTKIT_STREAMING_GEOMETRY_NOT_ALLOWED", "Streaming JDBC write does not support Geometry");
             }
             if (mode == JdbcWriteMode.UPSERT) validateKeys(projected, keys, mappings.keySet());
+            validateBatchOptions(batchWrite, mode.name(), projected);
             List<Row> rows = capture(projected);
+            validateEmptyBatch(batchWrite, mode.name(), rows);
             CapturedJdbcWrite write = new CapturedJdbcWrite(
-                    bindingName, table, mode, keys, mappings, projected.schema(), rows, rows.size());
+                    bindingName, table, mode, keys, mappings, projected.schema(), rows, rows.size(), batchWrite, geometrySrids);
             jdbcWrites.computeIfAbsent(bindingName, ignored -> new CopyOnWriteArrayList<>()).add(write);
             if (!streaming) affectedRows.addAndGet(rows.size());
             return WriteResult.known(rows.size());
         }
+    }
+
+    private static void validateEmptyBatch(BatchWriteOptions options, String mode, List<Row> rows) {
+        if (options != null && "OVERWRITE".equals(mode) && rows.isEmpty() && !options.allowEmptyOverwrite())
+            throw error("TESTKIT_EMPTY_OVERWRITE", "Atomic overwrite input is empty");
+    }
+
+    private static void validateBatchOptions(BatchWriteOptions options, String mode, Dataset<Row> dataset) {
+        if (options == null) return;
+        if (!"OVERWRITE".equals(mode) && (options.overwriteCondition() != null || options.allowEmptyOverwrite()))
+            throw error("TESTKIT_BATCH_OPTIONS_INVALID", "Overwrite options require OVERWRITE mode");
+        if (options.overwriteCondition() != null) {
+            Column condition = testCondition(options.overwriteCondition(), dataset.schema(), 1, new int[1]);
+            if (dataset.filter(org.apache.spark.sql.functions.not(
+                    org.apache.spark.sql.functions.coalesce(condition, org.apache.spark.sql.functions.lit(false)))).limit(1).count() != 0)
+                throw error("TESTKIT_OVERWRITE_OUTSIDE_SCOPE", "Input is outside the overwrite condition (Spark comparison semantics)");
+        }
+    }
+
+    private static Column testCondition(WriteCondition condition, StructType schema, int depth, int[] nodes) {
+        if (depth > 12 || ++nodes[0] > 256) throw error("TESTKIT_BATCH_OPTIONS_INVALID", "Condition exceeds limits");
+        if (condition instanceof WriteCondition.Group group) {
+            if (group.conditions().isEmpty()) throw error("TESTKIT_BATCH_OPTIONS_INVALID", "Empty condition group");
+            return group.conditions().stream().map(child -> testCondition(child, schema, depth + 1, nodes))
+                    .reduce(group.all() ? Column::and : Column::or).orElseThrow();
+        }
+        var predicate = (WriteCondition.Predicate) condition;
+        var type = schema.apply(predicate.column()).dataType();
+        if (type.typeName().toLowerCase(Locale.ROOT).contains("geometry") || type.typeName().equals("binary"))
+            throw error("TESTKIT_BATCH_OPTIONS_INVALID", "Geometry/binary conditions are unsupported");
+        var c = col("`" + predicate.column().replace("`", "``") + "`");
+        var values = predicate.values();
+        boolean empty = predicate.operator() == WriteCondition.Operator.IS_NULL || predicate.operator() == WriteCondition.Operator.IS_NOT_NULL;
+        boolean multiple = predicate.operator() == WriteCondition.Operator.IN || predicate.operator() == WriteCondition.Operator.NOT_IN;
+        if (empty ? !values.isEmpty() : values.isEmpty() || values.size() > (multiple ? 100 : 1))
+            throw error("TESTKIT_BATCH_OPTIONS_INVALID", "Invalid condition value count");
+        return switch (predicate.operator()) {
+            case EQ -> c.equalTo(values.getFirst()); case NE -> c.notEqual(values.getFirst());
+            case GT -> c.gt(values.getFirst()); case GE -> c.geq(values.getFirst());
+            case LT -> c.lt(values.getFirst()); case LE -> c.leq(values.getFirst());
+            case IN -> c.isin(values.toArray()); case NOT_IN -> org.apache.spark.sql.functions.not(c.isin(values.toArray()));
+            case IS_NULL -> c.isNull(); case IS_NOT_NULL -> c.isNotNull();
+        };
     }
 
     private WriteResult observedWrite(

@@ -13,5 +13,7 @@ public record RuntimeTaskMetrics(
         @Schema(description = "技术成功率，等于 SUCCESS / (SUCCESS + FAILED + TIMED_OUT)，范围 0 到 1；CANCELLED、STOPPED 和 SKIPPED 不进入分母，分母为 0 时为空。")
         Double successRate,
         @Schema(description = "按 endedAt 统计的 REAL 正式批处理终态趋势。范围不超过 3 天时按小时分桶，超过 3 天时按 UTC 自然日分桶；桶边界裁剪到 [from,to)，每个状态为独立数据点。")
-        List<RuntimeTrendResponse> trend
+        List<RuntimeTrendResponse> trend,
+        @Schema(description = "按原始任务类型拆分的正式活动运行、历史完成和当前实时部署摘要。旧统计字段口径不变。")
+        List<RuntimeTaskTypeMetrics> types
 ) {}

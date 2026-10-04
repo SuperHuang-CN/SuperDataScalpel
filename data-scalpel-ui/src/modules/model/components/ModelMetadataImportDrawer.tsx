@@ -1,3 +1,6 @@
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { ModelDataSourcePicker } from './ModelResourcePicker';
+import './model-create.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CheckCircleOutlined,
@@ -8,11 +11,11 @@ import {
   InboxOutlined,
 } from '@ant-design/icons';
 import type { TableProps, UploadFile } from 'antd';
-import { Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Table, Tag, Tooltip, Typography, Upload, message } from 'antd';
+import { Button, ConfigProvider, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Table, Tag, Tooltip, Typography, Upload, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
-import { useDataSources } from '../../datasource';
+import { useDataSource } from '../../datasource';
 import {
   isStandardDictionaryTypeFamilyCompatible,
   standardDictionaryValueTypeLabels,
@@ -51,10 +54,6 @@ interface ModelMetadataImportDrawerProps {
   onClose: () => void;
   onAdjustFields: (modelId: string) => void;
 }
-
-const dataSourceRequest = {
-  search: 'enabled:"true"', page: 0, size: 500, sort: 'code',
-} as const;
 
 const enabledWarehouseLayerRequest = {
   search: 'enabled:"true"',
@@ -169,7 +168,7 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
 
   return (
     <Modal
-      rootClassName="business-overlay business-modal-overlay"
+      rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay"
       title={field ? `调整 Excel 字段：${field.code || `第 ${field.rowNumber} 行`}` : '调整字段'}
       open={Boolean(field)}
       width={680}
@@ -211,6 +210,8 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
           </Form.Item>
           <Form.Item label="字段类型" name="fieldType" rules={[{ required: true, message: '请选择字段类型' }]}>
             <Select
+              popupMatchSelectWidth={320}
+              classNames={{ popup: { root: 'model-create-select-popup' } }}
               loading={capabilitiesQuery.isFetching}
               options={options}
               onChange={(value: PlatformDataType) => {
@@ -269,12 +270,16 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
           </Form.Item>
           <Form.Item label="允许为空" name="nullable" rules={[{ required: true, message: '请选择是否允许为空' }]}>
             <Select
+              popupMatchSelectWidth={320}
+              classNames={{ popup: { root: 'model-create-select-popup' } }}
               disabled={Boolean(primaryKey)}
               options={[{ value: true, label: '是' }, { value: false, label: '否' }]}
             />
           </Form.Item>
           <Form.Item label="主键" name="primaryKey" rules={[{ required: true, message: '请选择是否为主键' }]}>
             <Select
+              popupMatchSelectWidth={320}
+              classNames={{ popup: { root: 'model-create-select-popup' } }}
               disabled={selectedType === 'GEOMETRY'}
               options={[{ value: true, label: '是' }, { value: false, label: '否' }]}
               onChange={(checked: boolean) => checked && form.setFieldValue('nullable', false)}
@@ -290,6 +295,8 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
                 : 'Excel V4/V5 使用码表编码匹配；物理字段仍保存节点编码。'}
           >
             <Select
+              popupMatchSelectWidth={320}
+              classNames={{ popup: { root: 'model-create-select-popup' } }}
               allowClear
               showSearch
               optionFilterProp="label"
@@ -326,22 +333,17 @@ export const ModelMetadataImportDrawer = ({
   const [editingField, setEditingField] = useState<{ draftKey: string; fieldKey: string }>();
   const [modalApi, modalContext] = Modal.useModal();
   const [messageApi, messageContext] = message.useMessage();
-  const dataSourcesQuery = useDataSources(dataSourceRequest, open);
   const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const previewMutation = usePreviewModelMetadataImport();
   const templateMutation = useDownloadModelMetadataTemplate();
   const createMutation = useImportModelMetadata();
-  const selectedTarget = dataSourcesQuery.data?.content.find((source) => (
-    source.id === targetStorageDataSourceId && isManagedImportTargetSelectable(source)
-  ));
+  const targetQuery = useDataSource(targetStorageDataSourceId, open);
+  const selectedTarget = targetQuery.data && isManagedImportTargetSelectable(targetQuery.data) ? targetQuery.data : undefined;
   const targetIsClickHouse = selectedTarget?.type === 'CLICKHOUSE';
   const issues = useMemo(() => modelMetadataDraftIssues(drafts, targetIsClickHouse), [drafts, targetIsClickHouse]);
   const hasDraftIssues = hasModelMetadataDraftIssues(issues) || fileIssues.length > 0;
   const busy = previewMutation.isPending || templateMutation.isPending || createMutation.isPending;
 
-  const targetOptions = dataSourcesQuery.data?.content
-    .filter(isManagedImportTargetSelectable)
-    .map((source) => ({ value: source.id, label: `${source.name}（${source.type}）` })) ?? [];
   const warehouseLayerOptions = warehouseLayersQuery.data?.content.map((layer) => ({
     value: layer.id,
     label: `${layer.code} · ${layer.name}`,
@@ -352,7 +354,7 @@ export const ModelMetadataImportDrawer = ({
     if (busy) return;
     if (step < 2 && (uploadFile || drafts.length > 0)) {
       modalApi.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
         title: '放弃本次 Excel 导入？',
         content: '已上传或调整的模型结构尚未创建，离开后不会保留。',
         okText: '放弃并关闭',
@@ -394,7 +396,7 @@ export const ModelMetadataImportDrawer = ({
     };
     if (drafts.length) {
       modalApi.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
         title: '重新解析 Excel',
         content: '重新解析会覆盖当前模型和字段调整，确认继续吗？',
         okText: '重新解析',
@@ -547,6 +549,8 @@ export const ModelMetadataImportDrawer = ({
         <div>
           <Space.Compact block>
             <Select
+              popupMatchSelectWidth={320}
+              classNames={{ popup: { root: 'model-create-select-popup' } }}
               allowClear
               showSearch
               optionFilterProp="label"
@@ -632,14 +636,22 @@ export const ModelMetadataImportDrawer = ({
   );
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {modalContext}
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
-        title="从 Excel 导入模型元数据"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon"><FileExcelOutlined /></span>
+            <div className="data-model-drawer-title-copy">
+              <span>从 Excel 模板导入模型</span>
+              <Typography.Text type="secondary">上传模板，校对模型与字段并创建模型草稿</Typography.Text>
+            </div>
+          </div>
+        )}
         open={open}
-        size="large"
+        size="min(1280px, 100vw)"
         className="managed-table-model-import-drawer"
         closable={!busy}
         maskClosable={!busy}
@@ -652,10 +664,11 @@ export const ModelMetadataImportDrawer = ({
           <div className="managed-import-step-content metadata-import-upload-step">
             <Alert showIcon type="info" title="模型目录由 Excel 每行定义并匹配已有目录；整份文件原子创建为 MANAGED + DRAFT，不会创建物理表。" />
             <Space>
-              <Select showSearch optionFilterProp="label" value={selectedTarget?.id} loading={dataSourcesQuery.isFetching} options={targetOptions} placeholder="选择目标 STORAGE JDBC" className="managed-import-target-select" onChange={setTargetStorageDataSourceId} />
+              <div className="model-create-resource-field"><span className="model-create-field-label">目标数据存储</span><ModelDataSourcePicker storageOnly disabled={busy} value={selectedTarget?.id} placeholder="选择目标数据存储" className="managed-import-target-select" onChange={setTargetStorageDataSourceId} /></div>
               <Button icon={<DownloadOutlined />} loading={templateMutation.isPending} onClick={() => void downloadTemplate()}>下载空白模板</Button>
             </Space>
             <Upload.Dragger
+              disabled={busy}
               accept=".xlsx"
               maxCount={1}
               fileList={uploadFile ? [uploadFile] : []}
@@ -715,6 +728,6 @@ export const ModelMetadataImportDrawer = ({
         )}
       </Drawer>
       <MetadataFieldEditor field={currentField} storageDataSourceId={selectedTarget?.id} onCancel={() => setEditingField(undefined)} onSave={saveField} />
-    </>
+    </ConfigProvider>
   );
 };

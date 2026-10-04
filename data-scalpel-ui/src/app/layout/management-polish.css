@@ -1,0 +1,201 @@
+/* The resource and modeling lists share the approved compact datasource density.
+   Detail forms, dialogs, Canvas and editors retain their own control sizes. */
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) {
+  --ds-management-table-row-height: 60px;
+  --ds-management-table-cell-padding-block: 8px;
+}
+
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip {
+  --ds-standard-control-height: 30px;
+  min-height: 42px;
+  padding: 5px 10px;
+  background: rgb(248 251 253 / 74%);
+}
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-results-surface:has(> .management-table) { background: transparent; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-results-surface > .management-table { background: #fff; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-result-toolbar {
+  min-height: 44px;
+  padding: 6px 16px;
+  background: rgb(248 251 253 / 74%);
+}
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-result-title { font-size: 15px; }
+
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) :is(.management-filter-strip, .management-result-toolbar) .ant-btn {
+  height: 30px;
+  min-height: 30px;
+  padding: 3px 10px;
+  font-size: 14px;
+}
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) :is(.management-filter-strip, .management-result-toolbar) .ant-btn-icon-only { width: 30px; padding-inline: 0; }
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip :is(.ant-input-affix-wrapper, .ant-input:not(textarea), .ant-select-single, .ant-select-selector) {
+  min-height: 30px;
+  height: auto;
+}
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip .ant-input-affix-wrapper { padding-block: 3px; }
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip .ant-input-affix-wrapper > .ant-input { min-height: 0; padding-block: 0; }
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip .ant-select { min-height: 30px; padding-block: 2px; }
+.app-shell .app-content-management :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-filter-strip .ant-select-multiple .ant-select-input { height: 22px; line-height: 22px; }
+
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-table .ant-table-tbody > .ant-table-row > td {
+  height: 60px;
+  padding-block: 8px;
+  background: #fff;
+}
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-table .ant-table-tbody > .ant-table-row:hover > td { background: #eef8fc; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-table .ant-table-tbody > .ant-table-row-selected > td { background: #eaf5f9; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-table .ant-table-thead > tr > th { height: 44px; padding-block: 8px; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-list-cell-content { gap: 2px; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-list-cell-primary :is(a, .ant-btn-link) { font-size: 14px; font-weight: 600; color: #24536a; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-list-cell-primary :is(a, .ant-btn-link):hover { color: #287f9e; text-decoration: underline; text-underline-offset: 3px; }
+.app-shell .app-content-management :is(.file-dataset-list-page, .resource-workspace-list, .modeling-workspace) .management-list-cell-secondary { margin-top: 0; font-size: 13px; line-height: 20px; }
+.management-name-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.panorama-name-cell .management-name-row { flex: 1; }
+.resource-workspace-list .panorama-name-cell .management-name-row > .ant-btn-link { font-size: 14px; font-weight: 600; color: #24536a; }
+.management-name-row > :first-child { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 26px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell .app-content-management .management-name-row > .ant-btn-link { width: auto; height: auto; min-height: 22px; padding: 0; line-height: 22px; }
+.management-name-row > span:first-child { font-size: 14px; font-weight: 600; }
+.management-name-row .context-help-trigger { flex: none; width: 22px; min-width: 22px; height: 22px; padding: 0; color: #718c9c; }
+.management-name-detail { max-width: 320px; overflow-wrap: anywhere; }
+.management-name-detail > div + div { margin-top: 10px; }
+.management-name-detail span { display: block; color: #647b89; font-size: 12px; margin-bottom: 4px; }
+.management-name-detail p { margin: 0; white-space: pre-wrap; }
+
+/* Disabled commands remain legible over translucent panels without taking on
+   the lake-blue treatment reserved for available actions. */
+.app-shell :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .resource-workspace-detail, .modeling-workspace, .model-detail-resource, .data-source-detail-page, .file-dataset-detail-page) .ant-btn:is(:disabled, .ant-btn-disabled),
+:is(.workspace-resource-overlay, .resource-workspace-overlay, .modeling-overlay).business-overlay .ant-btn:is(:disabled, .ant-btn-disabled) {
+  color: #71808c;
+  opacity: 1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.app-shell :is(.data-source-list-page, .file-dataset-list-page, .resource-workspace-list, .resource-workspace-detail, .modeling-workspace, .model-detail-resource, .data-source-detail-page, .file-dataset-detail-page) .ant-btn:is(:disabled, .ant-btn-disabled):not(.ant-btn-text):not(.ant-btn-link),
+:is(.workspace-resource-overlay, .resource-workspace-overlay, .modeling-overlay).business-overlay .ant-btn:is(:disabled, .ant-btn-disabled):not(.ant-btn-text):not(.ant-btn-link) {
+  background: #edf1f4;
+  border-color: #cbd5dc;
+}
+
+/* Task, service, asset, operations and system management share the resource
+   contract. This boundary never wraps standalone Canvas or Monaco editors. */
+.management-module-workspace { display: flex; flex: 1; flex-direction: column; height: 100%; min-width: 0; min-height: 0; gap: 9px; }
+.management-module-workspace > :is(.management-page, .page-stack, .directory-management-layout, .ops-page, .system-mcp-page) { flex: 1; min-height: 0; min-width: 0; }
+.management-module-workspace :is(.management-workbench, .directory-management-layout, .page-stack, .ops-page, .system-mcp-api-workspace, .ops-overview, .ops-overview-cards) { gap: 9px; }
+.management-module-workspace.resource-workspace-list { container-type: inline-size; }
+.management-module-workspace.resource-workspace-list .management-results-surface { background: transparent; }
+.management-module-workspace.resource-workspace-list .management-results-surface > :not(.management-result-toolbar) { background: #fff; }
+.app-shell .management-module-workspace .management-table .ant-table-pagination.ant-pagination { background: #fff; }
+.management-module-workspace .management-filter-strip { container-type: inline-size; }
+.management-module-workspace .management-filter-strip .management-filter-form { flex: 0 1 auto; }
+.management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters) { flex-wrap: nowrap; }
+.management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters) .management-filter-form { flex: none; flex-wrap: nowrap; }
+.management-module-workspace .management-filter-strip .management-search-input { width: clamp(200px, 22cqw, 320px); max-width: 100%; }
+.management-module-workspace .management-filter-strip > :is(.ant-input, .ant-input-group-wrapper) { max-width: min(320px, 100%); }
+.management-module-workspace .management-result-toolbar { flex-wrap: wrap; gap: 6px 12px; }
+.management-module-workspace .management-result-actions { flex-wrap: wrap; }
+.management-module-workspace .management-row-actions { gap: 2px; min-width: 0; justify-content: center; }
+.management-module-workspace .management-row-actions-shortcuts { width: auto; gap: 2px; opacity: 1; visibility: visible; }
+.management-module-workspace .management-row-actions .ant-btn { flex: none; width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; }
+.management-module-workspace .management-row-actions .ant-btn-dangerous:not(:disabled) { color: #b6384b; }
+.management-module-workspace .management-table .ant-table-cell:last-child:has(.management-row-actions) { padding-inline: 8px; }
+.management-module-workspace .management-list-cell-icon { background: #edf6fb; color: #287f9e; border-color: #dce8ee; box-shadow: none; }
+.management-module-workspace .management-list-cell-primary { font-size: 14px; }
+.management-module-workspace .management-list-code { font-family: var(--ds-ui-font); }
+.management-cell-summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.management-module-workspace .management-table .ant-table-cell { font-variant-numeric: tabular-nums; }
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-nav { min-height: 44px; margin-bottom: 9px; padding: 0 16px; background: rgb(248 251 253 / 74%); border: 1px solid #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; }
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-nav .ant-tabs-nav-list { background: transparent; }
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-nav .ant-tabs-tab { padding-block: 10px; }
+.management-module-workspace .ops-panel { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); }
+.management-module-workspace .ops-overview-cards .ant-card { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; }
+.management-module-workspace .ops-trend-success { background: #268467; }
+.management-module-workspace .ops-trend-bar:focus-visible { outline-color: #287f9e; }
+.management-module-workspace .ops-empty-pagination { background: #fff; }
+.management-module-workspace .system-mcp-module-panel { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; }
+.management-module-workspace .mcp-secondary { color: #5b7180; font: 13px/20px var(--ds-ui-font); }
+.management-module-workspace .asset-domain-detail-body { background: #fff; }
+.management-module-workspace .asset-domain-detail-icon { color: #287f9e; background: #edf6fb; }
+.management-module-workspace .asset-domain-child-list .ant-btn { border-color: #dce8ee; background: #fff; }
+@container (max-width: 680px) {
+  .management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters),
+  .management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters) .management-filter-form { flex-wrap: wrap; }
+}
+
+.management-module-workspace .gateway-operations-page { gap: 9px; }
+.management-module-workspace .gateway-operations-page .ant-card { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; backdrop-filter: none; }
+.management-module-workspace .gateway-operations-page .ant-card > .ant-card-head { min-height: 44px; background: #f8fbfd; border-color: #e2ecf1; border-radius: var(--ds-radius-panel) var(--ds-radius-panel) 0 0; }
+.management-module-workspace .gateway-operations-page .management-stat-table .ant-table-thead > tr > th { height: 44px; background: var(--ds-table-header-background); color: var(--ds-table-header-color); }
+.management-module-workspace .gateway-operations-page .management-stat-table .ant-table-tbody > tr > td { background: #fff; }
+.management-module-workspace .gateway-operations-metric-icon { background: #edf6fb; color: #216c88; }
+.management-module-workspace .gateway-operations-metric-success .gateway-operations-metric-icon { background: #eaf7f1; color: #18755f; }
+.management-module-workspace .gateway-operations-metric-warning .gateway-operations-metric-icon { background: #fff0f2; color: #b6384b; }
+.management-module-workspace .gateway-operations-scope { background: #fff; border-color: #dce8ee; backdrop-filter: none; }
+.management-module-workspace .gateway-operations-filter-row .ant-segmented { padding-block: 0; }
+.management-module-workspace .gateway-operations-filter-row .ant-segmented-item-label { min-height: 30px; line-height: 30px; }
+.management-module-workspace :is(.gateway-operations-overview-grid, .gateway-operations-analysis-grid, .gateway-operations-ranking-grid) { gap: 9px; }
+.management-module-workspace .management-table .ant-table-cell-fix-right,
+.management-module-workspace .management-table .ant-table-cell-fix-end { background: #fff; }
+
+/* Ant Design 6 tab panes use body-holder/body/content. Keep result regions
+   stretched through this chain, rather than sizing them to the current rows. */
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-body-holder,
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.management-module-workspace :is(.ops-page, .system-mcp-page) > .ant-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content-active { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.management-module-workspace .system-mcp-module-panel { --ds-directory-selected-background: #e8f3f8; --ds-directory-selected-color: #216c88; --ds-directory-selected-marker: #287f9e; }
+.management-module-workspace .system-mcp-page > .ant-tabs > .ant-tabs-nav .ant-tabs-tab-active { background: #e8f3f8; box-shadow: none; }
+.management-module-workspace .system-mcp-page > .ant-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn { color: #216c88; }
+
+.management-module-workspace .compute-engine-capacity-row { background: #f7fafc; border-color: #dce8ee; }
+.management-module-workspace.resource-workspace-detail .business-detail-description-label { color: #5b7180; }
+.management-module-workspace .system-mcp-api-request { gap: 8px; }
+.management-module-workspace .management-filter-strip-reserved-actions { flex-wrap: nowrap; }
+.management-module-workspace .management-filter-strip-reserved-actions .management-filter-form { flex: 1; min-width: 0; }
+.management-module-workspace .management-filter-strip-reserved-actions .ant-form-item { flex: 1 1 120px; min-width: 100px; max-width: 180px; }
+.management-module-workspace .management-filter-strip-reserved-actions .ant-form-item:has(input[type='datetime-local']) { flex-basis: 175px; min-width: 175px; max-width: 200px; }
+.management-module-workspace .management-filter-strip-reserved-actions .management-filter-actions { flex: none; }
+.management-module-workspace .system-mcp-module-list > .system-mcp-module-active.ant-btn { box-shadow: inset 3px 0 #287f9e; }
+
+/* Query and resource commands are a single, non-shrinking group. Existing
+   adaptive filters measure this whole group before deciding to collapse. */
+.management-query-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.management-toolbar-actions { display: flex; align-items: center; gap: 9px; flex: none; min-width: 0; max-width: 100%; }
+.management-toolbar-commands { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
+.management-toolbar-actions > .management-toolbar-commands { border-left: 1px solid #dce8ee; padding-left: 9px; }
+.management-toolbar-actions :is(.ant-btn, .ant-space-item) { flex-shrink: 0; }
+.management-module-workspace .management-toolbar-commands :is(.management-result-actions, .ant-space) { flex-wrap: wrap; gap: 6px !important; }
+.management-module-workspace .management-filter-strip:has(.management-toolbar-actions):not(:has(.management-adaptive-more-filters)) { flex-wrap: wrap; }
+.management-module-workspace .management-filter-strip:has(.management-toolbar-actions) > .management-filter-form { min-width: 0; max-width: 100%; }
+.management-module-workspace .management-filter-strip:has(.management-toolbar-actions):not(:has(.management-adaptive-more-filters)) > .management-filter-form { flex: 0 1 auto; }
+.management-module-workspace .management-filter-strip .management-toolbar-actions { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.management-module-workspace .management-filter-strip .management-toolbar-actions > .ant-space { margin-left: 0 !important; }
+.management-module-workspace .management-filter-strip:has(> .ant-input-search) { flex-wrap: wrap; }
+.app-shell .management-module-workspace .management-filter-strip > .ant-input-search { flex: 0 1 320px; width: 320px; max-width: 100%; }
+.app-shell .management-module-workspace .management-filter-strip .management-filter-form .management-search-input { width: clamp(180px, 20cqw, 300px); max-width: 100%; }
+.app-shell .management-module-workspace .management-filter-strip .management-filter-form { gap: 9px; }
+.app-shell .management-module-workspace .management-filter-strip .management-filter-form .ant-form-item { margin-inline-end: 0; }
+.app-shell .management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters.is-collapsed) { flex-wrap: wrap; }
+.app-shell .management-module-workspace .management-filter-strip:has(.management-adaptive-more-filters.is-collapsed) > .management-filter-form { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.management-module-workspace .management-toolbar-actions > .management-toolbar-commands { flex: 0 1 auto; max-width: 100%; }
+
+/* Table headings meet the result bar without rounded cutouts, including
+   embedded detail and dialog tables. Outer panel corners remain unchanged. */
+:is(
+  .management-module-workspace, .resource-workspace-list, .resource-workspace-detail,
+  .business-overlay, .resource-workspace-overlay, .workspace-resource-overlay, .modeling-workspace, .modeling-overlay,
+  .data-source-list-page, .data-source-detail-page, .file-dataset-list-page, .file-dataset-detail-page,
+  .model-list-page, .model-detail-resource
+) .ant-table-wrapper :is(.ant-table, .ant-table-container, .ant-table-content, .ant-table-header, .ant-table-thead > tr > :is(th, td)) {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+/* Sorted headings retain a distinct state even when a module owns table density. */
+:is(.app-shell, .business-overlay) .ant-table-wrapper .ant-table-thead > tr > .ant-table-column-sort,
+:is(.app-shell, .business-overlay) .ant-table-wrapper .ant-table-thead > tr > .ant-table-column-has-sorters:hover {
+  background: var(--ds-table-header-active-background) !important;
+}
+.management-module-workspace .ops-overview-cards { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+@container (max-width: 1250px) {
+  .management-module-workspace .ops-overview-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (max-width: 720px) {
+  .management-module-workspace .ops-overview-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

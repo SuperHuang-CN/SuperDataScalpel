@@ -14,6 +14,10 @@ import java.util.UUID;
 
 public interface DataServiceRepository extends SearchRepository<DataService, UUID> {
 
+    @Query("select s.type, d.status, count(s) from DataService s left join DataServiceDeployment d on d.dataServiceId=s.id where s.status='ENABLED' group by s.type, d.status")
+    List<Object[]> statisticsGroups();
+
+
     boolean existsByCode(String code);
 
     boolean existsByEngineId(UUID engineId);

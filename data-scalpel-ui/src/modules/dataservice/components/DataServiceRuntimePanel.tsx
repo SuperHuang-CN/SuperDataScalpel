@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined, DeploymentUnitOutlined, GlobalOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Empty, Space, Table, Tag, Tooltip, Typography } from 'antd';
@@ -38,11 +39,7 @@ const gatewayStatusColors: Record<GatewayServicePublicationStatus, string> = {
   REMOVE_FAILED: 'error',
 };
 
-const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-  hour12: false,
-}).format(new Date(value)) : '—';
+const formatDateTime = formatManagementDateTime;
 
 export const DataServiceRuntimePanel = ({
   dataService,

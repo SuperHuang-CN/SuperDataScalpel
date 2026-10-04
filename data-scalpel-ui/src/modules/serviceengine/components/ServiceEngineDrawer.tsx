@@ -177,7 +177,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="service-engine-drawer"
         title={<div className="service-engine-drawer-title">
           <span className="service-engine-drawer-title-icon" aria-hidden="true"><CloudServerOutlined /></span>

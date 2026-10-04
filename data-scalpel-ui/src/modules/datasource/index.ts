@@ -34,7 +34,7 @@ export {
   fetchSpatialFeatureResources,
 } from './api/dataSourceApi';
 export { buildDataSourceSearch } from './model/dataSourceSearch';
-export { dataSourcePurposeLabels } from './model/dataSource';
+export { dataSourcePurposeLabels, dataSourceTypeLabels } from './model/dataSource';
 export type {
   ApiResource,
   SpatialFeatureResource,
@@ -57,3 +57,5 @@ export type {
   TableMetadata,
   TableQuery,
 } from './model/dataSource';
+
+export { DataSourceTypeIcon } from './components/DataSourceTypeIcon';

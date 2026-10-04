@@ -25,6 +25,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.List;
 import java.util.Set;
@@ -44,8 +45,22 @@ public class S3FileObjectStorage implements FileObjectStorage {
 
     @Override
     public StoredFileObject store(String objectKey, InputStream inputStream, long contentLength, String contentType) {
+        return storeInternal(objectKey, inputStream, contentLength, contentType, null);
+    }
+
+    @Override
+    public StoredFileObject store(String objectKey, InputStream inputStream, long contentLength,
+                                  String contentType, Duration timeout) {
+        return storeInternal(objectKey, inputStream, contentLength, contentType, requireTimeout(timeout));
+    }
+
+    private StoredFileObject storeInternal(String objectKey, InputStream inputStream, long contentLength,
+                                          String contentType, Duration timeout) {
         try {
             PutObjectRequest.Builder request = PutObjectRequest.builder().bucket(bucket).key(fullKey(objectKey));
+            if (timeout != null) {
+                request.overrideConfiguration(options -> options.apiCallTimeout(timeout).apiCallAttemptTimeout(timeout));
+            }
             if (contentType != null && !contentType.isBlank()) {
                 request.contentType(contentType);
             }
@@ -60,10 +75,21 @@ public class S3FileObjectStorage implements FileObjectStorage {
 
     @Override
     public FileObjectContent open(String objectKey) {
+        return openInternal(objectKey, null);
+    }
+
+    @Override
+    public FileObjectContent open(String objectKey, Duration timeout) {
+        return openInternal(objectKey, requireTimeout(timeout));
+    }
+
+    private FileObjectContent openInternal(String objectKey, Duration timeout) {
         try {
-            ResponseInputStream<GetObjectResponse> response = client.getObject(
-                    GetObjectRequest.builder().bucket(bucket).key(fullKey(objectKey)).build()
-            );
+            GetObjectRequest.Builder request = GetObjectRequest.builder().bucket(bucket).key(fullKey(objectKey));
+            if (timeout != null) {
+                request.overrideConfiguration(options -> options.apiCallTimeout(timeout).apiCallAttemptTimeout(timeout));
+            }
+            ResponseInputStream<GetObjectResponse> response = client.getObject(request.build());
             GetObjectResponse metadata = response.response();
             return new FileObjectContent(
                     response,
@@ -94,29 +120,51 @@ public class S3FileObjectStorage implements FileObjectStorage {
 
     @Override
     public void deletePrefix(String prefix) {
+        deletePrefixInternal(prefix, null);
+    }
+
+    @Override
+    public void deletePrefix(String prefix, Duration timeout) {
+        deletePrefixInternal(prefix, System.nanoTime() + requireTimeout(timeout).toNanos());
+    }
+
+    private void deletePrefixInternal(String prefix, Long deadline) {
         String fullPrefix = fullKey(prefix).replaceFirst("/+$", "") + "/";
         String continuationToken = null;
         try {
             do {
-                ListObjectsV2Response response = client.listObjectsV2(ListObjectsV2Request.builder()
+                ListObjectsV2Request.Builder listing = ListObjectsV2Request.builder()
                         .bucket(bucket)
                         .prefix(fullPrefix)
-                        .continuationToken(continuationToken)
-                        .build());
+                        .continuationToken(continuationToken);
+                if (deadline != null) {
+                    Duration remaining = remainingBudget(deadline);
+                    listing.overrideConfiguration(options -> options.apiCallTimeout(remaining).apiCallAttemptTimeout(remaining));
+                }
+                ListObjectsV2Response response = client.listObjectsV2(listing.build());
                 List<ObjectIdentifier> objects = response.contents().stream()
                         .map(item -> ObjectIdentifier.builder().key(item.key()).build())
                         .toList();
                 if (!objects.isEmpty()) {
-                    client.deleteObjects(DeleteObjectsRequest.builder()
+                    DeleteObjectsRequest.Builder deletion = DeleteObjectsRequest.builder()
                             .bucket(bucket)
-                            .delete(Delete.builder().objects(objects).quiet(true).build())
-                            .build());
+                            .delete(Delete.builder().objects(objects).quiet(true).build());
+                    if (deadline != null) {
+                        Duration remaining = remainingBudget(deadline);
+                        deletion.overrideConfiguration(options -> options.apiCallTimeout(remaining).apiCallAttemptTimeout(remaining));
+                    }
+                    var deleted = client.deleteObjects(deletion.build());
+                    if (deleted.hasErrors()) {
+                        throw new FileStorageException("S3 目录前缀中部分对象删除失败", null);
+                    }
                 }
                 continuationToken = Boolean.TRUE.equals(response.isTruncated())
                         ? response.nextContinuationToken() : null;
             } while (continuationToken != null);
         } catch (S3Exception exception) {
             throw new FileStorageException("S3 目录前缀删除失败", exception);
+        } catch (FileStorageException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new FileStorageException("S3 目录前缀删除失败", exception);
         }
@@ -124,11 +172,16 @@ public class S3FileObjectStorage implements FileObjectStorage {
 
     @Override
     public FileGeodatabase openFileGeodatabase(String prefix) {
+        return openFileGeodatabase(prefix, cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions.defaults());
+    }
+
+    @Override
+    public FileGeodatabase openFileGeodatabase(String prefix, cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions options) {
         return FileGeodatabase.open(S3FileGdbSource.create(
                 client,
                 new S3FileGdbLocation(bucket, fullKey(prefix)),
                 S3FileGdbOptions.defaults()
-        ));
+        ), options);
     }
 
     @Override
@@ -155,6 +208,24 @@ public class S3FileObjectStorage implements FileObjectStorage {
     private String fullKey(String objectKey) {
         String normalizedObjectKey = requireText(objectKey, "objectKey").replaceFirst("^/+", "");
         return rootPrefix.isEmpty() ? normalizedObjectKey : rootPrefix + "/" + normalizedObjectKey;
+    }
+
+    private static Duration requireTimeout(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("S3 请求超时必须大于零");
+        }
+        // AWS schedules these request timers in milliseconds. A positive sub-millisecond
+        // remainder must not truncate to zero and unintentionally disable the deadline.
+        return timeout.compareTo(Duration.ofMillis(1)) < 0 ? Duration.ofMillis(1) : timeout;
+    }
+
+    private static Duration remainingBudget(long deadline) {
+        long nanos = deadline - System.nanoTime();
+        if (nanos <= 0) {
+            throw new FileStorageException("S3 目录前缀删除超过时间预算", null);
+        }
+        return requireTimeout(Duration.ofNanos(nanos));
     }
 
     private static String normalizePrefix(String value) {

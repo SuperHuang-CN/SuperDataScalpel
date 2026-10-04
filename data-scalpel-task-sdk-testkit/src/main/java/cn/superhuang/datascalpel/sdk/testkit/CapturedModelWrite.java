@@ -15,8 +15,13 @@ public record CapturedModelWrite(
         Map<String, String> columnMappings,
         StructType schema,
         List<Row> rows,
-        long affectedRows
+        long affectedRows,
+        cn.superhuang.datascalpel.sdk.BatchWriteOptions batchWrite
 ) {
+    public CapturedModelWrite(String bindingName, ModelWriteMode mode, Map<String, String> columnMappings,
+                              StructType schema, List<Row> rows, long affectedRows) {
+        this(bindingName, mode, columnMappings, schema, rows, affectedRows, null);
+    }
     public CapturedModelWrite {
         columnMappings = Collections.unmodifiableMap(new LinkedHashMap<>(columnMappings));
         rows = List.copyOf(rows);

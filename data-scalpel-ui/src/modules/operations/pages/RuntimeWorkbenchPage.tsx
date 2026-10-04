@@ -30,7 +30,7 @@ const RuntimeOverviewPanel = () => {
   });
   const maximum = Math.max(1, ...[...byHour.values()].map(v => v.success + v.failed + v.other));
   return <div className="ops-overview">
-    <Form form={form} layout="inline" autoComplete="off" className="ops-inline-form" onFinish={values => setRange({ from: values.from ? new Date(values.from).toISOString() : undefined, to: values.to ? new Date(values.to).toISOString() : undefined })}>
+    <Form form={form} layout="inline" autoComplete="off" className="ops-inline-form management-filter-strip" onFinish={values => setRange({ from: values.from ? new Date(values.from).toISOString() : undefined, to: values.to ? new Date(values.to).toISOString() : undefined })}>
       <Space wrap><Form.Item name="from"><Input type="datetime-local" aria-label="概览开始时间" /></Form.Item><Form.Item name="to"><Input type="datetime-local" aria-label="概览结束时间" /></Form.Item>
         <Button type="primary" htmlType="submit">查询</Button><Button type="text" onClick={() => { form.resetFields(); setRange({}); }}>最近 24 小时</Button>
       </Space>

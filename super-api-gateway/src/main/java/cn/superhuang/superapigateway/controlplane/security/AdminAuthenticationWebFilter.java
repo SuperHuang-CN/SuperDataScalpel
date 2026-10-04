@@ -21,6 +21,7 @@ import java.security.MessageDigest;
 public class AdminAuthenticationWebFilter implements WebFilter {
 
     public static final String MACHINE_TOKEN_HEADER = "X-Super-Gateway-Admin-Token";
+    public static final String MACHINE_ATTRIBUTE = AdminAuthenticationWebFilter.class.getName() + ".machine";
 
     private final SuperApiGatewayProperties.Admin properties;
     private final JwtTokenService jwtTokens;
@@ -49,6 +50,7 @@ public class AdminAuthenticationWebFilter implements WebFilter {
 
         String machineToken = exchange.getRequest().getHeaders().getFirst(MACHINE_TOKEN_HEADER);
         if (constantTimeEquals(machineToken, properties.machineToken())) {
+            exchange.getAttributes().put(MACHINE_ATTRIBUTE, true);
             return chain.filter(exchange);
         }
 

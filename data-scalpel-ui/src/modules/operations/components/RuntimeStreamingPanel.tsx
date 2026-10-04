@@ -13,7 +13,7 @@ import { useStopTaskRun, useForceTerminateTaskRun } from '../../task';
 import { useCurrentUser } from '../../system';
 import { useRuntimeStreaming } from '../hooks/useOperations';
 import type { RuntimeStreaming, RuntimeStreamingQuery } from '../model/operations';
-import { OperationsTable } from './OperationsTable';
+import { OperationsTable, OperationsTableActions } from './OperationsTable';
 import { RuntimeRunDrawer } from './RuntimeRunDrawer';
 import { durationLabel } from '../model/runtimePresentation';
 
@@ -25,7 +25,7 @@ export const RuntimeStreamingPanel = () => {
   const stop = useStopTaskRun(); const terminate = useForceTerminateTaskRun(); const user = useCurrentUser(); const client = useQueryClient();
   const [modal, modalContext] = Modal.useModal(); const [notice, noticeContext] = message.useMessage();
   const command = (row: RuntimeStreaming, force: boolean) => modal.confirm({
-    rootClassName: 'business-overlay business-modal-overlay', title: force ? '强制终止实时运行' : '正常停止实时运行',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: force ? '强制终止实时运行' : '正常停止实时运行',
     content: `确认${force ? '强制终止' : '停止'}“${row.taskName}”当前运行吗？${force ? '当前批次可能尚未提交完成。' : ''}`,
     okText: force ? '强制终止' : '停止', cancelText: '返回', okButtonProps: { danger: true },
     onOk: async () => {
@@ -59,12 +59,12 @@ export const RuntimeStreamingPanel = () => {
     { title: '采样时间', dataIndex: 'lastProgressAt', render: formatManagementDateTime },
   ];
   return <section className="management-workbench">{modalContext}{noticeContext}
-    <div className="management-filter-strip"><Form form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={v => { setState(v.state); setPage(0); }}>
+    <div className="management-filter-strip"><Form form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={v => { setState(v.state); setPage(0); }} id="runtime-streaming-panel-filters-0">
       <Form.Item name="state"><Select allowClear placeholder="全部部署状态" style={{ width: 160 }} options={Object.entries(labels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-    </Form><ManagementFilterActions form={form} appliedFilters={{ state }} onReset={() => { form.resetFields(); setState(undefined); setPage(0); }} /></div>
+    </Form><ManagementFilterActions form={form} appliedFilters={{ state }} onReset={() => { form.resetFields(); setState(undefined); setPage(0); }} commands={<OperationsTableActions title="当前实时部署" query={query} extra={<ContextHelp ariaLabel="实时运行观测" content="仅展示正式部署。无输入数据和进度未更新不直接判断为故障。延迟是来源提供的指标，不能当作统一业务新鲜度。展开行可查看各 Query 的采样时间。" />} />} formId="runtime-streaming-panel-filters-0" /></div>
     <OperationsTable title="当前实时部署" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }}
-      extra={<ContextHelp ariaLabel="实时运行观测" content="仅展示正式部署。无输入数据和进度未更新不直接判断为故障。延迟是来源提供的指标，不能当作统一业务新鲜度。展开行可查看各 Query 的采样时间。" />}
-      expandable={{ expandedRowRender: r => <Table size="small" rowKey="id" columns={queryColumns} dataSource={r.queries} pagination={false} />, rowExpandable: r => r.queries.length > 0 }} />
+
+      expandable={{ expandedRowRender: r => <Table size="small" rowKey="id" columns={queryColumns} dataSource={r.queries} pagination={false} />, rowExpandable: r => r.queries.length > 0 }} showActions={false} />
     <RuntimeRunDrawer runId={runId} onClose={() => setRunId(null)} />
   </section>;
 };

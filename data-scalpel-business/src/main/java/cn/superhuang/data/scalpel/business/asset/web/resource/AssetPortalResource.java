@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.asset.web.resource;
 import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetType;
 import cn.superhuang.data.scalpel.business.asset.service.AssetPortalService;
+import cn.superhuang.data.scalpel.business.asset.web.request.AssetPortalSort;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalAssetDetailResponse;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalAssetSummaryResponse;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalOverviewResponse;
@@ -42,15 +43,17 @@ public class AssetPortalResource {
             keywords = {"资产门户", "搜索资产", "已发布资产", "业务领域"},
             relatedOperations = {"GET /api/v1/asset-portal/assets/{id}"})
     @GetMapping("/assets")
-    @Operation(summary = "查询公开资产", description = "匿名分页查询 PUBLISHED 资产。关键词匹配有效名称、简介、来源编码和标签；directoryId 包含该业务领域全部后代。结果固定按推荐、发布时间和 UUID 倒序。")
+    @Operation(summary = "查询公开资产", description = "匿名只读分页查询 PUBLISHED 资产。关键词匹配有效名称、简介、来源编码和标签；directoryId 包含该业务领域全部后代。全部筛选条件取交集。默认推荐优先，支持发布时间或资产登记创建时间倒序；均按 UUID 倒序稳定排序。不查询原业务数据行，不改变资产状态；无效领域、分页、关键词或枚举参数返回 400。")
     public PageResponse<AssetPortalAssetSummaryResponse> assets(
             @Parameter(description = "可选关键词，模糊匹配资产有效名称、有效简介、来源稳定编码或任一标签；为空时不按关键词筛选。") @RequestParam(required = false) String keyword,
             @Parameter(description = "可选资产类型筛选。") @RequestParam(required = false) AssetType assetType,
             @Parameter(description = "可选 ASSET 范围业务领域目录 UUID；提供时包含该目录及全部后代目录中的资产。") @RequestParam(required = false) UUID directoryId,
             @Parameter(description = "页码，从 0 开始；省略时为 0。") @RequestParam(required = false) Integer page,
-            @Parameter(description = "每页数量，默认 12，最大 48。") @RequestParam(required = false) Integer size
+            @Parameter(description = "每页数量，默认 12，范围 1 到 48。") @RequestParam(required = false) Integer size,
+            @Parameter(description = "推荐状态过滤：true 仅推荐，false 仅未推荐；省略时不按推荐状态过滤。始终仅返回已发布资产。") @RequestParam(required = false) Boolean featured,
+            @Parameter(description = "排序方式，默认 RECOMMENDED（推荐、发布时间、UUID 倒序）；LATEST（发布时间、UUID 倒序）；CREATED（资产登记创建时间、UUID 倒序），不是来源创建时间。") @RequestParam(required = false) AssetPortalSort sort
     ) {
-        return service.assets(keyword, assetType, directoryId, page, size);
+        return service.assets(keyword, assetType, directoryId, page, size, featured, sort);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询公开资产详情",

@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.shapefile.ShapefileOpenOptions;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 
@@ -16,7 +17,21 @@ public interface FileObjectStorage {
 
     StoredFileObject store(String objectKey, InputStream inputStream, long contentLength, String contentType);
 
+    /** Applies a per-call upload budget where supported, without changing ordinary file uploads. */
+    default StoredFileObject store(String objectKey, InputStream inputStream, long contentLength,
+                                  String contentType, Duration timeout) {
+        return store(objectKey, inputStream, contentLength, contentType);
+    }
+
     FileObjectContent open(String objectKey);
+
+    /**
+     * Bounds opening the response where supported. The returned stream still needs its own read
+     * deadline and abort handling; this timeout does not bound consumption of the response body.
+     */
+    default FileObjectContent open(String objectKey, Duration timeout) {
+        return open(objectKey);
+    }
 
     void delete(String objectKey);
 
@@ -25,9 +40,18 @@ public interface FileObjectStorage {
         throw new FileStorageException("当前对象存储不支持目录前缀删除", null);
     }
 
+    /** Shares one cleanup budget across listing and deleting the whole prefix where supported. */
+    default void deletePrefix(String prefix, Duration timeout) {
+        deletePrefix(prefix);
+    }
+
     /** Opens an unpacked FileGDB below an immutable materialized directory prefix. */
     default FileGeodatabase openFileGeodatabase(String prefix) {
         throw new FileStorageException("当前对象存储不支持 GDB 目录读取", null);
+    }
+
+    default FileGeodatabase openFileGeodatabase(String prefix, cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions options) {
+        throw new FileStorageException("当前对象存储不支持带读取限额的 GDB 目录读取", null);
     }
 
     /** Opens one canonical, immutable Shapefile component set below a materialized prefix. */

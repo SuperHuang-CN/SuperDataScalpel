@@ -11,9 +11,10 @@ import {
   MenuUnfoldOutlined,
   SettingOutlined,
   RobotOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
-import type { BreadcrumbProps, MenuProps } from 'antd';
-import { Breadcrumb, Button, Layout, Menu, Space, Tooltip, Typography } from 'antd';
+import type { BreadcrumbProps, MenuProps, ThemeConfig } from 'antd';
+import { Breadcrumb, Button, ConfigProvider, Layout, Menu, Space, Tooltip, Typography } from 'antd';
 import { Suspense, useState } from 'react';
 import { DshDrawer } from '../../modules/dsh';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -27,6 +28,24 @@ import {
   type TaskViewConfiguration,
 } from '../../modules/task/model/taskViews';
 import { NotificationBell } from '../../modules/operations';
+import './app-shell.css';
+import { workspaceResourceTheme } from '../../shared/theme/workspaceResourceTheme';
+import workspaceBackground from '../../shared/assets/workspace-spatiotemporal-background.png';
+
+const shellTheme: ThemeConfig = {
+  token: {
+    ...workspaceResourceTheme.token,
+  },
+  components: {
+    Menu: {
+      darkItemBg: 'transparent',
+      darkSubMenuItemBg: '#193644',
+      darkItemSelectedBg: '#315f73',
+      darkItemSelectedColor: '#ffffff',
+      itemHeight: 44,
+    },
+  },
+};
 
 const APP_SIDEBAR_COLLAPSED_STORAGE_KEY = 'data-scalpel.ui.app-sidebar.collapsed';
 
@@ -336,6 +355,10 @@ export const AppShell = () => {
     && !editorPage
     && navigationPath !== '/task/orchestration'
     && isBusinessDetailPath(navigationPath);
+  // Apply the shared resource presentation only to management surfaces. Editors
+  // and the already refined resource/modeling modules keep their own boundary.
+  const resourceModulePage = /^(\/task(?:\/|$)|\/dataservice(?:\/|$)|\/mcp-management(?:\/|$)|\/asset-management\/|\/operations(?:\/|$)|\/compute-engine(?:\/|$)|\/service-engine(?:\/|$)|\/system\/(?:users|roles|permissions|configurations|system-mcp)(?:\/|$))/.test(navigationPath)
+    && (topLevelManagementPage || businessDetailPage);
   const contentClassName = [
     'app-content',
     topLevelManagementPage ? 'app-content-management' : '',
@@ -358,10 +381,12 @@ export const AppShell = () => {
 
 
   return (
-    <Layout className="app-shell">
+    <ConfigProvider theme={dashboardPage ? shellTheme : undefined}>
+    <Layout className={`app-shell${dashboardPage ? ' app-shell-home' : ''}`}>
+      <ConfigProvider theme={shellTheme}>
       <Layout.Sider
         breakpoint="lg"
-        width={200}
+        width={220}
         collapsedWidth={56}
         collapsed={sidebarCollapsed}
         collapsible
@@ -377,7 +402,7 @@ export const AppShell = () => {
           {!sidebarCollapsed && <span>{platformName}</span>}
         </div>
         <Menu
-          classNames={{ popup: { root: 'app-sidebar-menu-popup' } }}
+          classNames={{ popup: { root: 'app-sidebar-menu-popup app-navigation-menu-popup' } }}
           theme="dark"
           mode="inline"
           selectedKeys={selectedKey ? [selectedKey] : []}
@@ -398,8 +423,16 @@ export const AppShell = () => {
             });
           }}
         />
+        {!sidebarCollapsed && <div className="app-sidebar-caption">
+          <span>空间数据</span><span>让数据创造更大价值</span>
+        </div>}
       </Layout.Sider>
-      <Layout>
+      </ConfigProvider>
+      <Layout className="app-main">
+        <div className="app-workspace-backdrop" aria-hidden="true">
+          <img src={workspaceBackground} alt="" draggable={false} />
+        </div>
+        <ConfigProvider theme={shellTheme}>
         <Layout.Header className="app-header">
           <div className="app-header-navigation">
             <Tooltip title={sidebarCollapsed ? '展开主菜单' : '收起主菜单'}>
@@ -413,10 +446,10 @@ export const AppShell = () => {
             </Tooltip>
             <Breadcrumb items={breadcrumbItems(navigationPath, taskView)} />
           </div>
-          <Space size={12}>
+          <Space size={12} className="app-header-actions">
             <Tooltip title="在新窗口打开数据资产门户">
               <Button
-                type="text"
+                type="default"
                 className="app-asset-portal-trigger"
                 icon={<CompassOutlined />}
                 aria-label="打开数据资产门户"
@@ -425,12 +458,16 @@ export const AppShell = () => {
                 资产门户 <ExportOutlined aria-hidden />
               </Button>
             </Tooltip>
-            <Button type="text" icon={<RobotOutlined />} onClick={() => { setAssistantLoaded(true); setAssistantOpen(true); }}>AI 助手</Button>
-            <NotificationBell />
-            <Typography.Text type="secondary">{platformSubtitle}</Typography.Text>
-            <Typography.Text>{currentUserQuery.data?.username}</Typography.Text>
+            <Button className="app-assistant-trigger" type="primary" icon={<RobotOutlined />} onClick={() => { setAssistantLoaded(true); setAssistantOpen(true); }}>AI 助手</Button>
+            <span className="app-header-notifications"><NotificationBell showLabel /></span>
+            <div className="app-header-account">
+              <span className="app-header-avatar" aria-hidden><UserOutlined /></span>
+              <div><Typography.Text className="app-header-username">{currentUserQuery.data?.username}</Typography.Text>
+                <Typography.Text className="app-header-environment" title={platformSubtitle}>{platformSubtitle}</Typography.Text></div>
+            </div>
             <Button
               type="text"
+              className="app-logout-trigger"
               icon={<LogoutOutlined />}
               onClick={() => {
                 setAssistantOpen(false); setAssistantLoaded(false);
@@ -442,11 +479,13 @@ export const AppShell = () => {
             </Button>
           </Space>
         </Layout.Header>
+        </ConfigProvider>
         {assistantLoaded && currentUserQuery.data && <Suspense fallback={null}><DshDrawer key={currentUserQuery.data.userId ?? currentUserQuery.data.username} user={currentUserQuery.data.userId ?? currentUserQuery.data.username} open={assistantOpen} onClose={() => setAssistantOpen(false)} /></Suspense>}
         <Layout.Content className={contentClassName}>
-          <Outlet />
+          {resourceModulePage ? <div className={`management-module-workspace ${topLevelManagementPage ? 'resource-workspace-list' : 'resource-workspace-detail'}`}><Outlet /></div> : <Outlet />}
         </Layout.Content>
       </Layout>
     </Layout>
+    </ConfigProvider>
   );
 };

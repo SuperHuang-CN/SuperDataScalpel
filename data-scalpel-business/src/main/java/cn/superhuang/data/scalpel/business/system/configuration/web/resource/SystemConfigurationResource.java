@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.system.configuration.web.resource;
 
 import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.system.configuration.service.SystemConfigurationService;
+import cn.superhuang.data.scalpel.business.system.configuration.domain.PanoramaMapConfiguration;
 import cn.superhuang.data.scalpel.business.system.configuration.web.request.UpdateSystemConfigurationRequest;
 import cn.superhuang.data.scalpel.business.system.configuration.web.response.SystemConfigurationResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
@@ -41,6 +42,13 @@ public class SystemConfigurationResource {
             @ParameterObject @ModelAttribute SearchRequest request
     ) {
         return service.search(request);
+    }
+
+    @GetMapping("/map-config")
+    @PreAuthorize("hasAnyAuthority('model.view', 'panorama.view', 'system.configuration.view')")
+    @Operation(summary = "查询地图底图配置", description = "只读返回模型空间预览与全景地图共用的 XYZ 瓦片地址、纯文本署名和最大瓦片缩放级别。沿用 panorama.map 配置键；url 为空表示关闭底图。需要模型查看、全景查看或系统配置查看权限之一；不返回其他系统配置。浏览器直接请求瓦片，服务端不代理。无登录返回 401，权限不足返回 403，配置缺失返回 502。")
+    public PanoramaMapConfiguration mapConfiguration() {
+        return service.mapConfiguration();
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改系统配置值")

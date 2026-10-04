@@ -24,20 +24,25 @@ public class AccessLogPublisher {
     private final SuperApiGatewayProperties.AccessLog properties;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
-    private final ArrayBlockingQueue<GatewayAccessLog> queue;
+    private final ArrayBlockingQueue<PendingLog> queue;
     private final Counter dropped;
     private final Counter sendFailures;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicLong nextWarningAtMillis = new AtomicLong();
     private Thread worker;
+    private final cn.superhuang.superapigateway.runtime.GatewayTelemetry telemetry;
+    private final AtomicLong delivered = new AtomicLong();
+    private volatile java.time.Instant lastDeliveredAt;
 
     public AccessLogPublisher(
             SuperApiGatewayProperties properties,
             KafkaTemplate<String, String> kafkaTemplate,
             ObjectMapper objectMapper,
-            MeterRegistry registry
+            MeterRegistry registry,
+            cn.superhuang.superapigateway.runtime.GatewayTelemetry telemetry
     ) {
         this.properties = properties.accessLog();
+        this.telemetry = telemetry;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.queue = new ArrayBlockingQueue<>(properties.accessLog().queueCapacity());
@@ -53,8 +58,9 @@ public class AccessLogPublisher {
     }
 
     public void publish(GatewayAccessLog event) {
+        telemetry.record(event);
         if (!properties.enabled()) return;
-        if (!queue.offer(event)) {
+        if (!queue.offer(new PendingLog(event, 0))) {
             dropped.increment();
             warnRateLimited("access-log queue is full", null);
         }
@@ -63,19 +69,26 @@ public class AccessLogPublisher {
     @PreDestroy
     void stop() {
         running.set(false);
-        if (worker != null) worker.interrupt();
+        if (worker != null) {
+            try { worker.join(5000); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            if (worker.isAlive()) worker.interrupt();
+        }
     }
 
     private void sendLoop() {
         while (running.get() || !queue.isEmpty()) {
             try {
-                GatewayAccessLog event = queue.poll(1, TimeUnit.SECONDS);
-                if (event == null) continue;
-                String json = objectMapper.writeValueAsString(event);
-                kafkaTemplate.send(properties.topic(), event.requestId(), json)
-                        .whenComplete((result, failure) -> {
-                            if (failure != null) recordSendFailure(failure);
-                        });
+                PendingLog pending = queue.poll(1, TimeUnit.SECONDS);
+                if (pending == null) continue;
+                try {
+                    String json = objectMapper.writeValueAsString(pending.event());
+                    kafkaTemplate.send(properties.topic(), pending.event().eventId(), json)
+                            .whenComplete((result, failure) -> {
+                                if (failure != null) retryOrDrop(pending, failure);
+                                else { delivered.incrementAndGet(); lastDeliveredAt = java.time.Instant.now(); }
+                            });
+                } catch (Exception exception) { retryOrDrop(pending, exception); }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 return;
@@ -91,6 +104,23 @@ public class AccessLogPublisher {
         log.debug("Unable to publish gateway access log", failure);
     }
 
+    private void retryOrDrop(PendingLog pending, Throwable failure) {
+        recordSendFailure(failure);
+        // The same event ID is reused, so ambiguous delivery is deduplicated by the receiver.
+        if (running.get() && pending.attempt() < 2
+                && queue.offer(new PendingLog(pending.event(), pending.attempt() + 1))) return;
+        dropped.increment();
+    }
+
+    private record PendingLog(GatewayAccessLog event, int attempt) {}
+
+    public DeliveryStatus deliveryStatus() {
+        return new DeliveryStatus(properties.enabled(), properties.topic(), queue.size(), properties.queueCapacity(),
+                (long) dropped.count(), (long) sendFailures.count(), delivered.get(), lastDeliveredAt);
+    }
+    public record DeliveryStatus(boolean enabled, String topic, int queued, int capacity,
+                                 long dropped, long failures, long delivered, java.time.Instant lastDeliveredAt) {}
+
     private void warnRateLimited(String reason, Throwable failure) {
         long now = System.currentTimeMillis();
         long next = nextWarningAtMillis.get();
@@ -102,9 +132,9 @@ public class AccessLogPublisher {
             return;
         }
         if (failure == null) {
-            log.warn("Gateway access logs are being dropped: {}", reason);
+            log.warn("Gateway access-log delivery problem: {}", reason);
         } else {
-            log.warn("Gateway access logs are being dropped: {} ({})",
+            log.warn("Gateway access-log delivery problem: {} ({})",
                     reason, failure.getClass().getSimpleName());
         }
     }

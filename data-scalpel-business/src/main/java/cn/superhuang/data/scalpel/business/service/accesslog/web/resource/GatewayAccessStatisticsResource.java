@@ -27,10 +27,30 @@ import java.util.UUID;
 @Tag(name = "数据服务-网关访问统计")
 public class GatewayAccessStatisticsResource {
 
+    @GetMapping("/usage")
+    @PreAuthorize("hasAuthority('service.view')")
+    @Operation(summary="查询服务使用摘要",description="只读已完成小时汇总，去重统计成功调用服务与调用方。默认24个完整小时，按已有小时保留期校验；仅代表已接收日志，开关开启不证明采集健康。无权限403，时间范围无效400。")
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessUsageResponse usage(
+        @Parameter(description="包含的起点，向下对齐UTC整点；默认终点前24小时。") @RequestParam(required=false)
+        @DateTimeFormat(iso=DateTimeFormat.ISO.DATE_TIME) Instant from,
+        @Parameter(description="不包含的终点，向上对齐且不超过当前完整小时。") @RequestParam(required=false)
+        @DateTimeFormat(iso=DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        return queryService.usage(from,to);
+    }
+
     private final GatewayAccessQueryService queryService;
 
     public GatewayAccessStatisticsResource(GatewayAccessQueryService queryService) {
         this.queryService = queryService;
+    }
+
+    @GetMapping("/recent")
+    @PreAuthorize("hasAuthority('service.view')")
+    @Operation(summary = "查询最近十五分钟调用", description = "只读查询已入库原始日志，包含当前小时，返回真实窗口 P95/P99 和最近调用时间。Kafka 异步接收存在延迟；接收关闭或没有调用不代表服务健康。与小时汇总独立展示，不相加。")
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse recent(
+            @Parameter(description = "数据服务 UUID；不传则统计全部服务。") @RequestParam(required = false) UUID dataServiceId,
+            @Parameter(description = "消费者 UUID；不传则包含匿名调用。") @RequestParam(required = false) UUID consumerId) {
+        return queryService.recent(dataServiceId, consumerId);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询网关访问统计概览")

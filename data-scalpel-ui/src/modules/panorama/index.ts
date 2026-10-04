@@ -1,1 +1,1 @@
-export {};
+export { usePanoramas } from './hooks/usePanoramas';

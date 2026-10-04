@@ -62,13 +62,17 @@ public class RuntimeWorkbenchService {
             long denominator = completed.getOrDefault(TaskRunStatus.SUCCESS, 0L) + completed.getOrDefault(TaskRunStatus.FAILED, 0L) + completed.getOrDefault(TaskRunStatus.TIMED_OUT, 0L);
             long quality = count("select count(r) from TaskRun r where r.executionMode='REAL' and r.status='SUCCESS' and r.qualityConclusion='FAILED' and r.endedAt>=:from and r.endedAt<:to", Map.of("from", start, "to", end));
             boolean daily = Duration.between(start, end).compareTo(Duration.ofDays(3)) > 0;
-            String bucketExpression = "truncate(r.endedAt, " + (daily ? "day" : "hour") + ")";
-            var buckets = em.createQuery("select " + bucketExpression + ", r.status, count(r) from TaskRun r where r.executionMode='REAL' and " + BATCH
-                    + " and r.endedAt>=:from and r.endedAt<:to group by " + bucketExpression + ", r.status order by " + bucketExpression, Object[].class)
-                    .setParameter("from", start).setParameter("to", end).getResultList();
+            // Epoch buckets use the same UTC boundary as Instant.truncatedTo below.
+            // Truncating timestamptz to a day in the DB session zone loses matches in non-UTC zones.
+            long bucketSeconds = daily ? 86400 : 3600;
+            String bucketExpression = "floor(extract(epoch from ended_at) / :bucketSeconds)";
+            var buckets = em.unwrap(org.hibernate.Session.class).createNativeQuery("select " + bucketExpression + ", status, count(*) from task_run"
+                    + " where execution_mode='REAL' and (task_type is null or task_type not in ('SPARK_STREAMING_CANVAS','SPARK_STREAMING_JAR'))"
+                    + " and ended_at>=:from and ended_at<:to group by 1, 2 order by 1", Object[].class)
+                    .setParameter("bucketSeconds", bucketSeconds).setParameter("from", start).setParameter("to", end).getResultList();
             var grouped = new HashMap<Instant, Map<TaskRunStatus, Long>>();
-            buckets.forEach(row -> grouped.computeIfAbsent((Instant) row[0], key -> new EnumMap<>(TaskRunStatus.class))
-                    .put((TaskRunStatus) row[1], ((Number) row[2]).longValue()));
+            buckets.forEach(row -> grouped.computeIfAbsent(Instant.ofEpochSecond(((Number) row[0]).longValue() * bucketSeconds), key -> new EnumMap<>(TaskRunStatus.class))
+                    .put(TaskRunStatus.valueOf(row[1].toString()), ((Number) row[2]).longValue()));
             var trend = new ArrayList<RuntimeTrendResponse>();
             var unit = daily ? java.time.temporal.ChronoUnit.DAYS : java.time.temporal.ChronoUnit.HOURS;
             for (Instant cursor = start.truncatedTo(unit); cursor.isBefore(end); cursor = cursor.plus(1, unit)) {
@@ -77,7 +81,7 @@ public class RuntimeWorkbenchService {
                 var counts = grouped.getOrDefault(cursor, Map.of(TaskRunStatus.SUCCESS, 0L));
                 counts.forEach((status, amount) -> trend.add(new RuntimeTrendResponse(left, right, status, amount)));
             }
-            taskMetrics = new RuntimeTaskMetrics(current, completed, quality, denominator == 0 ? null : (double) completed.getOrDefault(TaskRunStatus.SUCCESS, 0L) / denominator, trend);
+            taskMetrics = new RuntimeTaskMetrics(current, completed, quality, denominator == 0 ? null : (double) completed.getOrDefault(TaskRunStatus.SUCCESS, 0L) / denominator, trend, typeMetrics(start, end));
         }
         RuntimeEngineMetrics engineMetrics = null;
         if (actor.has("compute.engine.view")) {
@@ -168,6 +172,29 @@ public class RuntimeWorkbenchService {
         var query = em.createQuery("select r.status, count(r) from TaskRun r where " + where + " group by r.status", Object[].class);
         parameters.forEach(query::setParameter); Map<TaskRunStatus, Long> result = new EnumMap<>(TaskRunStatus.class);
         query.getResultList().forEach(row -> result.put((TaskRunStatus) row[0], ((Number) row[1]).longValue())); return result;
+    }
+    private List<RuntimeTaskTypeMetrics> typeMetrics(Instant from, Instant to) {
+        var current = em.createQuery("select r.taskType,r.status,count(r) from TaskRun r where r.executionMode='REAL' and r.status in :active group by r.taskType,r.status", Object[].class)
+                .setParameter("active", ACTIVE).getResultList();
+        var completed = em.createQuery("select r.taskType,r.status,count(r) from TaskRun r where r.executionMode='REAL' and " + BATCH
+                + " and r.endedAt>=:from and r.endedAt<:to group by r.taskType,r.status", Object[].class)
+                .setParameter("from",from).setParameter("to",to).getResultList();
+        var streaming = em.createQuery("""
+            select t.type,d.actualState,count(d) from TaskStreamingDeployment d join DataTask t on t.id=d.taskId
+            where d.executionMode='REAL' and (d.actualState in ('STARTING','RUNNING','STOPPING') or not exists
+              (select n.id from TaskStreamingDeployment n where n.taskId=d.taskId and n.executionMode='REAL'
+               and (n.definitionVersion>d.definitionVersion or
+                 (n.definitionVersion=d.definitionVersion and n.checkpointGeneration>d.checkpointGeneration))))
+            group by t.type,d.actualState
+            """,Object[].class).getResultList();
+        return Arrays.stream(TaskType.values()).map(type -> {
+            Map<TaskRunStatus,Long> activeCounts=new EnumMap<>(TaskRunStatus.class), finishedCounts=new EnumMap<>(TaskRunStatus.class);
+            Map<StreamingDeploymentActualState,Long> deploymentCounts=new EnumMap<>(StreamingDeploymentActualState.class);
+            for (var row:current) if ((row[0]==null ? TaskType.LOCAL_SQL : row[0])==type) activeCounts.merge((TaskRunStatus)row[1],((Number)row[2]).longValue(),Long::sum);
+            for (var row:completed) if ((row[0]==null ? TaskType.LOCAL_SQL : row[0])==type) finishedCounts.merge((TaskRunStatus)row[1],((Number)row[2]).longValue(),Long::sum);
+            for (var row:streaming) if (row[0]==type) deploymentCounts.put((StreamingDeploymentActualState)row[1],((Number)row[2]).longValue());
+            return new RuntimeTaskTypeMetrics(type,activeCounts,finishedCounts,deploymentCounts);
+        }).toList();
     }
     private long count(String hql, Map<String, ?> parameters) {
         var query = em.createQuery(hql, Long.class); parameters.forEach(query::setParameter); return query.getSingleResult();

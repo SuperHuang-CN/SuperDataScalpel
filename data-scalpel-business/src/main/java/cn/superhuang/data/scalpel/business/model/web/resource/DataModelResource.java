@@ -77,9 +77,18 @@ import java.util.List;
 @Tag(name = "模型管理")
 public class DataModelResource {
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasAuthority('model.view')")
+    @Operation(summary = "查询建设统计", description = "模型发布状态和实际数仓分层，只读，不访问物理表。无查看权限返回403。")
+    public cn.superhuang.data.scalpel.business.model.web.response.DataModelStatisticsResponse statistics() {
+        return service.statistics();
+    }
+
+
     private final DataModelService service;
     private final DataModelPhysicalStatisticsService physicalStatisticsService;
     private final DataModelSpatialPreviewService spatialPreviewService;
+    private final cn.superhuang.data.scalpel.business.spatialpreview.service.SpatialPreviewService preparedPreviews;
     private final ModelMetadataExcelService metadataExcelService;
     private final TaskModelRelationQueryService taskModelRelationQueryService;
     private final ModelLineageQueryService lineageQueryService;
@@ -89,6 +98,7 @@ public class DataModelResource {
             DataModelService service,
             DataModelPhysicalStatisticsService physicalStatisticsService,
             DataModelSpatialPreviewService spatialPreviewService,
+            cn.superhuang.data.scalpel.business.spatialpreview.service.SpatialPreviewService preparedPreviews,
             ModelMetadataExcelService metadataExcelService,
             TaskModelRelationQueryService taskModelRelationQueryService,
             ModelLineageQueryService lineageQueryService,
@@ -97,6 +107,7 @@ public class DataModelResource {
         this.service = service;
         this.physicalStatisticsService = physicalStatisticsService;
         this.spatialPreviewService = spatialPreviewService;
+        this.preparedPreviews=preparedPreviews;
         this.metadataExcelService = metadataExcelService;
         this.taskModelRelationQueryService = taskModelRelationQueryService;
         this.lineageQueryService = lineageQueryService;
@@ -364,26 +375,37 @@ public class DataModelResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "按 EPSG:3857 视口动态渲染模型空间预览 PNG")
     @GetMapping(value = "/{id}/spatial-preview/map", produces = MediaType.IMAGE_PNG_VALUE)
     @PreAuthorize("hasAuthority('model.view')")
-    @Operation(summary = "按 EPSG:3857 视口动态渲染模型空间预览 PNG", description = "按 EPSG:3857 视口读取模型空间数据并动态渲染 PNG，宽 256–1600、高 256–1200；图片响应不属于系统 MCP 第一版支持范围。")
+    @Operation(summary = "按 EPSG:3857 视口动态渲染模型空间预览 PNG", description = "OVERVIEW_READY/READY 可读取完整概览和本地细节，不查询源表；副本保存期间其他节点返回概览及 X-Spatial-Fallback=SHARING。未就绪/过期代次返回 409。超局部预算返回完整概览，实际范围由 X-Spatial-Bounds 返回；宽 256–1600、高 256–1200。")
     public ResponseEntity<byte[]> spatialPreviewMap(
             @Parameter(description = "模型 UUID") @PathVariable UUID id,
             @Parameter(description = "要渲染的模型 Geometry 字段编码") @RequestParam String geometryField,
             @Parameter(description = "EPSG:3857 视口范围，格式 west,south,east,north") @RequestParam String bbox,
             @Parameter(description = "输出 PNG 宽度，单位像素；范围以空间预览能力响应为准") @RequestParam int width,
-            @Parameter(description = "输出 PNG 高度，单位像素；范围以空间预览能力响应为准") @RequestParam int height
+            @Parameter(description = "输出 PNG 高度，单位像素；范围以空间预览能力响应为准") @RequestParam int height,
+            @Parameter(description="当前有效准备代次；省略时读取当前代次；过期返回 409") @RequestParam(required=false) UUID generation,
+            @Parameter(description="只读取完整概览；默认 false，复杂视口可自动降级为概览") @RequestParam(defaultValue="false") boolean overview,
+            @Parameter(description="页面随机 UUID；可选，用于终止同页面的过时视口计算") @RequestParam(required=false) UUID clientId,
+            @Parameter(description="页面内递增视口序号，默认 0；较旧请求返回 409") @RequestParam(defaultValue="0") long sequence
     ) {
-        SpatialPreviewImage image = spatialPreviewService.render(id, geometryField, bbox, width, height);
-        return ResponseEntity.ok()
-                .contentType(MediaType.IMAGE_PNG)
-                .cacheControl(org.springframework.http.CacheControl.noStore().cachePrivate())
-                .header("X-Spatial-Feature-Count", Integer.toString(image.featureCount()))
-                .header("X-Spatial-Skipped-Count", Integer.toString(image.skippedCount()))
-                .header("X-Spatial-Truncated", Boolean.toString(image.truncated()))
-                .header(
-                        HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
-                        "X-Spatial-Feature-Count, X-Spatial-Skipped-Count, X-Spatial-Truncated"
-                )
-                .body(image.png());
+        return preparedPreviews.image(spatialPreviewService.source(id,geometryField),generation,bbox,width,height,overview,clientId,sequence).response();
+    }
+
+    @GetMapping("/{id}/spatial-preview/status")
+    @PreAuthorize("hasAuthority('model.view')")
+    @Operation(summary="查询模型地图准备状态",description="读取管理元数据和当前预览代次，不查询源表正文；到期或来源变化撤销旧代次。")
+    public cn.superhuang.data.scalpel.business.spatialpreview.web.response.SpatialPreviewStatusResponse spatialPreviewStatus(
+            @Parameter(description="模型 UUID") @PathVariable UUID id,
+            @Parameter(description="Geometry 字段编码") @RequestParam String geometryField) {
+        return preparedPreviews.status(spatialPreviewService.source(id,geometryField));
+    }
+
+    @PostMapping("/{id}/actions/prepare-spatial-preview")
+    @PreAuthorize("hasAuthority('model.view')")
+    @Operation(summary="准备或重新加载模型地图",description="异步准备完整几何副本和概览；202 返回状态，同来源准备或保存期间合并。完整概览可浏览时为 OVERVIEW_READY，副本保存成功后同代次变为 READY；副本保存失败仍保留完整概览。空闲时强制刷新撤销旧代次；源库只读，120 秒/100 万条/2 GiB 上限，繁忙返回 429。")
+    public ResponseEntity<cn.superhuang.data.scalpel.business.spatialpreview.web.response.SpatialPreviewStatusResponse> prepareSpatialPreview(
+            @Parameter(description="模型 UUID") @PathVariable UUID id,
+            @Valid @RequestBody cn.superhuang.data.scalpel.business.spatialpreview.web.request.PrepareSpatialPreviewRequest request) {
+        return ResponseEntity.accepted().body(preparedPreviews.prepare(spatialPreviewService.source(id,request.geometryField()),request.force()));
     }
 
     /**

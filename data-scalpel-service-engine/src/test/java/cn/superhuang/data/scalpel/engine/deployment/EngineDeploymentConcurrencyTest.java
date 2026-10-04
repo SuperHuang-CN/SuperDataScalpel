@@ -26,7 +26,7 @@ class EngineDeploymentConcurrencyTest {
         when(definition.type()).thenReturn(DataServiceType.SQL_QUERY);
         var snapshot = new StoredServiceDeployment(request);
         when(store.beginDeployment(request)).thenReturn(new EngineDeploymentStore.DeploymentPreparation(snapshot, null));
-        when(store.completeDeployment(id)).thenReturn(new ServiceDeploymentResponse(id, EngineDeploymentStatus.DEPLOYED, "ok"));
+        when(store.completeDeployment(id,0)).thenReturn(new ServiceDeploymentResponse(id, EngineDeploymentStatus.DEPLOYED, "ok"));
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var secondStarted = new CountDownLatch(1);
@@ -59,7 +59,7 @@ class EngineDeploymentConcurrencyTest {
         order.verify(routes).register(snapshot);
         order.verify(routes).unregister(id);
         order.verify(routes).register(snapshot);
-        verify(store, times(1)).completeDeployment(id);
+        verify(store, times(1)).completeDeployment(id,0);
     }
 
     @Test

@@ -102,4 +102,9 @@ public interface ModelPhysicalTablePort {
     ) {
         throw new UnsupportedOperationException("当前物理表实现不支持动态空间预览");
     }
+
+    default void streamSpatialPreview(DataSource dataSource, DataModel model, SpatialPreviewColumn column,
+            int maximumRows, Duration timeout, java.util.function.Consumer<byte[]> consumer) {
+        throw new UnsupportedOperationException("当前数据库不支持预览副本读取");
+    }
 }
