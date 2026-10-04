@@ -141,12 +141,12 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay"
         className="data-entry-import-drawer"
         title={<OverlayTitle title="批量导入填报数据" icon={<FileExcelOutlined />} description={`${detail.form.modelName ?? detail.form.modelCode ?? '数据填报'} · 先校验预览，再确认写入`} />}
         extra={<Tag className="data-entry-import-header-tag">XLSX / CSV</Tag>}
         open={open}
-        width="min(1200px, 92vw)"
+        size="min(1100px, 100vw)"
         destroyOnHidden
         maskClosable={!importMutation.isPending}
         closable={importMutation.isPending ? false : { placement: 'end' }}

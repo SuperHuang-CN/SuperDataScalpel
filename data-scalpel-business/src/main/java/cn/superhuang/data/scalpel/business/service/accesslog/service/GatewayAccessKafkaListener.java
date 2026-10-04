@@ -74,6 +74,10 @@ public class GatewayAccessKafkaListener {
     }
 
     private static String safeReason(RuntimeException exception) {
+        if (exception.getClass() != IllegalArgumentException.class) {
+            // JSON parser messages may contain untrusted payload excerpts, including credentials.
+            return "无法解析规范化事件（" + exception.getClass().getSimpleName() + "）";
+        }
         String message = exception.getMessage();
         if (message == null || message.isBlank()) {
             return "无法解析规范化事件";

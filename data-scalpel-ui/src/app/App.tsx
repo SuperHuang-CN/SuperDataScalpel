@@ -19,6 +19,7 @@ const SystemPermissionManagementPage = lazy(async () => ({ default: (await impor
 const SystemRoleManagementPage = lazy(async () => ({ default: (await import('../modules/system/pages/SystemRoleManagementPage')).SystemRoleManagementPage }));
 const SystemUserManagementPage = lazy(async () => ({ default: (await import('../modules/system/pages/SystemUserManagementPage')).SystemUserManagementPage }));
 const AssetPortalPage = lazy(async () => ({ default: (await import('../modules/asset/pages/AssetPortalPage')).AssetPortalPage }));
+const AssetPortalCatalogPage = lazy(async () => ({ default: (await import('../modules/asset/pages/AssetPortalCatalogPage')).AssetPortalCatalogPage }));
 const AssetPortalDetailPage = lazy(async () => ({ default: (await import('../modules/asset/pages/AssetPortalDetailPage')).AssetPortalDetailPage }));
 const AssetDomainManagementPage = lazy(async () => ({ default: (await import('../modules/asset/pages/AssetDomainManagementPage')).AssetDomainManagementPage }));
 const AssetManagementPage = lazy(async () => ({ default: (await import('../modules/asset/pages/AssetManagementPage')).AssetManagementPage }));
@@ -70,6 +71,7 @@ const router = createBrowserRouter(createRoutesFromElements(
   <Route errorElement={<AppRouteErrorPage />}>
         <Route path="login" element={<LoginPage />} />
         <Route path="assets" element={<Suspense fallback="正在加载数据资产门户…"><AssetPortalPage /></Suspense>} />
+        <Route path="assets/browse" element={<Suspense fallback="正在加载资产目录…"><AssetPortalCatalogPage /></Suspense>} />
         <Route path="assets/:id" element={<Suspense fallback="正在加载资产详情…"><AssetPortalDetailPage /></Suspense>} />
         <Route element={<RequireAuthentication />}>
           <Route element={<AppShell />}>

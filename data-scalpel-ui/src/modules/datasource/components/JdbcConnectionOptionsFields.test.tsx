@@ -51,12 +51,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('JdbcConnectionOptionsFields', () => {
-  it('always renders the advanced section and submits custom rows for dialects without predefined options', async () => {
+  it('keeps custom parameters available and submits them for dialects without predefined options', async () => {
     const user = userEvent.setup();
     const onFinish = vi.fn();
     render(<TestForm definitions={[]} onFinish={onFinish} />);
 
-    expect(screen.getByText('高级连接参数')).toBeInTheDocument();
+    expect(screen.getByText(/自定义参数由 JDBC 驱动解释/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /添加自定义参数/ }));
     await user.type(screen.getByPlaceholderText('参数名，如 tcpKeepAlive'), 'tcpKeepAlive');
     await user.type(screen.getByPlaceholderText('参数值'), 'true');

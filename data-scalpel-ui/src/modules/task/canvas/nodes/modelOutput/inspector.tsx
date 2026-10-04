@@ -111,7 +111,7 @@ const ModelOutputCanvasNodeInspector = ({
       {writes.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置模型输出">
         <Button icon={<PlusOutlined />} onClick={addWrite}>添加第一条输出</Button>
       </Empty> : writes.map((write, index) => <div key={write.writeId}
-        style={{ border: '1px solid #e7e9f5', borderRadius: 10, padding: '10px 12px', background: '#fff' }}>
+        style={{ border: '1px solid #e7e9f5', borderRadius: 'var(--ds-radius-panel)', padding: '10px 12px', background: '#fff' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <Typography.Text ellipsis style={{ display: 'block' }}>

@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-10-03",
+  "kind": "Standalone HTML, file URL only; no app server started",
+  "checks": [
+    "8 class nodes",
+    "OWL inheritance/disjointness inspector",
+    "property domain/range inspector",
+    "graph zoom/fit",
+    "empty search recovery",
+    "9 capability examples",
+    "contract drawer and focus return",
+    "capability filtering",
+    "Turtle and binding sources",
+    "mobile inspector",
+    "no document horizontal overflow",
+    "no browser errors"
+  ],
+  "viewports": {
+    "laptop": {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 900,
+      "scrollHeight": 900
+    },
+    "mobile": {
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    }
+  },
+  "errors": []
+}

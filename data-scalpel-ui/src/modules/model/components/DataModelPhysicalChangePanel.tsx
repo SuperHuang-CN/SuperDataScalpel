@@ -51,7 +51,7 @@ export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhys
   const cancel = (change: DataModelPhysicalChange) => modalApi.confirm({
     icon: null,
 
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
     title: <OverlayTitle title="取消变更计划" icon={<StopOutlined />} tone="danger" />,
     content: '取消后不会修改模型字段或物理表；如需继续修改，请重新生成计划。',
     okText: '确认取消',

@@ -2,6 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import './styles/global.css';
+import './app/layout/modeling-workspace.css';
+import './shared/theme/resource-workspace.css';
+import './app/layout/management-polish.css';
+import './shared/theme/feedback.css';
 
 const rootElement = document.getElementById('root');
 

@@ -17,6 +17,7 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { GatewayTrafficPolicyPanel } from '../components/GatewayTrafficPolicyPanel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -253,7 +254,7 @@ export const DataServiceDetailPage = () => {
 
   const disable = (target: DataServiceDetail) => modalApi.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle title="停用数据服务？" icon={<StopOutlined />} tone="danger" />,
     content: target.type === 'SPATIAL_SERVICE'
       ? `将从 GeoServer 删除“${target.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。`
@@ -292,7 +293,7 @@ export const DataServiceDetailPage = () => {
 
   const unpublish = (target: DataServiceDetail) => modalApi.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle title="取消发布到网关？" icon={<RollbackOutlined />} tone="danger" />,
     content: `取消后“${target.name}”将无法通过网关访问，Service Engine 保持运行。`,
     okText: '取消发布',
@@ -358,7 +359,7 @@ export const DataServiceDetailPage = () => {
 
   const remove = (target: DataServiceDetail) => modalApi.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle title="删除数据服务" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${target.name}”吗？`,
     okText: '删除',
@@ -474,6 +475,10 @@ export const DataServiceDetailPage = () => {
       label: '运行与发布',
       children: <DataServiceRuntimePanel dataService={dataService} engine={enginesById.get(dataService.engineId)} onCopyCurl={() => void copyCurl(dataService)} />,
     },
+    ...(dataService.type !== 'SPATIAL_SERVICE' ? [{
+      key: 'gateway-policy', label: '网关保护与监控',
+      children: <GatewayTrafficPolicyPanel serviceId={dataService.id} canPublish={canPublish} supported={dataService.gatewayBindings.some((binding) => binding.provider === 'DATASCALPEL')} />,
+    }] : []),
   ];
 
   return (

@@ -1,3 +1,4 @@
+import '../../../shared/components/schema-table.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
@@ -33,6 +34,7 @@ type QueryRow = Record<string, unknown> & { key: string };
 type QueryColumn = Pick<DataModelPreview['columns'][number], 'code' | 'name' | 'fieldType'>;
 
 const renderCell = (value: unknown, fieldType: QueryColumn['fieldType']) => {
+  if (value === null || value === undefined) return <span className="schema-null-value">NULL</span>;
   if (typeof value === 'object') return <code>{JSON.stringify(value)}</code>;
   return dataModelPreviewCellText(value, fieldType);
 };
@@ -131,7 +133,7 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
       <div className="model-data-preview-mode-bar">
         <div className="model-data-preview-mode-main">
           <Segmented<PreviewMode>
-            size="small"
+            size="middle"
             value={mode}
             options={modeOptions}
             onChange={setMode}
@@ -144,7 +146,6 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
         </div>
         {mode === 'QUICK' && (
           <Button
-            size="small"
             icon={<ReloadOutlined />}
             loading={quickPreviewQuery.isFetching}
             onClick={() => void quickPreviewQuery.refetch()}
@@ -165,7 +166,7 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
             />
           ) : (
             <Table<QueryRow>
-              size="small" className="management-table model-preview-resizable-table" rowKey="key" loading={quickPreviewQuery.isFetching}
+              size="small" className="management-table model-preview-resizable-table schema-data-table" rowKey="key" loading={quickPreviewQuery.isFetching}
               columns={quickColumns} dataSource={quickRows}
               locale={{ emptyText: quickPreviewQuery.isPending ? '正在读取物理表数据…' : '物理表暂无数据' }}
               scroll={{ x: quickTableWidth || undefined, y: '100%' }} pagination={false}

@@ -48,7 +48,7 @@ export const SystemUserPasswordModal = ({ user, onClose }: SystemUserPasswordMod
     <>
       {messageContext}
       <Modal
-        rootClassName="business-overlay business-modal-overlay system-user-password-modal"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay system-user-password-modal"
         title={<OverlayTitle icon={<KeyOutlined />} title="重置用户密码" description="为指定账号设置新的登录凭据" />}
         open={Boolean(user)}
         onCancel={close}

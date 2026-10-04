@@ -95,7 +95,7 @@ export const SparkJarResourceDrawer = ({ initial, initialTable, bindingNames, st
     onConfirm({ binding: { ...binding, bindingName: binding.bindingName.trim(),
       topicName: resourceType === 'KAFKA_TOPIC' ? binding.topicName : null }, table: needsTable ? table : null });
   };
-  return <Drawer open placement="right" size={780} rootClassName="business-overlay business-drawer-overlay"
+  return <Drawer open placement="right" size={780} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
     className="spark-jar-resource-drawer" title={<OverlayTitle icon={<DatabaseOutlined />} title={initial ? '编辑任务资源' : '添加任务资源'} description="选择用途与资源，建立代码引用" />}
     closable={saving ? false : { placement: 'end' }} maskClosable={!saving} keyboard={!saving} onClose={saving ? undefined : onClose}
     footer={<div className="spark-jar-resource-footer"><Typography.Text type="secondary">只建立代码引用，不执行读写</Typography.Text>

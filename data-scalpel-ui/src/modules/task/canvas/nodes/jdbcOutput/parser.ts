@@ -1,5 +1,6 @@
 import { legacyTableName, parseMappings, parseStringArray, parseWriteMode, stringValue, validateOptionalUuid } from "../../canvasValueParsers";
 import { parseConfiguration, type Configuration, parseOutputWrites } from '../configurationParsing';
+import { parseBatchWrite } from '../batchWriteOptions';
 
 export const parseNodeConfiguration = (value: unknown, path: string) => (
     parseConfiguration<Configuration<'JDBC_OUTPUT'>>(value, path, (configuration, errors) => {
@@ -10,6 +11,7 @@ export const parseNodeConfiguration = (value: unknown, path: string) => (
         writeMode: parseWriteMode(write.writeMode, `${writePath}.writeMode`, errors),
         columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
         upsertKeyColumns: parseStringArray(write.upsertKeyColumns, `${writePath}.upsertKeyColumns`, errors),
+        ...(write.batchWrite === undefined ? {} : { batchWrite: parseBatchWrite(write.batchWrite, `${writePath}.batchWrite`, errors) }),
       }));
       return { dataSourceId: stringValue(configuration.dataSourceId), writes };
     })

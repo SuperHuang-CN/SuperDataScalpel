@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Pagination, Table, Tag, Tooltip, message } from 'antd';
 import type { TableProps } from 'antd';
@@ -19,7 +20,7 @@ export const AlertDeliveriesPanel = ({ incidentId, channelId, embedded = false }
   const columns: TableProps<AlertDelivery>['columns'] = [
     { title: '通知 / 渠道', width: embedded ? 150 : 240, render: (_, d) => <ManagementListCell primary={`${eventLabels[d.eventType]} · ${d.channelName}`} secondary={<Tooltip title={d.id}>{d.id.slice(0, 8)}{!embedded && d.incidentId && <> · <Link to={`/operations/alerts?incident=${d.incidentId}`}>关联告警</Link></>}</Tooltip>} /> },
     { title: '状态 / 尝试', width: 120, render: (_, d) => <ManagementListCell primary={<Tag color={d.status === 'FAILED' ? 'error' : d.status === 'SENT' ? 'success' : 'default'}>{deliveryLabels[d.status]}</Tag>} secondary={`尝试 ${d.attempts} 次`} /> },
-    { title: '响应 / 结果', width: embedded ? 210 : 360, render: (_, d) => <ManagementListCell primary={d.httpStatus ? `HTTP ${d.httpStatus} · ${d.durationMillis ?? '—'} ms` : '—'} secondary={<Tooltip title={d.lastError}>{d.lastError ?? (d.status === 'PENDING' && d.nextAttemptAt ? `下次：${new Date(d.nextAttemptAt).toLocaleString()}` : '—')}</Tooltip>} /> },
+    { title: '响应 / 结果', width: embedded ? 210 : 360, render: (_, d) => <ManagementListCell primary={d.httpStatus ? `HTTP ${d.httpStatus} · ${d.durationMillis ?? '—'} ms` : '—'} secondary={<Tooltip title={d.lastError}>{d.lastError ?? (d.status === 'PENDING' && d.nextAttemptAt ? `下次：${formatManagementDateTime(d.nextAttemptAt)}` : '—')}</Tooltip>} /> },
     { title: '创建时间', dataIndex: 'createdAt', width: 150, render: v => <ManagementDateTime value={v} /> },
     { title: '操作', width: 60, render: (_, d) => user.data?.permissions.includes('alert.manage') && d.status === 'FAILED' ? <Tooltip title="重试投递"><Button size="small" type="text" icon={<ReloadOutlined />} aria-label={`重试投递 ${d.id}`} loading={retry.isPending && retry.variables === d.id}
       onClick={async () => { try { await retry.mutateAsync(d.id); notice.success('已加入重试队列'); } catch (error) { notice.error(error instanceof Error ? error.message : '重试失败'); } }} /></Tooltip> : null },

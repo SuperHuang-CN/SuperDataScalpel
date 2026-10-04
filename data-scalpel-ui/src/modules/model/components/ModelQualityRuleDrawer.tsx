@@ -411,7 +411,7 @@ export const ModelQualityRuleDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-detail-overlay model-quality-overlay"
       className="data-model-drawer model-quality-rule-drawer"
       title={<OverlayTitle title={rule ? '修改质量规则' : '新增质量规则'} icon={<SafetyCertificateOutlined />} description="定义检查条件、异常级别与可接受的容忍阈值" />}
       extra={<Tag className="data-model-drawer-header-tag">{modelQualityRuleTypeLabels[type]}</Tag>}

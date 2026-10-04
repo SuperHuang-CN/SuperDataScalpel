@@ -129,6 +129,29 @@ class EngineApiStudioDataSourceServiceTest {
     }
 
     @Test
+    void replicaSkipsUnchangedPoolsAndResolvesWithoutManagementDatabaseReads() throws Exception {
+        UUID id = UUID.randomUUID();
+        DBConfig config = DBConfig.builder().name(id.toString()).driver(ClickHouseDriver.class.getName())
+                .enabled(true).url("jdbc:clickhouse://test:8123/db").build();
+        config.setId(id.toString());
+        when(dataSourceService.getDBConfig()).thenReturn(java.util.List.of(config));
+        when(apiDataSourceRegistry.require(id.toString())).thenReturn(new ClickHouseDataSource());
+        EngineApiStudioDataSourceService service = new EngineApiStudioDataSourceService(
+                dataSourceService, apiDataSourceRegistry, BuiltInDialects.registry(), deploymentRepository,
+                new EngineProperties("engine_test", "token"));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "cluster",
+                org.mockito.Mockito.mock(cn.superhuang.data.scalpel.engine.cluster.EngineClusterCoordinator.class));
+        service.synchronizeRuntime();
+        service.synchronizeRuntime();
+        verify(dataSourceService, times(1)).loadDBConfig(config);
+        for (int i = 0; i < 100; i++) assertEquals("CLICKHOUSE", service.resolve(id).databaseType());
+        verify(dataSourceService, org.mockito.Mockito.never()).getDBConfigById(anyString());
+        config.setUrl("jdbc:clickhouse://test:8123/changed");
+        service.synchronizeRuntime();
+        verify(dataSourceService, times(2)).loadDBConfig(config);
+    }
+
+    @Test
     void resolvesClickHouseAsNonTransactionalJdbcDatasource() throws Exception {
         UUID dataSourceId = UUID.randomUUID();
         DBConfig config = DBConfig.builder().driver(ClickHouseDriver.class.getName()).build();

@@ -6,12 +6,12 @@ import java.net.URI;
 import java.util.Set;
 import io.swagger.v3.oas.annotations.media.Schema;
 
-/** Typed value of the panorama.map STRING setting; URLs are fetched only by the user's map. */
-@Schema(description = "panorama.map 字符串配置中保存的受控 JSON 结构。瓦片由用户浏览器直接向配置地址请求，DataScalpel 服务端不代理请求。")
+/** Shared basemap settings; the panorama.map key and record name are retained for compatibility. */
+@Schema(description = "模型空间预览与全景地图共用的底图配置，兼容保存在 panorama.map 字符串中的受控 JSON 结构。瓦片由用户浏览器直接向配置地址请求，DataScalpel 服务端不代理请求。")
 public record PanoramaMapConfiguration(
         @Schema(description = "HTTP(S) XYZ 瓦片模板，最长 3000 个字符且必须包含 {z}、{x}、{y} 三个占位符；不得包含用户凭据或 URL fragment。空字符串表示不配置底图。") String url,
         @Schema(description = "展示给最终用户的地图提供方纯文本署名，去除首尾空白后最长 500 个字符。") String attribution,
-        @Schema(description = "浏览器地图允许请求的最大缩放级别，闭区间 0 到 22。") int maxZoom) {
+        @Schema(description = "底图瓦片允许请求的最大缩放级别，闭区间 0 到 22，默认 18；继续放大地图时复用此级别瓦片。") int maxZoom) {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     public static PanoramaMapConfiguration parse(String raw) {
         try {
@@ -27,7 +27,7 @@ public record PanoramaMapConfiguration(
                 if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) throw new IllegalArgumentException();
             }
             return new PanoramaMapConfiguration(url, attribution, zoom);
-        } catch (RuntimeException e) { throw new IllegalArgumentException("全景地图配置无效：请填写 HTTP(S) XYZ 地址、纯文本署名和 0～22 的最大缩放级别"); }
+        } catch (RuntimeException e) { throw new IllegalArgumentException("地图底图配置无效：请填写 HTTP(S) XYZ 地址、纯文本署名和 0～22 的最大缩放级别"); }
     }
     public static String normalize(String raw) { return JSON.writeValueAsString(parse(raw)); }
 }

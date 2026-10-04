@@ -198,7 +198,7 @@ export const CanvasTaskDefinitionPanel = ({
           重新配置会从空白 Canvas {CANVAS_SCHEMA_VERSION}.{CANVAS_SCHEMA_MINOR_VERSION} 开始。
           旧定义会保留到你主动保存新定义时才被覆盖。
         </Typography.Paragraph>
-        <Modal
+        <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
           open={reconfigureConfirmOpen}
           title={<OverlayTitle variant="workspace" title="重新配置 Canvas 定义？" />}
           okText="从空白画布开始"
@@ -290,7 +290,7 @@ export const CanvasTaskDefinitionPanel = ({
           </Space>
         ) : null}
       />
-      <Modal
+      <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={cancelEditConfirmOpen}
         title={<OverlayTitle variant="workspace" title="取消编辑 Canvas 定义？" />}
         closable={false}
@@ -327,7 +327,7 @@ export const CanvasTaskDefinitionPanel = ({
       >
         当前 Canvas 定义或节点配置存在未保存修改。你可以保存后离开、放弃修改或继续编辑。
       </Modal>
-      <Modal
+      <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
         title={<OverlayTitle variant="workspace" title="离开未保存的 Canvas 定义？" />}
         closable={false}

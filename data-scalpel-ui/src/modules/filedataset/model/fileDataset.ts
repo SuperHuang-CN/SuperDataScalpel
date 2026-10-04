@@ -10,7 +10,7 @@ export type FileDatasetFileStatus = 'PREPARING' | 'READY';
 
 export type FileDatasetStorageKind = 'SINGLE_OBJECT' | 'GDB_DIRECTORY' | 'SHAPEFILE_COMPONENT_SET';
 
-export type FileDatasetParseStatus = 'QUEUED' | 'PARSING' | 'SCHEMA_READY' | 'READY';
+export type FileDatasetParseStatus = 'WAITING_CRS' | 'QUEUED' | 'PARSING' | 'SCHEMA_READY' | 'READY';
 
 export type FileDatasetTableSourceLoadMode = 'INITIAL' | 'APPEND' | 'REPLACE_ALL' | 'REPLACE_SOURCE';
 
@@ -210,6 +210,7 @@ export const fileDatasetFormatLabels: Record<FileDatasetFormat, string> = {
 };
 
 export const fileDatasetParseStatusLabels: Record<FileDatasetParseStatus, string> = {
+  WAITING_CRS: '待确认空间参考',
   QUEUED: '排队中',
   PARSING: '解析中',
   SCHEMA_READY: '仅 Schema',

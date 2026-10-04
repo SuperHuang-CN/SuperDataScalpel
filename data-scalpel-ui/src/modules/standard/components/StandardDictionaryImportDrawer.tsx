@@ -117,7 +117,7 @@ export const StandardDictionaryImportDrawer = ({ open, onClose }: Props) => {
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-import-drawer"
         title={<OverlayTitle icon={<ImportOutlined />} title="导入树形码表" description="校验码表身份、节点层级与现有数据变更" />}
         extra={<Tag className="standard-dictionary-import-header-tag">Excel 模板</Tag>}

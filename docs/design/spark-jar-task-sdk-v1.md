@@ -1,5 +1,31 @@
 # Spark JAR 任务与 SDK v1 设计
 
+## 批处理原子写入扩展（2026-09-29）
+
+新增可选 `BatchWriteOptions` / `WriteCondition`，不改变既有 `execute()` 默认直接提交。
+在线 Java 与上传 JAR 使用同一 SDK，不要求用户自己创建中间表。典型用法：
+
+```java
+context.models().write("output", rows)
+    .mapSameName().mode(ModelWriteMode.OVERWRITE)
+    .batchWrite(BatchWriteOptions.overwriteWhere(
+        WriteCondition.compare("region_id", WriteCondition.Operator.EQ, 1)))
+    .execute();
+```
+
+完整替换/追加/UPSERT 使用 `BatchWriteOptions.atomic()`；只有显式
+`new BatchWriteOptions(condition, true)` 才允许空输入清空范围。原子写入仅支持批处理，
+每次 execute 单独提交；目标条件字段必须参与映射，越界数据会拒绝整次目标提交。
+首批实测支持 PostgreSQL、MySQL/InnoDB、Oracle、SQL Server、openGauss，不支持的库拒绝，不暗降级。
+
+模型 Geometry 读取/写入使用现有 Sedona/WKB 与模型快照 EPSG，保持 XY/NULL，不自动重投影。
+自由 JDBC 写 Geometry 必须 `.geometrySrid("目标空间列", epsg)`；自由 JDBC 原有普通读取接口不自动推断空间元数据。
+此扩展不开放实时 Geometry。试运行只捕获结果预览、校验配置，不写真实目标或中间表；因此不能用试运行证明数据库事务可提交。
+
+`WriteResult.affectedRows` 是确认成功处理的输入行数，非净新增/物理变更统计。
+TestKit 保存 `batchWrite` / `geometrySrids` 并检查条件、空输入；它不模拟数据库事务、索引、触发器或排序规则。
+参见[实施方案](batch-jdbc-write-implementation-20260929.md)及[实际验证](../verification/batch-jdbc-write-20260929.md)。
+
 ## 目标与边界
 
 `SPARK_JAR` 和 `SPARK_STREAMING_JAR` 面向 Canvas 难以表达的复杂批处理与 Structured Streaming。
@@ -131,6 +157,12 @@ Exactly Once或Dispatcher Backend。生产Runner仍是最终执行语义来源�
 
 写操作立即执行，多个写操作没有跨目标事务，后续异常可能留下部分写入。平台累计 SDK写入影响行数；
 没有 SDK写入为 0，任一指标未知则为 null。原生 Spark Writer不计入平台影响行数。
+
+未设置 `batchWrite` 的 Canvas、SDK/JAR 与在线开发统一调用 Engine 的 `DirectJdbcWriter`，
+共用直接写入分支、UPSERT Key 数据校验、数据库能力判断及 JDBC 执行；权限、字段映射和试运行拦截仍在各自入口。
+普通列沿用 Spark JDBC，Geometry/UPSERT 沿用分区批量 PreparedStatement，每 500 行执行批次、每分区提交。
+OVERWRITE 仍为 TRUNCATE 后写入，不保证整次原子性，也不支持条件覆盖；原子模式仍独立使用 `BatchJdbcWriter`。
+openGauss 的直接 UPSERT 使用单行 MERGE，不继承 PostgreSQL 的 ON CONFLICT；这不改变其分区提交边界。
 
 ### JDBC 读取参数与分片
 

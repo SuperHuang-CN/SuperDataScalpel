@@ -61,7 +61,7 @@
   padding: 14px;
   background: rgb(248 249 254 / 72%);
   border: 1px solid rgb(77 96 166 / 10%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .ontology-subsection-title {
@@ -111,7 +111,7 @@
   overflow: hidden;
   background: transparent;
   border-color: rgb(77 96 166 / 12%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .ontology-editor-collapse > .ant-collapse-item > .ant-collapse-header {
@@ -172,7 +172,7 @@
   padding: 8px 8px 8px 12px;
   background: linear-gradient(145deg, #fafbff, #fff);
   border: 1px solid rgb(77 96 166 / 12%);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-group-card > div:first-child {
@@ -281,7 +281,7 @@
   padding: 10px 13px;
   background: #fff;
   border: 1px solid rgb(77 96 166 / 18%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   box-shadow: 0 4px 12px rgb(50 63 112 / 6%);
 }
 
@@ -322,7 +322,7 @@
   padding: 10px;
   background: #fff;
   border: 1px solid rgb(77 96 166 / 11%);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-capability-fields-heading {
@@ -377,7 +377,7 @@
 .ontology-preview-group {
   overflow: hidden;
   border: 1px solid rgb(77 96 166 / 10%);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-preview-group > .ontology-subsection-title {
@@ -532,7 +532,7 @@
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
   cursor: pointer;
 }
 
@@ -619,7 +619,7 @@
   color: #6153b8;
   font-size: 11px;
   background: #f0efff;
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-body {
@@ -724,7 +724,7 @@
   color: #5269d5;
   font-size: 17px;
   background: linear-gradient(145deg, #edf2ff, #f3efff);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-inspector-content > .ant-space .ant-tag {
@@ -765,7 +765,7 @@
   padding: 11px;
   background: linear-gradient(145deg, #f7f9ff, #faf8ff);
   border: 1px solid rgb(83 104 195 / 13%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .ontology-graph-direction-card > div {
@@ -818,7 +818,7 @@
   padding: 8px 9px;
   background: #fafbff;
   border: 1px solid rgb(77 96 166 / 8%);
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-property-groups > div > strong {
@@ -842,7 +842,7 @@
   gap: 3px 8px;
   padding: 8px 9px;
   background: #fafbff;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-capabilities > div > span {
@@ -864,7 +864,7 @@
   overflow: auto;
   background: #fffbf1;
   border: 1px solid #f2dfaf;
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-validation-list button {
@@ -875,7 +875,7 @@
   text-align: left;
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--ds-radius-control);
   cursor: pointer;
 }
 
@@ -922,7 +922,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
   background: #f6f7fb;
-  border-radius: 7px;
+  border-radius: var(--ds-radius-control);
 }
 
 .ontology-graph-inspector-empty {

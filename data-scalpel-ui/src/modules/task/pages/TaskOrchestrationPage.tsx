@@ -32,7 +32,7 @@ export const TaskOrchestrationPage = () => {
       <div className="task-orchestration-page">
         <CanvasDesigner onInspectorDirtyChange={setInspectorDirty} />
       </div>
-      <Modal
+      <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
         title={<OverlayTitle variant="workspace" title="节点配置尚未应用" />}
         okText="放弃并离开"

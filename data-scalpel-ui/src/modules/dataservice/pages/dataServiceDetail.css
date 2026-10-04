@@ -12,7 +12,7 @@
   padding: 16px;
   background: #fff;
   border: 1px solid #f0f0f0;
-  border-radius: 6px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-detail-header {
@@ -25,7 +25,7 @@
   padding: 7px 10px;
   background: #fff;
   border: 1px solid #f0f0f0;
-  border-radius: 6px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-detail-identity {
@@ -53,7 +53,7 @@
   height: 32px;
   background: #f5f7fb;
   border: 1px solid #edf0f5;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-detail-title {
@@ -88,7 +88,7 @@
   overflow: hidden;
   background: #fff;
   border: 1px solid #f0f0f0;
-  border-radius: 6px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-detail-tabs > .ant-tabs-nav {
@@ -151,7 +151,7 @@
   overflow-wrap: anywhere;
   background: #fafafa;
   border: 1px solid #f0f0f0;
-  border-radius: 4px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-definition-detail > .ant-descriptions {
@@ -193,7 +193,7 @@
   overflow-wrap: anywhere;
   background: #f8f9ff;
   border: 1px solid rgb(77 96 166 / 12%);
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-related-models-alert {
@@ -234,7 +234,7 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid #f0f0f0;
-  border-radius: 4px;
+  border-radius: var(--ds-radius-control);
   grid-template-columns: minmax(0, 1fr) 228px;
 }
 
@@ -301,7 +301,7 @@
   overflow: auto;
   background: rgb(250 251 255 / 86%);
   border: 1px solid rgb(77 96 166 / 14%);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .data-service-spatial-preview-toolbar {
@@ -328,7 +328,7 @@
   color: #4d5875;
   background: rgb(255 255 255 / 92%);
   border: 1px solid rgb(77 96 166 / 14%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   box-shadow: 0 6px 18px rgb(56 68 112 / 12%);
   pointer-events: auto;
   backdrop-filter: blur(8px);
@@ -360,7 +360,7 @@
   overflow: hidden;
   background: #f3f5f7;
   border: 1px solid rgb(77 96 166 / 15%);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .data-service-spatial-preview-map-state {
@@ -406,7 +406,7 @@
   font-size: 12px;
   background: rgb(255 255 255 / 92%);
   border: 1px solid rgb(77 96 166 / 14%);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
   box-shadow: 0 6px 18px rgb(56 68 112 / 12%);
   backdrop-filter: blur(8px);
 }
@@ -470,7 +470,7 @@
   background-position: 0 0, 0 6px, 6px -6px, -6px 0;
   background-size: 12px 12px;
   border: 1px solid rgb(77 96 166 / 12%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .data-service-spatial-marker,
@@ -570,7 +570,7 @@
   align-items: center;
   padding: 9px 10px;
   background: #f6f8ff;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .data-service-spatial-sld-file .ant-typography {

@@ -1,6 +1,8 @@
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import '../../../shared/theme/resource-workspace.css';
 import { ArrowLeftOutlined, CameraOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Descriptions, Empty, Modal, Result, Skeleton, Space, Tabs, Tag, Typography, message } from 'antd';
+import { ConfigProvider, Button, Descriptions, Empty, Modal, Result, Skeleton, Space, Tabs, Tag, Typography, message } from 'antd';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -9,6 +11,7 @@ import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { useCurrentUser } from '../../system';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { fetchPanoramaImage } from '../api/panoramaApi';
+import { panoramaDeleteConfirmation } from '../components/panoramaDeleteConfirmation';
 import { PanoramaEditDrawer } from '../components/PanoramaEditDrawer';
 import { PanoramaUploadDrawer } from '../components/PanoramaUploadDrawer';
 import { usePanorama, usePanoramaCommand } from '../hooks/usePanoramas';
@@ -41,9 +44,9 @@ export const PanoramaDetailPage = () => {
     catch (e) { if (!controller.signal.aborted) { messageApi.error(e instanceof ApiError ? e.message : '下载失败'); if (e instanceof ApiError && e.problem?.code === 'PANORAMA_CONTENT_CHANGED') void query.refetch(); } }
     finally { setDownloading(false); }
   };
-  const remove = () => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除全景影像" tone="danger" />, icon: null, content: `确认删除“${panorama.name}”及其原图和预览文件吗？`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+  const remove = () => modal.confirm({ ...panoramaDeleteConfirmation(panorama), title: <OverlayTitle icon={<DeleteOutlined />} title="删除全景影像" tone="danger" />,
     onOk: async () => { try { await command.mutateAsync({ id, action: 'delete' }); messageApi.success('全景已删除'); navigate('/panorama'); } catch (e) { messageApi.error(e instanceof ApiError ? e.message : '删除失败'); throw e; } } });
-  return <div className="panorama-detail-page business-detail-page">{context}{modalContext}
+  return <ConfigProvider theme={workspaceResourceTheme}><div className="panorama-detail-page business-detail-page resource-workspace-detail">{context}{modalContext}
     <div className="business-detail-header"><Space wrap><Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/panorama')}>返回列表</Button><CameraOutlined /><Typography.Text strong>{panorama.name}</Typography.Text><Tag>{processingLabels[panorama.processingStatus]}</Tag></Space>
       <Space wrap><Button icon={<ReloadOutlined />} aria-label="刷新全景详情" onClick={() => void query.refetch()} />{current && <Button icon={<DownloadOutlined />} loading={downloading} onClick={() => void download()}>下载原图</Button>}
         {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改资料</Button>}{canUpdate && <Button disabled={isProcessing(panorama)} onClick={() => setReplacing(true)}>替换成品</Button>}
@@ -57,7 +60,7 @@ export const PanoramaDetailPage = () => {
     </Space></div>}
     <Tabs className="business-detail-tabs panorama-detail-tabs" destroyOnHidden items={[
       { key: 'viewer', label: '全景浏览', children: current ? <Suspense fallback={<Skeleton active />}><Viewer id={id} version={panorama.contentVersion} /></Suspense> : <Empty description="全景尚未就绪，处理完成后即可浏览" /> },
-      { key: 'info', label: '基本信息', children: <div className="panorama-info"><Descriptions bordered column={{ xs: 1, sm: 2 }} items={[
+      { key: 'info', label: '基本信息', children: <div className="panorama-info"><Descriptions layout="vertical" column={{ xs: 1, sm: 2, lg: 3 }} items={[
         { key: 'name', label: '名称', children: panorama.name }, { key: 'directory', label: '目录', children: panorama.directoryId ? directoryName(directories.data ?? []) ?? '—' : '未分类' },
         { key: 'description', label: '描述', children: panorama.description || '—', span: 2 },
         { key: 'time', label: `拍摄时间 · ${panorama.timeMode === 'AUTO' ? '文件' : '人工'}`, children: captureLabel(panorama) },
@@ -73,5 +76,5 @@ export const PanoramaDetailPage = () => {
       ]} />{metadata?.warnings.length ? <InlineFeedback tone="warning" label={metadata.warnings.join('；')} action={canUpdate ? <Button onClick={() => setEditing(true)}>补录资料</Button> : undefined} /> : null}</div> },
     ]} />
     {editing && <PanoramaEditDrawer panorama={panorama} onClose={() => setEditing(false)} />}{replacing && <PanoramaUploadDrawer target={panorama} onClose={() => setReplacing(false)} />}
-  </div>;
+  </div></ConfigProvider>;
 };

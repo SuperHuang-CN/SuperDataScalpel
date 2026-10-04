@@ -134,7 +134,7 @@ export const StandardDictionaryItemDrawer = ({
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-drawer standard-dictionary-item-drawer"
         title={<OverlayTitle icon={<NodeIndexOutlined />} title={item ? '修改码表节点' : parent ? `新增“${parent.name}”的子节点` : '新增根节点'} description="维护节点值、显示名称和在码表树中的业务含义" />}
         extra={<Tag className="standard-dictionary-drawer-header-tag">{dictionary.code}</Tag>}

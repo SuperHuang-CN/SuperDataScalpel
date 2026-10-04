@@ -1,6 +1,6 @@
-import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { ContextHelp } from '../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Col, Form, Input, InputNumber, Select, Space } from 'antd';
+import { Button, Col, Collapse, Form, Input, InputNumber, Row, Select, Space } from 'antd';
 import { BusinessSecretInput } from '../../../shared/components/BusinessSecretInput';
 import type { HttpApiAuthenticationType } from '../model/dataSource';
 
@@ -40,7 +40,7 @@ const NamedValues = ({ name, addLabel }: { name: (string | number)[]; addLabel: 
             />
           </Space>
         ))}
-        <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ name: '', value: '' })}>
+        <Button type="link" className="http-api-add-value" icon={<PlusOutlined />} onClick={() => add({ name: '', value: '' })}>
           {addLabel}
         </Button>
       </Space>
@@ -51,7 +51,7 @@ const NamedValues = ({ name, addLabel }: { name: (string | number)[]; addLabel: 
 const AuthenticationFields = ({ type }: { type: HttpApiAuthenticationType }) => {
   switch (type) {
     case 'NONE':
-      return <Alert showIcon type="info" title="该数据源不附加鉴权信息" />;
+      return null;
     case 'BASIC':
       return <>
         <Col span={12}>
@@ -197,17 +197,19 @@ export const HttpApiConnectionFields = ({ authenticationType }: {
   authenticationType: HttpApiAuthenticationType;
 }) => (
   <>
-    <Col span={24}>
-      <Alert
-        showIcon
-        type="info"
-        title="连接负责地址、凭据与运行时 Token；具体路径、签名、分页和返回 Schema 在保存后通过“API 资源”配置。"
-      />
-    </Col>
-    <Col span={24}>
-      <Form.Item label="Base URL" name={['connection', 'baseUrl']} rules={[{ required: true, type: 'url', message: '请输入完整的 HTTP/HTTPS 地址' }]}>
+    <Col span={16}>
+      <Form.Item label={<span className="http-api-field-label">服务地址 <span className="http-api-label-detail">Base URL</span><ContextHelp ariaLabel="服务地址与 API 资源配置说明" content="连接负责地址、凭据与运行时 Token；具体路径、签名、分页和返回 Schema 在保存后通过“API 资源”配置。" /></span>} name={['connection', 'baseUrl']} rules={[{ required: true, type: 'url', message: '请输入完整的 HTTP/HTTPS 地址' }]}>
         <Input placeholder="https://api.example.com" />
       </Form.Item>
+    </Col>
+    <Col span={8}>
+      <Form.Item label="鉴权方式" name={['connection', 'authentication', 'type']} rules={[{ required: true }]}>
+        <Select options={authenticationOptions} />
+      </Form.Item>
+    </Col>
+    <AuthenticationFields type={authenticationType} />
+    <Col span={24}>
+      <h3 className="http-api-group-title">请求设置</h3>
     </Col>
     <Col span={24}>
       <Form.Item label="默认 Header">
@@ -235,20 +237,27 @@ export const HttpApiConnectionFields = ({ authenticationType }: {
       </Form.Item>
     </Col>
     <Col span={24}>
-      <Form.Item label="鉴权方式" name={['connection', 'authentication', 'type']} rules={[{ required: true }]}>
-        <Select options={authenticationOptions} />
-      </Form.Item>
-    </Col>
-    <AuthenticationFields type={authenticationType} />
-    <Col span={12}>
-      <Form.Item label="签名密钥" name={['connection', 'signingSecret']} extra="HMAC/MD5 签名使用；修改时留空表示保留。">
-        <BusinessSecretInput name="http-signing-secret" autoComplete="off" />
-      </Form.Item>
-    </Col>
-    <Col span={12}>
-      <Form.Item label="RSA PKCS#8 私钥" name={['connection', 'signingPrivateKey']} extra="RSA-SHA256 使用；修改时留空表示保留。">
-        <Input.TextArea name="http-signing-private-key" autoComplete="off" autoSize={{ minRows: 2, maxRows: 5 }} />
-      </Form.Item>
+      <Collapse
+        ghost
+        className="http-api-signing-settings"
+        items={[{
+          key: 'signing',
+          label: <span className="http-api-field-label">签名凭据 <span className="http-api-label-detail">可选 · HMAC / MD5 / RSA</span></span>,
+          forceRender: true,
+          children: <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item label="签名密钥" name={['connection', 'signingSecret']} extra="HMAC/MD5 签名使用；修改时留空表示保留。">
+                <BusinessSecretInput name="http-signing-secret" autoComplete="off" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="RSA PKCS#8 私钥" name={['connection', 'signingPrivateKey']} extra="RSA-SHA256 使用；修改时留空表示保留。">
+                <Input.TextArea name="http-signing-private-key" autoComplete="off" autoSize={{ minRows: 2, maxRows: 5 }} />
+              </Form.Item>
+            </Col>
+          </Row>,
+        }]}
+      />
     </Col>
   </>
 );

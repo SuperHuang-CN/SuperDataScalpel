@@ -13,26 +13,34 @@ const hasFilterValue = (value: unknown): boolean => {
 
 interface ManagementFilterActionsProps<T extends object> {
   form: FormInstance<T>;
+  formId?: string;
   appliedFilters?: T;
   additionalActive?: boolean;
   loading?: boolean;
   onReset: () => void;
+  commands?: ReactNode;
 }
 
 export const ManagementFilterActions = <T extends object>({
   form,
+  formId,
   appliedFilters,
   additionalActive = false,
   loading = false,
   onReset,
+  commands,
 }: ManagementFilterActionsProps<T>) => {
   const draftFilters = Form.useWatch((values: T) => values, form);
   const showReset = additionalActive || hasFilterValue(draftFilters) || hasFilterValue(appliedFilters);
+  const queryActions = <>
+    <Button type="primary" size="middle" loading={loading} form={formId} htmlType={formId ? 'submit' : 'button'} onClick={formId ? undefined : () => form.submit()}>查询</Button>
+    {showReset && <Button type="text" size="middle" onClick={onReset}>重置</Button>}
+  </>;
 
   return (
-    <div className="management-filter-actions">
-      <Button type="primary" size="middle" loading={loading} onClick={() => form.submit()}>查询</Button>
-      {showReset && <Button type="text" size="middle" onClick={onReset}>重置</Button>}
+    <div className={commands ? 'management-filter-actions management-toolbar-actions' : 'management-filter-actions'}>
+      {commands ? <div className="management-query-actions">{queryActions}</div> : queryActions}
+      {commands && <div className="management-toolbar-commands">{commands}</div>}
     </div>
   );
 };

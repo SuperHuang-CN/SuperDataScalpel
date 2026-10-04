@@ -110,6 +110,12 @@ final class RunnerFailureClassifier {
         }
         RunnerExecutionException declaredRunnerFailure = findCause(
                 throwable, RunnerExecutionException.class);
+        if (declaredRunnerFailure != null && "BATCH_WRITE_COMMIT_UNKNOWN".equals(declaredRunnerFailure.code())) {
+            return failure(declaredRunnerFailure.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
+        if (declaredRunnerFailure != null && sqlException == null && declaredRunnerFailure.code().startsWith("BATCH_WRITE_")) {
+            return failure(declaredRunnerFailure.code(), ExecutionErrorCategory.CONFIGURATION);
+        }
         if (declaredRunnerFailure != null
                 && ("USER_JOB_CLASS_LOAD_FAILED".equals(declaredRunnerFailure.code())
                 || "USER_JOB_CONSTRUCTION_FAILED".equals(declaredRunnerFailure.code()))) {

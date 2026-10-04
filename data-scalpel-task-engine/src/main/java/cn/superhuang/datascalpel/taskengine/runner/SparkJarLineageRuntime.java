@@ -353,6 +353,7 @@ final class SparkJarLineageRuntime {
         return switch (mode) {
             case "APPEND" -> TaskLineageEvidence.WriteMode.APPEND;
             case "OVERWRITE" -> TaskLineageEvidence.WriteMode.FULL_OVERWRITE;
+            case "CONDITIONAL_OVERWRITE" -> TaskLineageEvidence.WriteMode.CONDITIONAL_OVERWRITE;
             case "UPSERT" -> TaskLineageEvidence.WriteMode.UPSERT;
             default -> throw new IllegalArgumentException("不支持的 SDK 写入模式");
         };

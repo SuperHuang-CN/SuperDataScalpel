@@ -30,6 +30,7 @@ describe('file dataset detail model', () => {
     expect(normalizeFileDatasetDetailTab('tables')).toBe('tables');
     expect(normalizeFileDatasetDetailTab('unknown')).toBe('overview');
     expect(normalizeFileDatasetDetailTab(null)).toBe('overview');
+    expect(normalizeFileDatasetDetailTab('history')).toBe('history');
   });
 
   it('keeps a valid table deep link and falls back when it becomes stale', () => {

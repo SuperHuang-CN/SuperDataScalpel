@@ -120,7 +120,7 @@ export const ServiceEnginePoolMonitorDrawer = ({ registration, onClose }: {
   const query = useDataSourcePoolMonitor(registration.id, autoRefresh);
   const data = query.data;
   return <Drawer
-    rootClassName="business-overlay business-drawer-overlay"
+    rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
     className="jdbc-monitor-drawer"
     open size="min(1080px, 100vw)" onClose={onClose} destroyOnHidden closable={{ placement: 'end' }}
     title={<OverlayTitle icon={<DashboardOutlined />} title="JDBC 监控" description={`${registration.dataSourceName} · ${registration.dataSourceCode}`} />}

@@ -469,9 +469,20 @@ public class FileDatasetService {
         CrsReference spatialReference = new CrsReference(
                 request.authority().trim().toUpperCase(Locale.ROOT), request.code()
         );
-        SpatialReferencePreparation preparation = requireTransactionResult(transactionTemplate.execute(status ->
-                prepareSpatialReferenceUpdate(datasetId, tableId)
-        ));
+        Object prepared=transactionTemplate.execute(status -> {
+            FileDataset dataset=requireDatasetLocked(datasetId);
+            FileDatasetTable table=tableRepository.findLockedByIdAndFileDatasetId(tableId,datasetId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"逻辑表不存在"));
+            if(table.getParseStatus()!=FileDatasetParseStatus.WAITING_CRS) return prepareSpatialReferenceUpdate(datasetId,tableId);
+            FileDatasetFile file=requireFile(datasetId,table.getPendingCrsFileId());
+            String sourceKey=table.getPendingCrsSourceKey();
+            table.declarePendingCrs(spatialReference);
+            table.clearPendingCrs();
+            parseJobSubmissionService.enqueueTableValidation(dataset,file,table,FileDatasetTableSourceLoadMode.INITIAL,null,table.getName(),sourceKey);
+            return tableResponse(table);
+        });
+        if(prepared instanceof FileDatasetTableResponse resumed) return resumed;
+        SpatialReferencePreparation preparation = (SpatialReferencePreparation) requireTransactionResult(prepared);
         List<FileDatasetParser.ParseResult> parsedSources = new ArrayList<>(preparation.sources().size());
         try {
             for (SpatialSourceSnapshot source : preparation.sources()) {
@@ -1646,6 +1657,7 @@ public class FileDatasetService {
                 .map(FileDatasetParseJob::getFileDatasetTableId)
                 .filter(Objects::nonNull)
                 .forEach(ids::add);
+        tableRepository.findByPendingCrsFileId(fileId).stream().map(FileDatasetTable::getId).forEach(ids::add);
         return tableRepository.findAllById(ids);
     }
 

@@ -25,7 +25,7 @@
 
 ## 当前执行
 
-当前 Canvas 为 4.77：`SPATIAL_CLIP` 新增逐来源多 Mask 组合，新建节点默认先融合当前来源命中的
+当前 Canvas 为 4.78：新增批处理原子写入配置，不改变空间处理算法；4.77 的 `SPATIAL_CLIP` 新增逐来源多 Mask 组合，新建节点默认先融合当前来源命中的
 所有 Mask 再裁剪一次，避免重叠 Mask 重复覆盖；旧定义缺失/null 时仍逐 Mask 输出。4.76 新增批处理 `SPATIAL_DESCRIBE_DATASET`，保留来源表并输出逐字段统计、
 数据集描述、可选样本和可选 XY Envelope 范围。Geometry 可选，输出范围时必须显式选择；
 4.76 已补齐四结果完整血缘、20,000 行规模样例和真实页面验收；真实 Enterprise 字段细节、

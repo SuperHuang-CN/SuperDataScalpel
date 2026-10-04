@@ -56,7 +56,7 @@ export function SdkApiDrawer({ mode, onClose }: { mode: 'BATCH' | 'STREAMING'; o
   const showDetail = !searching && activeType && (!selected?.memberName || member);
 
   return <Drawer closable={{ placement: 'end' }} open placement="right" size={960} onClose={onClose}
-    rootClassName="business-overlay business-drawer-overlay sdk-api-drawer"
+    rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay sdk-api-drawer"
     styles={{ body: { display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 } }}
     title={<OverlayTitle icon={<BookOutlined />} title="SDK 使用指南" description="按用途找操作，示例与当前 SDK 同步" />}
     extra={<Button icon={<ReloadOutlined />} loading={query.isFetching} onClick={() => void query.refetch()}>刷新</Button>}

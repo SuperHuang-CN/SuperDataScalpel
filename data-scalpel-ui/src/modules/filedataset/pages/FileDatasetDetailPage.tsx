@@ -2,16 +2,22 @@ import {
   ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
-  MoreOutlined,
   ReloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
-import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { Button, ConfigProvider, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { fileDatasetReadiness } from '../model/fileDatasetReadiness';
+import { FileDatasetUploadDrawer } from '../components/FileDatasetUploadDrawer';
+import { FileDatasetParseHistoryPanel } from '../components/FileDatasetParseHistoryPanel';
+import './file-dataset-detail.css';
+import { fileDatasetDeleteConfirmation } from '../components/fileDatasetDeleteConfirmation';
 import { FileDatasetDrawer } from '../components/FileDatasetDrawer';
 import { FileDatasetFilesPanel } from '../components/FileDatasetFilesPanel';
 import { FileDatasetOverviewPanel } from '../components/FileDatasetOverviewPanel';
@@ -45,6 +51,7 @@ export const FileDatasetDetailPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
@@ -116,14 +123,7 @@ export const FileDatasetDetailPage = () => {
   };
 
   const remove = (target: FileDataset) => modalApi.confirm({
-    icon: null,
-
-    rootClassName: 'business-overlay business-modal-overlay',
-    title: <OverlayTitle title="删除文件数据集" icon={<DeleteOutlined />} tone="danger" />,
-    content: `确认删除“${target.name}”及其 ${target.fileCount} 个文件、${target.tableCount} 张表吗？`,
-    okText: '删除',
-    cancelText: '取消',
-    okButtonProps: { danger: true },
+    ...fileDatasetDeleteConfirmation(target),
     onOk: async () => {
       try {
         await deleteMutation.mutateAsync(target.id);
@@ -160,7 +160,7 @@ export const FileDatasetDetailPage = () => {
     );
   }
 
-  const readyTagColor = dataset.tableCount > 0 && dataset.readyTableCount === dataset.tableCount ? 'success' : 'processing';
+  const readiness = fileDatasetReadiness(dataset);
   const directoryName = dataset.directoryId ? directoryNameById.get(dataset.directoryId) : undefined;
   const tabItems = [
     {
@@ -168,6 +168,7 @@ export const FileDatasetDetailPage = () => {
       label: '概览',
       children: (
         <FileDatasetOverviewPanel
+          key={dataset.id}
           dataset={dataset}
           directoryName={directoryName}
           tables={tables}
@@ -182,8 +183,10 @@ export const FileDatasetDetailPage = () => {
       label: <FileDatasetDetailTabLabel label="文件" count={dataset.fileCount} />,
       children: (
         <FileDatasetFilesPanel
+          key={dataset.id}
           dataset={dataset}
           canUpdate={canUpdate}
+          onViewHistory={() => selectTab('history')}
           onRefreshTables={() => void Promise.all([tablesQuery.refetch(), detailQuery.refetch()])}
         />
       ),
@@ -204,9 +207,11 @@ export const FileDatasetDetailPage = () => {
         />
       ),
     },
+    { key: 'history', label: '解析记录', children: <FileDatasetParseHistoryPanel key={dataset.id} datasetId={dataset.id} /> },
   ];
 
   return (
+    <ConfigProvider theme={workspaceResourceTheme}>
     <div className="file-dataset-detail-page business-detail-page">
       {messageContext}
       {modalContext}
@@ -219,7 +224,7 @@ export const FileDatasetDetailPage = () => {
             </span>
             <span className="file-dataset-detail-title">{dataset.name}</span>
             <Tag>{fileDatasetTypeLabels[dataset.type]}</Tag>
-            <Tag color={readyTagColor}>{dataset.readyTableCount} / {dataset.tableCount} 表已就绪</Tag>
+            <ManagementStatusIndicator label={readiness.label} tone={readiness.tone} title={readiness.help} />
           </div>
           <div className="file-dataset-detail-subtitle">
             <span>{directoryName ?? (dataset.directoryId ? '目录已删除' : '未分类')}</span>
@@ -238,17 +243,12 @@ export const FileDatasetDetailPage = () => {
               onClick={() => void Promise.all([detailQuery.refetch(), tablesQuery.refetch()])}
             />
           </Tooltip>
+          {canUpdate && <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传文件</Button>}
           {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改</Button>}
           {canDelete && (
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [{ key: 'delete', icon: <DeleteOutlined />, label: '删除文件数据集', danger: true }],
-                onClick: () => remove(dataset),
-              }}
-            >
-              <Button icon={<MoreOutlined />} aria-label="文件数据集更多操作" />
-            </Dropdown>
+            <Tooltip title="删除文件数据集">
+              <Button danger icon={<DeleteOutlined />} aria-label={`删除${dataset.name}`} onClick={() => remove(dataset)} />
+            </Tooltip>
           )}
         </Space>
       </div>
@@ -259,6 +259,7 @@ export const FileDatasetDetailPage = () => {
         items={tabItems}
         onChange={(key) => selectTab(key as FileDatasetDetailTabKey)}
       />
+      <FileDatasetUploadDrawer dataset={uploadOpen && canUpdate ? dataset : null} onClose={() => setUploadOpen(false)} onOpenDetail={(tab) => { setUploadOpen(false); selectTab(tab); }} />
       <FileDatasetDrawer
         open={editing}
         fileDataset={dataset}
@@ -266,5 +267,6 @@ export const FileDatasetDetailPage = () => {
         onClose={() => setEditing(false)}
       />
     </div>
+    </ConfigProvider>
   );
 };

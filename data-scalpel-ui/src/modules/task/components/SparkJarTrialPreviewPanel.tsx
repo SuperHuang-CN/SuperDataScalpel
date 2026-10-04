@@ -262,7 +262,7 @@ export const SparkJarTrialPreviewPanel = ({ preview, streaming = false }: SparkJ
         {outputs.map((output) => <div key={output.key}>{renderOutput(output)}</div>)}
       </div>
       <Modal
-        rootClassName="business-overlay business-modal-overlay spark-jar-trial-value-modal"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay spark-jar-trial-value-modal"
         open={Boolean(complexValue)}
         title={<OverlayTitle icon={<FileTextOutlined />} title={complexValue ? `字段值 · ${complexValue.fieldName}` : '字段值'} />}
         footer={<Button onClick={() => setComplexValue(null)}>关闭</Button>}

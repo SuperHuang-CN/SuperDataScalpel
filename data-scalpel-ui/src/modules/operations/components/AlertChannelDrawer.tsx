@@ -11,7 +11,7 @@ import type { AlertChannel, AlertChannelWrite } from '../model/operations';
 export const AlertChannelDrawer = ({ channel, onClose }: { channel: AlertChannel | null; onClose: () => void }) => {
   const [form] = Form.useForm<AlertChannelWrite>(); const [bearerOpen, setBearerOpen] = useState(false); const [hmacOpen, setHmacOpen] = useState(false);
   const save = useOperationsMutation(saveChannel); const [notice, context] = message.useMessage();
-  return <>{context}<Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" open onClose={onClose} width={680}
+  return <>{context}<Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open onClose={onClose} width={680}
     title={<OverlayTitle icon={<ApiOutlined />} title={channel ? '编辑 Webhook 渠道' : '新建 Webhook 渠道'} description="配置告警推送地址与认证凭据" />}
     footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}><Button onClick={onClose}>取消</Button><Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存</Button></Space>}>
     <Form form={form} layout="vertical" autoComplete="off" initialValues={{ name: channel?.name, url: channel?.url, enabled: channel?.enabled ?? true }}

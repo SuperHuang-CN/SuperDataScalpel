@@ -185,6 +185,8 @@ X-Super-Gateway-Admin-Token: <machine-token>
 
 ## 8. 访问日志
 
+> 本节描述初始版本。2026-09-29 起日志事件、Request ID、统计与保护能力以 [保护与可观测性](../gateway-protection-and-observability.md) 为准：改为规范化 v1 事件，服务端生成请求 ID，并提供限流、有效期和节点监控。
+
 数据面响应提交前生成安全结构化事件并尝试放入有界内存队列。404、401、403、正常上游响应、502 和 504 都记录；未匹配请求的 Service/Route/Consumer 字段为空。
 
 事件字段：

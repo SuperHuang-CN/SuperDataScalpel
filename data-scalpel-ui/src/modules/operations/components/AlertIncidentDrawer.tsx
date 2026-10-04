@@ -24,7 +24,7 @@ export const AlertIncidentDrawer = ({ incidentId, onClose }: { incidentId: strin
     catch (error) { notice.error(error instanceof Error ? error.message : '操作失败'); return false; }
   };
   const openForm = (kind: 'close' | 'silence') => { form.resetFields(); setModal(kind); };
-  return <>{context}<Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" width={920} title={<OverlayTitle icon={<BellOutlined />} title="告警详情" description="查看告警事件与处理记录" />} open={Boolean(incidentId)} onClose={onClose} destroyOnHidden
+  return <>{context}<Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" width={920} title={<OverlayTitle icon={<BellOutlined />} title="告警详情" description="查看告警事件与处理记录" />} open={Boolean(incidentId)} onClose={onClose} destroyOnHidden
     extra={i && <Tag color={i.severity === 'CRITICAL' ? 'error' : 'warning'}>{severityLabels[i.severity]}</Tag>}>
     {query.isPending && <Spin />}{query.error && <InlineFeedback tone="error" label="告警详情加载失败" detail={query.error.message} action={<Button type="link" onClick={() => void query.refetch()}>重试</Button>} />}
     {i && <>
@@ -58,7 +58,7 @@ export const AlertIncidentDrawer = ({ incidentId, onClose }: { incidentId: strin
       ]} />
     </>}
   </Drawer>
-  <Modal rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle icon={<BellOutlined />} title={modal === 'close' ? `关闭告警 · ${i?.subjectName ?? ''}` : `静默同类告警 · ${i?.subjectName ?? ''}`} />} open={modal !== null}
+  <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" title={<OverlayTitle icon={<BellOutlined />} title={modal === 'close' ? `关闭告警 · ${i?.subjectName ?? ''}` : `静默同类告警 · ${i?.subjectName ?? ''}`} />} open={modal !== null}
     okText={modal === 'close' ? '确认关闭' : '设置静默'} cancelText="返回" confirmLoading={command.isPending} onCancel={() => setModal(null)} onOk={() => form.submit()} destroyOnHidden>
     <Form form={form} layout="vertical" autoComplete="off" initialValues={{ minutes: 30 }} onFinish={values => {
       if (!i) return;

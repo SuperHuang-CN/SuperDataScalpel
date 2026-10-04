@@ -1,0 +1,58 @@
+/* File resources share the lake-blue workspace style with data sources. */
+.app-content-detail .file-dataset-detail-page {
+  --ds-primary-gradient: linear-gradient(#287f9e, #287f9e);
+  --ds-standard-control-height: 36px;
+  container: file-dataset-detail / inline-size;
+  color: #263d4c;
+  font-family: var(--ds-ui-font);
+  font-size: 14px;
+}
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-header {
+  padding: 14px 16px; background: #fff; border: 1px solid #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; backdrop-filter: none;
+}
+.file-dataset-detail-page .file-dataset-detail-identity { flex: 1; }
+.app-content-detail .file-dataset-detail-page .business-detail-resource-icon { background: transparent; border: 0; box-shadow: none; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-title { color: #263d4c; font-size: 17px; font-weight: 600; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-subtitle { color: #5b7180; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tabs { background: #fff; border-color: #dce8ee; border-radius: var(--ds-radius-panel); box-shadow: none; backdrop-filter: none; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tabs > .ant-tabs-nav { padding-inline: 20px; background: #fff; border-bottom-color: #e1ebf0; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tabs > .ant-tabs-nav .ant-tabs-tab { margin: 0 24px 0 0; padding: 14px 0; border-radius: 0; color: #5b7180; background: transparent; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn { color: #287f9e; text-shadow: none; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tabs > .ant-tabs-nav .ant-tabs-ink-bar { background: #287f9e; }
+.app-content-detail .file-dataset-detail-page .file-dataset-detail-tab-count { color: #506b7b; background: #edf5f8; border: 0; }
+.file-dataset-detail-page .file-dataset-overview-panel { gap: 24px; }
+.file-dataset-overview-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; padding-top: 8px; }
+.file-dataset-overview-section { min-width: 0; }
+.file-dataset-overview-section h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: #263d4c; font-size: 15px; font-weight: 600; }
+.file-dataset-overview-section h2 > .anticon { color: #287f9e; }
+.app-content-detail .file-dataset-detail-page .business-detail-descriptions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; grid-auto-flow: row; }
+.app-content-detail .file-dataset-detail-page .business-detail-description-item { gap: 6px; padding: 12px 0; min-height: 66px; background: transparent; box-shadow: none; border-bottom: 1px solid #edf2f5; }
+.app-content-detail .file-dataset-detail-page .business-detail-description-label { color: #5b7180; font-size: 12px; font-weight: 400; }
+.app-content-detail .file-dataset-detail-page .business-detail-description-value { color: #263d4c; font-size: 14px; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-dataset-detail-page .file-dataset-files-panel { overflow-y: auto; gap: 20px; }
+.file-dataset-detail-page .file-dataset-files-panel > .file-dataset-detail-table { flex: none; }
+.file-dataset-detail-page .file-dataset-history:not(.file-dataset-history-compact) { height: 100%; overflow-y: auto; }
+.file-dataset-detail-page .file-dataset-detail-toolbar { align-items: flex-start; flex-wrap: wrap; }
+.app-content-detail .file-dataset-detail-page :is(.ant-table, .ant-select, .ant-input, .ant-btn, .ant-typography) { font-family: inherit; }
+.app-content-detail .file-dataset-detail-page .ant-table-wrapper .ant-table-thead > tr > th { background: var(--ds-table-header-background); color: var(--ds-table-header-color); border-bottom-color: #e1ebf0; }
+.app-content-detail .file-dataset-detail-page .ant-table-wrapper .ant-table-tbody > tr > td { border-bottom-color: #edf2f5; }
+.app-content-detail .file-dataset-detail-page .ant-table-wrapper .ant-table-tbody > tr:hover > td { background: #f0f7fa; }
+.app-content-detail .file-dataset-detail-page .ant-btn { box-shadow: none; }
+.app-content-detail .file-dataset-detail-page .ant-btn-primary:not(:disabled) { background: #287f9e; }
+.file-dataset-detail-page .file-dataset-table-workspace { border-color: #e1ebf0; }
+.file-dataset-detail-page .file-dataset-table-list { border-color: #e1ebf0; background: #f8fbfc; }
+.file-dataset-detail-page .file-dataset-table-list-toolbar { color: #263d4c; border-color: #e1ebf0; }
+.file-dataset-detail-page .file-dataset-table-list-name > small { color: #5b7180; }
+.app-content-detail .file-dataset-detail-page .file-dataset-table-list .file-dataset-table-list-row-selected > .ant-table-cell { background: #dceef5; }
+.file-dataset-detail-page .file-dataset-table-workspace { grid-template-columns: 260px minmax(0, 1fr); }
+.file-dataset-detail-page :is(button, a):focus-visible { outline: 2px solid #287f9e; outline-offset: 2px; }
+@container file-dataset-detail (max-width: 960px) {
+  .file-dataset-overview-columns { grid-template-columns: minmax(0, 1fr); }
+  .file-dataset-detail-page .file-dataset-detail-header { flex-wrap: wrap; }
+  .file-dataset-detail-page .file-dataset-detail-title-row { flex-wrap: wrap; }
+}
+@container file-dataset-detail (max-width: 600px) {
+  .app-content-detail .file-dataset-detail-page .business-detail-descriptions { grid-template-columns: minmax(0, 1fr); }
+  .app-content-detail .file-dataset-detail-page .business-detail-description-item { grid-column: 1 / -1; }
+  .file-dataset-detail-page .file-dataset-table-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 35%) minmax(0, 1fr); }
+}

@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.asset.domain.Asset;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetStatus;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetType;
 import cn.superhuang.data.scalpel.business.asset.repository.AssetRepository;
+import cn.superhuang.data.scalpel.business.asset.web.request.AssetPortalSort;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalAssetDetailResponse;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalAssetSummaryResponse;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalOverviewResponse;
@@ -16,6 +17,7 @@ import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.hibernate.query.criteria.JpaExpression;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -101,7 +103,9 @@ public class AssetPortalService {
             AssetType assetType,
             UUID directoryId,
             Integer page,
-            Integer size
+            Integer size,
+            Boolean featured,
+            AssetPortalSort sort
     ) {
         int effectivePage = page == null ? 0 : page;
         int effectiveSize = size == null ? DEFAULT_PAGE_SIZE : size;
@@ -116,13 +120,17 @@ public class AssetPortalService {
                     .findAllByScopeOrderBySortOrderAscNameAsc(DirectoryScope.ASSET);
             Set<UUID> directoryIds = directoryId == null ? Set.of() : descendantIds(directoryId, directories);
             Specification<Asset> specification = portalSpecification(normalizedKeyword, assetType, directoryId, directoryIds);
+            if (featured != null) {
+                specification = specification.and((root, query, builder) -> builder.equal(root.get("featured"), featured));
+            }
+            Sort ordering = switch (sort == null ? AssetPortalSort.RECOMMENDED : sort) {
+                case RECOMMENDED -> Sort.by(Sort.Order.desc("featured"), Sort.Order.desc("publishedAt"), Sort.Order.desc("id"));
+                case LATEST -> Sort.by(Sort.Order.desc("publishedAt"), Sort.Order.desc("id"));
+                case CREATED -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+            };
             Page<Asset> result = assetRepository.findAll(
                     specification,
-                    PageRequest.of(effectivePage, effectiveSize, Sort.by(
-                            Sort.Order.desc("featured"),
-                            Sort.Order.desc("publishedAt"),
-                            Sort.Order.desc("id")
-                    ))
+                    PageRequest.of(effectivePage, effectiveSize, ordering)
             );
             Map<UUID, Directory> directoriesById = byId(directories);
             return new PageResponse<>(
@@ -210,13 +218,15 @@ public class AssetPortalService {
                 String pattern = "%" + escapeLike(keyword.toLowerCase(Locale.ROOT)) + "%";
                 var portalName = root.<String>get("portalName");
                 var portalSummary = root.<String>get("portalSummary");
+                // LONG32VARCHAR is stored as text, but Hibernate lower() requires its STRING expression type.
+                var searchableTags = ((JpaExpression<String>) root.<String>get("tagsJson")).cast(String.class);
                 predicates.add(builder.or(
                         builder.and(builder.isNotNull(portalName), builder.like(builder.lower(portalName), pattern, '\\')),
                         builder.and(builder.isNull(portalName), builder.like(builder.lower(root.get("sourceName")), pattern, '\\')),
                         builder.and(builder.isNotNull(portalSummary), builder.like(builder.lower(portalSummary), pattern, '\\')),
                         builder.and(builder.isNull(portalSummary), builder.like(builder.lower(root.get("sourceDescription")), pattern, '\\')),
                         builder.like(builder.lower(root.get("sourceCode")), pattern, '\\'),
-                        builder.like(builder.lower(root.get("tagsJson")), pattern, '\\')
+                        builder.like(builder.lower(searchableTags), pattern, '\\')
                 ));
             }
             return builder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));

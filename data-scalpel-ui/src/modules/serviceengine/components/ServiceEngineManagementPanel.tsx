@@ -5,7 +5,7 @@ import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message }
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ServiceEngineDrawer } from './ServiceEngineDrawer';
 import { useDeleteServiceEngine, useServiceEngines, useTestServiceEngine } from '../hooks/useServiceEngines';
@@ -76,7 +76,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     }
   };
   const confirmRemove = (engine: ServiceEngine) => Modal.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle icon={<DeleteOutlined />} title="删除 Service Engine" tone="danger" />, icon: null,
     content: `确认删除“${engine.name}”吗？`,
     okText: '删除',
@@ -94,7 +94,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         <ManagementListCell
           icon={<ApiOutlined />}
           iconTone="cyan"
-          primary={<Button type="link" size="small" className="data-service-name-button" onClick={() => openDetail(engine)}>{value}</Button>}
+          primary={<ManagementName name={value} code={engine.code} description={engine.description}><Tooltip title={value}><Button type="link" size="small" className="data-service-name-button" onClick={() => openDetail(engine)}>{value}</Button></Tooltip></ManagementName>}
           secondary={<ManagementCode value={engine.code} />}
         />
       ),
@@ -145,25 +145,25 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
       {messageContext}
       <section className="management-workbench">
         <div className="management-filter-strip">
-          <Form<ServiceEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
+          <Form<ServiceEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search} id="service-engine-management-panel-filters-0">
             <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索引擎名称或编码" className="data-source-keyword-input" /></Form.Item>
             <Form.Item name="enabled"><Select allowClear placeholder="全部状态" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
             <Form.Item name="type"><Select allowClear placeholder="全部类型" className="data-source-filter-select" options={[{ value: 'DATASCALPEL', label: 'DataScalpel' }, { value: 'GEOSERVER', label: 'GeoServer' }]} /></Form.Item>
           </Form>
-          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={enginesQuery.isFetching} onReset={reset} />
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={enginesQuery.isFetching} onReset={reset} commands={<Space size={4} className="management-result-actions">
+            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新服务引擎列表" onClick={() => void enginesQuery.refetch()} /></Tooltip>
+            {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
+          </Space>} formId="service-engine-management-panel-filters-0" />
         </div>
         <div className="management-results-surface">
           <div className="management-result-toolbar">
           <div className="management-result-title">服务引擎 <span className="management-result-count">共 {enginesQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
-            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新服务引擎列表" onClick={() => void enginesQuery.refetch()} /></Tooltip>
-            {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
-          </Space>
+
           </div>
           <Table<ServiceEngine>
           size="small" className="management-table" rowKey="id" columns={columns}
           dataSource={enginesQuery.data?.content ?? []} loading={enginesQuery.isFetching}
-          scroll={{ y: '100%' }}
+          scroll={{ x: 1200, y: '100%' }}
           pagination={{ current: page + 1, pageSize: size, total: enginesQuery.data?.totalElements ?? 0, size: 'small', position: ['bottomRight'], hideOnSinglePage: false, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
           onChange={(pagination) => { setPage((pagination.current ?? 1) - 1); setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE); }}
           />

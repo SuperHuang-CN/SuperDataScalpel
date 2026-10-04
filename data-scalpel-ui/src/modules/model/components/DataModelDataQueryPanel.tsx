@@ -1,4 +1,5 @@
 import { ExclamationCircleOutlined } from '@ant-design/icons';
+import '../../../shared/components/schema-table.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
@@ -102,6 +103,7 @@ const defaultRenderCell = (
   _row: Record<string, unknown>,
   fieldType: DataModelField['fieldType'],
 ) => {
+  if (value === null || value === undefined) return <span className="schema-null-value">NULL</span>;
   if (typeof value === 'object') return <code>{JSON.stringify(value)}</code>;
   return dataModelPreviewCellText(value, fieldType);
 };
@@ -299,7 +301,7 @@ export const DataModelDataQueryPanel = ({
     modalApi.confirm({
       icon: null,
 
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
       title: <OverlayTitle title="放弃条件修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '当前查询条件尚未应用，关闭后本次修改会丢失。',
       okText: '放弃修改',
@@ -357,7 +359,7 @@ export const DataModelDataQueryPanel = ({
             trigger="click"
             placement="bottomRight"
             arrow={false}
-            rootClassName="business-overlay management-more-filter-overlay model-data-query-editor-overlay"
+            rootClassName="business-overlay management-more-filter-overlay workspace-resource-overlay model-data-query-editor-overlay"
             open={editorOpen}
             onOpenChange={(open) => {
               if (open) {
@@ -382,7 +384,7 @@ export const DataModelDataQueryPanel = ({
                 >
                   <div className="model-data-query-editor-body">
                     <div className="model-data-query-main-row">
-                      <Form.Item label="返回字段" name="columns" className="model-data-query-columns"><Select mode="multiple" allowClear maxTagCount="responsive" options={options} placeholder="留空则返回全部可查询字段" /></Form.Item>
+                      <Form.Item label="返回字段" name="columns" className="model-data-query-columns"><Select mode="multiple" optionFilterProp="label" allowClear maxTagCount="responsive" options={options} placeholder="留空则返回全部可查询字段" /></Form.Item>
                       <Form.Item label="条件关系" name="conditionType"><Select options={[{ value: 'AND', label: '全部满足' }, { value: 'OR', label: '任一满足' }]} /></Form.Item>
                     </div>
                     <Form.List name="filters">{(filterFields, { add, remove }) => (
@@ -391,7 +393,7 @@ export const DataModelDataQueryPanel = ({
                         {filterFields.length === 0 && <div className="model-data-query-section-empty">暂无筛选条件，将返回全部匹配数据。</div>}
                         {filterFields.map((field) => (
                           <div className="model-data-query-row" key={field.key}>
-                            <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请选择字段' }]}><Select options={options} placeholder="字段" /></Form.Item>
+                            <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请选择字段' }]}><Select showSearch optionFilterProp="label" options={options} placeholder="搜索字段" /></Form.Item>
                             <Form.Item name={[field.name, 'operator']} rules={[{ required: true, message: '请选择运算符' }]}><Select options={filterOperatorOptions} onChange={(value) => changeFilterOperator(field.name, value)} /></Form.Item>
                             <FilterValueInput index={field.name} form={form} />
                             <Tooltip title="删除条件"><Button type="text" danger icon={<DeleteOutlined />} aria-label="删除筛选条件" onClick={() => remove(field.name)} /></Tooltip>
@@ -405,7 +407,7 @@ export const DataModelDataQueryPanel = ({
                         {orderFields.length === 0 && <div className="model-data-query-section-empty">暂无排序，翻页稳定性取决于模型主键或物理排序键。</div>}
                         {orderFields.map((field) => (
                           <div className="model-data-query-row model-data-query-order-row" key={field.key}>
-                            <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请选择字段' }]}><Select options={options} placeholder="字段" /></Form.Item>
+                            <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请选择字段' }]}><Select showSearch optionFilterProp="label" options={options} placeholder="搜索字段" /></Form.Item>
                             <Form.Item name={[field.name, 'direction']} rules={[{ required: true, message: '请选择方向' }]}><Select options={[{ value: 'ASC', label: '升序' }, { value: 'DESC', label: '降序' }]} /></Form.Item>
                             <Tooltip title="删除排序"><Button type="text" danger icon={<DeleteOutlined />} aria-label="删除排序字段" onClick={() => remove(field.name)} /></Tooltip>
                           </div>
@@ -479,7 +481,7 @@ export const DataModelDataQueryPanel = ({
       {Boolean(error) && <Alert type="warning" showIcon className="model-data-query-alert" title="条件查询失败" description={error instanceof ApiError ? error.message : '请检查查询条件后重试。'} />}
       {queryResult && !queryResult.stableOrder && <Alert type="info" showIcon className="model-data-query-alert" title="当前模型未定义主键或排序键，翻页结果可能不稳定。" />}
       <Table<DataModelQueryRow>
-        size="small" className={`management-table${columnSizing ? ' model-preview-resizable-table' : ''}`}
+        size="small" className={`management-table schema-data-table${columnSizing ? ' model-preview-resizable-table' : ''}`}
         rowKey="__rowKey" loading={pending} columns={columns} dataSource={rows}
         rowSelection={rowSelection?.(rows)} locale={{
           emptyText: options.length === 0

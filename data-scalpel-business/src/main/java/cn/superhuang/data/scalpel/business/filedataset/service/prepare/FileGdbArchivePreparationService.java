@@ -241,6 +241,10 @@ public class FileGdbArchivePreparationService implements FileDatasetPreparationS
         }
         boolean ignored = gdbIndex < 0 && isAllowedMetadata(segments, entry.isDirectory());
         if (gdbIndex < 0) {
+            // A bare, single GDB root is unambiguous only for native database component names.
+            if(!entry.isDirectory() && segments.length==1 && (path.equalsIgnoreCase("gdb")
+                    || path.equalsIgnoreCase("timestamps") || path.matches("(?i)a[0-9a-f]{8}\\..+")))
+                return new NormalizedEntry("<bare-gdb>",path,false);
             return new NormalizedEntry(null, "", ignored);
         }
         String gdbRoot = String.join("/", java.util.Arrays.copyOfRange(segments, 0, gdbIndex + 1));

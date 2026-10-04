@@ -1,4 +1,5 @@
 import { FileSearchOutlined } from '@ant-design/icons';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { Descriptions, Drawer, Space, Tag, Typography } from 'antd';
 import type { DescriptionsProps } from 'antd';
 import type { GatewayAccessLog } from '../model/gatewayAccess';
@@ -16,18 +17,7 @@ interface GatewayAccessLogDetailDrawerProps {
 
 const emptyValue = (value: string | number | null | undefined) => value ?? '—';
 
-const formatDateTime = (value: string | null) => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-    timeZoneName: 'short',
-  }).format(new Date(value))
-  : '—';
+const formatDateTime = formatManagementDateTime;
 
 const latency = (value: number | null) => value === null ? '—' : `${value} ms`;
 const bytes = (value: number | null) => value === null
@@ -125,7 +115,7 @@ export const GatewayAccessLogDetailDrawer = ({
     },
     {
       key: 'kongLatency',
-      label: 'Kong 延迟',
+      label: '网关自身延迟',
       children: latency(log.kongLatencyMs),
     },
     {
@@ -167,7 +157,7 @@ export const GatewayAccessLogDetailDrawer = ({
 
   return (
     <Drawer closable={{ placement: 'end' }}
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       title={<OverlayTitle title="网关调用详情" icon={<FileSearchOutlined />} description="查看网关请求与响应明细" />}
       width={720}
       open={open}

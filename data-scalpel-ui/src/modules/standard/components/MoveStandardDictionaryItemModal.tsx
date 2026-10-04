@@ -107,7 +107,7 @@ export const MoveStandardDictionaryItemModal = ({
     <>
       {contextHolder}
       <Modal
-        rootClassName="business-overlay business-modal-overlay standard-dictionary-move-modal"
+        rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay standard-dictionary-move-modal"
         title={<OverlayTitle icon={<SwapOutlined />} title="调整码表节点位置" description="选择新的父节点和同级排序位置" />}
         open={open}
         destroyOnHidden

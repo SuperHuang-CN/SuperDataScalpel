@@ -36,7 +36,7 @@ export const useStandardFormLeaveGuard = ({
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     const confirmation = Modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: createElement(OverlayTitle, { icon: createElement(ExclamationCircleOutlined), title: '放弃未保存修改？', tone: 'danger' }),
       icon: null,
       content,
@@ -57,7 +57,7 @@ export const useStandardFormLeaveGuard = ({
       return;
     }
     Modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: createElement(OverlayTitle, { icon: createElement(ExclamationCircleOutlined), title: '放弃未保存修改？', tone: 'danger' }),
       icon: null,
       content,

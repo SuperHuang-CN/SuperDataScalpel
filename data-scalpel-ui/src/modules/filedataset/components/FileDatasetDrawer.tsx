@@ -1,10 +1,10 @@
-import { DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, FolderOutlined, SettingOutlined } from '@ant-design/icons';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
-import { Badge, Button, Col, ConfigProvider, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, Typography, message } from 'antd';
+import { Button, Col, ConfigProvider, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, message } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
+import { directoryTreeSelectOptions, useDirectoryTree } from '../../directory';
 import { useCreateFileDataset, useUpdateFileDataset } from '../hooks/useFileDatasets';
 import {
   defaultFileDatasetParsingOptions,
@@ -18,6 +18,8 @@ import {
 } from './FileDatasetParsingOptionsForm';
 import { FileDatasetTypeIcon } from './FileDatasetTypeIcon';
 import { buildFileDatasetParsingOptions, parsingFormValues, type ParsingFormValues } from '../model/fileDatasetParsingForm';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import './file-dataset-editor.css';
 
 interface FileDatasetDrawerProps {
   open: boolean;
@@ -34,38 +36,20 @@ interface FileDatasetFormValues extends ParsingFormValues {
   description?: string;
 }
 
-const FileDatasetFormSection = ({
-  title,
-  description,
-  icon,
-  help,
-  children,
-}: {
+const FileDatasetFormSection = ({ title, description, icon, help, children }: {
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
   help?: ReactNode;
   children: ReactNode;
 }) => (
-  <section className="file-dataset-form-section">
-    <header className="file-dataset-form-section-header">
-      <span className="file-dataset-form-section-icon" aria-hidden="true">{icon}</span>
-      <span className="file-dataset-form-section-copy">
-        <span className="file-dataset-form-section-title-row">
-          <span className="file-dataset-form-section-title">{title}</span>
-          {help && (
-            <ContextHelp
-              ariaLabel={`${title}说明`}
-              content={help}
-              presentation="popover"
-              placement="bottomLeft"
-            />
-          )}
-        </span>
-        <Typography.Text type="secondary">{description}</Typography.Text>
-      </span>
+  <section className="file-dataset-editor-section" aria-label={title}>
+    <header className="file-dataset-editor-section-heading">
+      <h3><span aria-hidden="true">{icon}</span>{title}</h3>
+      {help && <ContextHelp ariaLabel={`${title}说明`} content={help} presentation="popover" placement="bottomLeft" />}
     </header>
-    <div className="file-dataset-form-section-body">{children}</div>
+    {description && <p className="file-dataset-editor-section-description">{description}</p>}
+    {children}
   </section>
 );
 
@@ -163,28 +147,25 @@ export const FileDatasetDrawer = ({
       ariaLabel="查看解析设置锁定原因"
     />
   ) : (
-    <Badge
-      status="default"
-      text={editing ? '首次上传后解析设置将锁定' : '创建后进入文件管理上传文件'}
-    />
+    <span className="file-dataset-editor-footer-hint">{editing ? '首次上传后解析设置将锁定' : '创建后可进入数据集上传文件'}</span>
   );
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
-        className="file-dataset-drawer"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay"
+        className="file-dataset-editor"
         title={<OverlayTitle title={editing ? '修改文件数据集' : '新建文件数据集'} icon={<FileDatasetTypeIcon type={selectedType} />} description={editing ? '维护数据集归属、基础说明与共享解析规则' : '先建立空数据集，再进入文件管理上传并解析文件'} />}
         extra={<Tag className="file-dataset-drawer-header-tag">{fileDatasetTypeLabels[selectedType]}</Tag>}
         open={open}
-        size="min(800px, 100vw)"
+        size="min(760px, 100vw)"
         closable={pending ? false : { placement: 'end' }}
         maskClosable={!pending}
         onClose={close}
         destroyOnHidden
         footer={(
-          <div className="file-dataset-drawer-footer">
+          <div className="file-dataset-editor-footer">
             {footerStatus}
             <Space>
               <Button disabled={pending} onClick={close}>取消</Button>
@@ -200,7 +181,7 @@ export const FileDatasetDrawer = ({
           autoComplete="off"
           form={form}
           layout="vertical"
-          className="file-dataset-form"
+          className="file-dataset-editor-form"
           onFinish={(values) => void submit(values)}
           onValuesChange={(changed) => {
             if ('type' in changed && !editing) {
@@ -216,24 +197,32 @@ export const FileDatasetDrawer = ({
             <Row gutter={14}>
               <Col span={12} xs={24} sm={12}>
                 <Form.Item label="数据集名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入数据集名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}>
-                  <Input name="file-dataset-display-name" autoComplete="off" autoFocus />
+                  <Input name="file-dataset-display-name" autoComplete="off" autoFocus placeholder="输入数据集名称" />
                 </Form.Item>
               </Col>
               <Col span={12} xs={24} sm={12}>
                 <Form.Item label="数据集类型" name="type" rules={[{ required: true, message: '请选择数据集类型' }]}>
-                  <Select options={fileDatasetTypeOptions} disabled={editing} />
+                  <Select options={fileDatasetTypeOptions} disabled={editing} showSearch={{ optionFilterProp: 'label' }}
+                    classNames={{ popup: { root: 'file-dataset-editor-type-popup' } }}
+                    optionRender={(option) => <span className="file-dataset-editor-type-option"><FileDatasetTypeIcon type={option.data.value} /><span>{option.data.label}</span></span>}
+                    labelRender={({ value, label }) => <span className="file-dataset-editor-type-option"><FileDatasetTypeIcon type={value as FileDatasetType} /><span>{label}</span></span>}
+                  />
                 </Form.Item>
               </Col>
               {canViewDirectories && (
                 <Col span={24}>
                   <Form.Item label="所属目录" name="directoryId">
-                    <TreeSelect allowClear treeDefaultExpandAll loading={directoriesQuery.isFetching} treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" />
+                    <TreeSelect allowClear treeDefaultExpandAll treeIcon loading={directoriesQuery.isFetching}
+                      treeData={directoryTreeSelectOptions(directoriesQuery.data ?? [])} placeholder="未分类"
+                      prefix={<FolderOutlined className="workspace-directory-prefix" />}
+                      classNames={{ popup: { root: 'workspace-resource-select' } }}
+                    />
                   </Form.Item>
                 </Col>
               )}
               <Col span={24}>
-                <Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}>
-                  <Input.TextArea name="file-dataset-description" autoComplete="off" rows={3} maxLength={1000} showCount />
+                <Form.Item label={<span>说明 <span className="file-dataset-editor-optional">选填</span></span>} name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}>
+                  <Input.TextArea name="file-dataset-description" autoComplete="off" autoSize={{ minRows: 2, maxRows: 4 }} maxLength={1000} showCount placeholder="补充数据集用途或内容说明" />
                 </Form.Item>
               </Col>
             </Row>
@@ -260,6 +249,6 @@ export const FileDatasetDrawer = ({
           </FileDatasetFormSection>
         </Form>
       </Drawer>
-    </>
+    </ConfigProvider>
   );
 };

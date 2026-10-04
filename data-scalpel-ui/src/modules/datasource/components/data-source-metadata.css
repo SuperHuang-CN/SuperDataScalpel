@@ -1,0 +1,61 @@
+/* Object discovery needs readable names; index columns follow their actual content. */
+.data-source-metadata-panel .metadata-workspace {
+  grid-template-columns: clamp(260px, 24%, 340px) minmax(0, 1fr);
+}
+.data-source-metadata-panel .metadata-browser-toolbar .metadata-table-search {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--ds-radius-control);
+  background: #fff;
+}
+.data-source-metadata-panel .metadata-table-search input.ant-input {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.data-source-metadata-panel .metadata-table-search .ant-input-suffix { align-self: stretch; align-items: center; }
+.data-source-metadata-panel .metadata-table-search .ant-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  color: #466071;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+.data-source-metadata-panel .metadata-object-table .ant-table-tbody > tr > td { height: auto; padding: 11px 12px; }
+.data-source-metadata-panel .metadata-table-item { align-items: flex-start; gap: 8px; }
+.data-source-metadata-panel .metadata-table-kind { margin-top: 1px; }
+.data-source-metadata-panel .metadata-table-item-name {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 21px;
+  font-size: 13px;
+}
+.data-source-metadata-panel .metadata-primary-key-summary {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 12px 0;
+  color: #466071;
+  font-size: 13px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.metadata-primary-key-summary .anticon { color: #607482; }
+.metadata-primary-key-columns { color: #607482; }
+.metadata-primary-key-columns::before { content: '·'; margin-right: 10px; }
+.data-source-metadata-panel .metadata-index-table .ant-table-tbody > tr > td { vertical-align: middle; padding: 12px; }
+.metadata-index-name.ant-typography { color: #263d4c; font-size: 13px; overflow-wrap: anywhere; }
+.metadata-index-type { color: #607482; font-size: 13px; white-space: nowrap; }
+.metadata-index-fields { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0; padding: 0; list-style: none; }
+.metadata-index-fields li { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; color: #344f60; font-size: 13px; overflow-wrap: anywhere; }
+.metadata-index-field-order { color: #607482; font-size: 11px; font-variant-numeric: tabular-nums; }
+.data-source-metadata-panel .metadata-field-name { color: #263d4c; font-weight: 600; }

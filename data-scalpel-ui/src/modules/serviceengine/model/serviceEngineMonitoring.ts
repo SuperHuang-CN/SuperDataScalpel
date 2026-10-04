@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 export type JdbcPoolMonitorStatus = 'AVAILABLE' | 'NOT_LOADED' | 'UNSUPPORTED';
 
 export interface JdbcPoolSummary {
@@ -101,7 +102,5 @@ export const monitorDuration = (value: number | null | undefined): string => (
 export const monitorTime = (value: string | null | undefined): string => {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium', timeStyle: 'medium', hour12: false,
-  }).format(date);
+  return Number.isNaN(date.getTime()) ? value : formatManagementDateTime(value);
 };

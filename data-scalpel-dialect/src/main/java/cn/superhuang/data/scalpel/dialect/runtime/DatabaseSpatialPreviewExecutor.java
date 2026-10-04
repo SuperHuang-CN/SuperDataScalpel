@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.api.SpatialPreviewDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
+import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewColumn;
 import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewData;
 import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewLimits;
@@ -17,6 +18,7 @@ import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Properties;
 
 /** Opens one short-lived read-only connection for a controlled dialect spatial preview operation. */
 public final class DatabaseSpatialPreviewExecutor {
@@ -53,7 +55,34 @@ public final class DatabaseSpatialPreviewExecutor {
                 dialect.readSpatialPreview(connection, table, column, viewport, limits, timeout));
     }
 
+    public void stream(String databaseType, JdbcConnectionConfig config, TableIdentifier table,
+            SpatialPreviewColumn column, int maximumRows, Duration timeout,
+            java.util.function.Consumer<byte[]> consumer) {
+        execute(databaseType, config, true, (connection, dialect) -> {
+            connection.setReadOnly(true);
+            connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            connection.setAutoCommit(false);
+            try {
+                dialect.streamSpatialPreview(connection, table, column, maximumRows, timeout, consumer);
+            } catch (SQLException | RuntimeException failure) {
+                try {
+                    connection.rollback();
+                } catch (SQLException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+                throw failure;
+            }
+            connection.rollback();
+            return null;
+        });
+    }
+
     private <T> T execute(String databaseType, JdbcConnectionConfig config, Operation<T> operation) {
+        return execute(databaseType, config, false, operation);
+    }
+
+    private <T> T execute(String databaseType, JdbcConnectionConfig config, boolean streaming,
+            Operation<T> operation) {
         try {
             DatabaseDialect databaseDialect = registry.require(databaseType);
             if (!(databaseDialect instanceof SpatialPreviewDialect spatialDialect)) {
@@ -61,7 +90,11 @@ public final class DatabaseSpatialPreviewExecutor {
                         "SPATIAL_PREVIEW_UNSUPPORTED", "当前数据库不支持动态空间预览", null
                 );
             }
-            try (Connection connection = connectionFactory.open(databaseDialect.createConnectionSpec(config))) {
+            JdbcConnectionSpec spec = databaseDialect.createConnectionSpec(config);
+            if (streaming) {
+                spec = streamingConnectionSpec(spec);
+            }
+            try (Connection connection = connectionFactory.open(spec)) {
                 try {
                     connection.setReadOnly(true);
                 } catch (SQLException ignored) {
@@ -78,6 +111,13 @@ public final class DatabaseSpatialPreviewExecutor {
         } catch (SQLTimeoutException exception) {
             throw new DatabaseAccessException("QUERY_TIMEOUT", "空间预览查询超时", exception);
         } catch (SQLException exception) {
+            if (streaming && exception.getMessage() != null
+                    && exception.getMessage().contains("maxResultBuffer")) {
+                throw new DatabaseAccessException(
+                        "SPATIAL_PREVIEW_LIMIT_EXCEEDED",
+                        "单批几何超过 32 MiB 读取缓冲上限，请使用已发布的空间服务", exception
+                );
+            }
             if ("57014".equals(exception.getSQLState())) {
                 throw new DatabaseAccessException("QUERY_TIMEOUT", "空间预览查询超时", exception);
             }
@@ -92,6 +132,26 @@ public final class DatabaseSpatialPreviewExecutor {
             }
             throw new DatabaseAccessException("DATABASE_ERROR", "空间预览数据库访问失败", exception);
         }
+    }
+
+    private static JdbcConnectionSpec streamingConnectionSpec(JdbcConnectionSpec spec) {
+        if (!"org.postgresql.Driver".equals(spec.driverClassName())) {
+            return spec;
+        }
+        Properties properties = new Properties();
+        properties.putAll(spec.properties());
+        // A cold preview executes the geometry statement only once. The default threshold of 5
+        // otherwise sends bytea as hexadecimal text, doubling geometry traffic and decoding work.
+        properties.setProperty("prepareThreshold", "-1");
+        properties.setProperty("preferQueryMode", "extended");
+        properties.setProperty("binaryTransfer", "true");
+        properties.setProperty("binaryTransferEnable", "bytea");
+        properties.setProperty("binaryTransferDisable", "");
+        // Bound driver allocations as well as the downstream WKB budget. A fixed, modest batch
+        // avoids adaptiveFetch permanently shrinking the cursor after one unusually large shape.
+        properties.setProperty("maxResultBuffer", "33554432");
+        properties.setProperty("adaptiveFetch", "false");
+        return new JdbcConnectionSpec(spec.driverClassName(), spec.jdbcUrl(), properties, spec.schemaName());
     }
 
     @FunctionalInterface

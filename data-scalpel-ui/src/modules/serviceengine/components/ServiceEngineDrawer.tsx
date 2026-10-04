@@ -178,7 +178,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="service-engine-drawer"
         title={<OverlayTitle icon={<CloudServerOutlined />} title={editing ? '修改 Service Engine' : '新建 Service Engine'} description="配置普通服务引擎或 GeoServer 空间引擎" />}
         extra={<Tag className="service-engine-drawer-header-tag">{editing ? engine?.code : geoServer ? 'GeoServer' : 'DataScalpel'}</Tag>}

@@ -33,6 +33,7 @@ public class GatewayRuntimeSnapshotLoader {
     private final GatewayApiKeyRepository apiKeys;
     private final GatewaySubscriptionRepository subscriptions;
     private final ConfigurationRevisionService revisions;
+    private final tools.jackson.databind.ObjectMapper mapper;
 
     public GatewayRuntimeSnapshotLoader(
             GatewayServiceRepository services,
@@ -40,7 +41,8 @@ public class GatewayRuntimeSnapshotLoader {
             GatewayConsumerRepository consumers,
             GatewayApiKeyRepository apiKeys,
             GatewaySubscriptionRepository subscriptions,
-            ConfigurationRevisionService revisions
+            ConfigurationRevisionService revisions,
+            tools.jackson.databind.ObjectMapper mapper
     ) {
         this.services = services;
         this.routes = routes;
@@ -48,6 +50,7 @@ public class GatewayRuntimeSnapshotLoader {
         this.apiKeys = apiKeys;
         this.subscriptions = subscriptions;
         this.revisions = revisions;
+        this.mapper = mapper;
     }
 
     @Transactional(readOnly = true)
@@ -87,7 +90,13 @@ public class GatewayRuntimeSnapshotLoader {
                     route.getOrder(),
                     route.getStripPrefixSegments(),
                     route.getUpstreamPath(),
-                    gatewayRoute
+                    gatewayRoute,
+                    managedExternalId(service.getSource(), service.getExternalId()),
+                    managedExternalId(route.getSource(), route.getExternalId()),
+                    RuntimeTrafficPolicy.compile(service.getTrafficPolicy() == null
+                            ? cn.superhuang.superapigateway.controlplane.web.request.TrafficPolicyRequest.unrestricted()
+                            : mapper.readValue(service.getTrafficPolicy(),
+                            cn.superhuang.superapigateway.controlplane.web.request.TrafficPolicyRequest.class))
             );
             String firstSegment = GatewayRuntimeSnapshot.firstSegment(route.getPathPattern());
             for (GatewayHttpMethod method : route.getMethods()) {
@@ -111,23 +120,29 @@ public class GatewayRuntimeSnapshotLoader {
                         new GatewayRuntimeSnapshot.RuntimeConsumer(
                                 consumer.getId(),
                                 consumer.getCode(),
-                                consumer.isEnabled()
+                                consumer.isEnabled(),
+                                managedExternalId(consumer.getSource(), consumer.getExternalId()),
+                                new AccessValidity(key.getValidFrom(), key.getExpiresAt(), 0)
                         )
                 );
             }
         });
 
-        var granted = new HashSet<GatewayRuntimeSnapshot.SubscriptionKey>();
+        var granted = new HashMap<GatewayRuntimeSnapshot.SubscriptionKey, AccessValidity>();
         subscriptions.findAllByStatus(SubscriptionStatus.ACTIVE).forEach(subscription -> {
             if (enabledConsumers.containsKey(subscription.getConsumerId())
                     && enabledServices.containsKey(subscription.getServiceId())) {
-                granted.add(new GatewayRuntimeSnapshot.SubscriptionKey(
+                granted.put(new GatewayRuntimeSnapshot.SubscriptionKey(
                         subscription.getConsumerId(),
                         subscription.getServiceId()
-                ));
+                ), new AccessValidity(subscription.getValidFrom(), subscription.getExpiresAt(), subscription.getRequestsPerSecond()));
             }
         });
 
         return new GatewayRuntimeSnapshot(revision, routeIndex, keyIndex, granted);
+    }
+
+    private static String managedExternalId(String source, String externalId) {
+        return "datascalpel".equalsIgnoreCase(source) ? externalId : null;
     }
 }

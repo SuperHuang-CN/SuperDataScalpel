@@ -40,6 +40,7 @@ const columns: TableProps<UserJobMetricSnapshot>['columns'] = [
   },
   {
     title: '当前值',
+    align: 'right',
     render: (_, metric) => metricValue(metric),
   },
 ];

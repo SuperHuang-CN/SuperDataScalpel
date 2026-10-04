@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.dataentry.web.resource;
 
 import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryCandidateFiltersResponse;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryFormStatus;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryImportFormat;
 import cn.superhuang.data.scalpel.business.dataentry.service.DataEntryDataService;
@@ -111,6 +112,20 @@ public class DataEntryFormResource {
     @Operation(summary = "查询已发布且尚未建立填报表单的模型", description = "返回当前已发布且尚未绑定表单的模型候选、数据存储和数仓分层展示信息及基础适用性状态；先按状态和关键词筛选，再取前 100 项。创建时仍会重新校验模型存在且未被其他表单绑定。")
     public List<DataEntryModelCandidateResponse> candidates(@Parameter(description = "可选关键词，用于名称或编码的模糊匹配。") @RequestParam(required = false) String keyword) {
         return formService.candidates(keyword);
+    }
+
+    @GetMapping("/model-candidates/page")
+    @PreAuthorize("hasAuthority('dataentry.manage')")
+    @Operation(summary = "分页筛选填报候选模型", description = "只读查询管理库；通用 Search 条件与尚未建立填报表单且物理表模式为 MANAGED 的固定条件取交集，逻辑注册 EXTERNAL 模型不进入该选择入口。支持模型名称、编码、warehouseLayerId、storageDataSourceId 等标量字段；warehouseLayerId:null 表示未分层。默认页码、页大小和边界遵循 SearchRequest。受管模型仍返回已知准入问题并允许创建草稿；创建和发布继续执行原校验。无效查询返回 400，无管理权限返回 403。")
+    public PageResponse<DataEntryModelCandidateResponse> candidatePage(@ParameterObject @ModelAttribute SearchRequest request) {
+        return formService.candidatePage(request);
+    }
+
+    @GetMapping("/model-candidates/filters")
+    @PreAuthorize("hasAuthority('dataentry.manage')")
+    @Operation(summary = "读取填报候选模型筛选项", description = "只读返回全部尚未建立填报表单的 MANAGED 受管模型实际引用的分层和数据存储；排除仅由逻辑注册模型引用的选项，不受候选分页、关键词或筛选影响。不连接外部数据库，不要求额外的模型或数据源管理权限；无填报管理权限返回 403。")
+    public DataEntryCandidateFiltersResponse candidateFilters() {
+        return formService.candidateFilters();
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询填报表单详情",

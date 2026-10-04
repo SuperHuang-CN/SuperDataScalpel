@@ -1,9 +1,8 @@
-import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { CompactAlert as Alert, ContextHelp } from '../../../shared/components/ContextualFeedback';
 import { FileTextOutlined, SettingOutlined, TableOutlined } from '@ant-design/icons';
 import { Button, Tag } from 'antd';
 import type { DescriptionsProps } from 'antd';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
-import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import {
   fileDatasetParseStatusLabels,
   fileDatasetTypeLabels,
@@ -27,7 +26,7 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 }).format(new Date(value));
 
 const parseStatusColors: Record<FileDatasetParseStatus, string> = {
-  QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
+  WAITING_CRS: 'warning', QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
 };
 
 export const FileDatasetOverviewPanel = ({
@@ -41,7 +40,7 @@ export const FileDatasetOverviewPanel = ({
   const statusCounts = tables.reduce<Record<FileDatasetParseStatus, number>>((counts, table) => {
     counts[table.parseStatus] += 1;
     return counts;
-  }, { QUEUED: 0, PARSING: 0, SCHEMA_READY: 0, READY: 0 });
+  }, { WAITING_CRS: 0, QUEUED: 0, PARSING: 0, SCHEMA_READY: 0, READY: 0 });
   const activeCount = statusCounts.QUEUED + statusCounts.PARSING;
   const basicItems: DescriptionsProps['items'] = [
     { key: 'type', label: '数据集类型', children: <Tag>{fileDatasetTypeLabels[dataset.type]}</Tag> },
@@ -74,33 +73,20 @@ export const FileDatasetOverviewPanel = ({
          description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
         />
       )}
-      <BusinessDetailSection
-        title="基础信息"
-       description="数据集类型、规模与归属信息"
-        icon={<FileTextOutlined />}
-      >
-        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }} items={basicItems} />
-      </BusinessDetailSection>
-      <BusinessDetailSection
-        title="共享解析参数"
-       description="应用于当前数据集全部逻辑表的解析规则"
-        icon={<SettingOutlined />}
-      >
-        <Alert
-          type="info"
-          showIcon
-          message="同一数据集的所有逻辑表使用相同解析参数"
-         description={dataset.parsingOptionsLocked
+      <div className="file-dataset-overview-columns">
+      <section className="file-dataset-overview-section">
+        <h2><FileTextOutlined />基础信息</h2>
+        <BusinessDetailDescriptions column={2} items={basicItems} />
+      </section>
+      <section className="file-dataset-overview-section">
+        <h2><SettingOutlined />共享解析参数<ContextHelp ariaLabel="共享解析参数说明" content={dataset.parsingOptionsLocked
             ? '当前数据集已有文件、表或解析任务，解析参数已锁定；清空数据集后可再次修改。'
-            : '上传文件时无需再次配置；开始上传后解析参数将锁定。'}
-        />
-        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }} items={parsingItems} />
-      </BusinessDetailSection>
-      <BusinessDetailSection
-        title="表解析状态"
-       description="逻辑表解析任务的当前分布"
-        icon={<TableOutlined />}
-      >
+            : '所有逻辑表共用解析参数，上传文件时无需再次配置；开始上传后解析参数将锁定。'} /></h2>
+        <BusinessDetailDescriptions column={2} items={parsingItems} />
+      </section>
+      </div>
+      <section className="file-dataset-overview-section">
+        <h2><TableOutlined />当前数据表状态</h2>
         <div className="file-dataset-status-summary" aria-busy={tablesLoading}>
           {(Object.keys(fileDatasetParseStatusLabels) as FileDatasetParseStatus[]).map((status) => (
             <Tag key={status} color={parseStatusColors[status]}>
@@ -108,7 +94,7 @@ export const FileDatasetOverviewPanel = ({
             </Tag>
           ))}
         </div>
-      </BusinessDetailSection>
+      </section>
     </div>
   );
 };

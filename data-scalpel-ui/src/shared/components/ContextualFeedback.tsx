@@ -1,8 +1,8 @@
 import {
-  CheckCircleFilled,
-  CloseCircleFilled,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   CloseOutlined,
-  ExclamationCircleFilled,
+  WarningOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import type { AlertProps } from 'antd';
@@ -14,10 +14,10 @@ import { OverlayTitle } from './OverlayTitle';
 export type FeedbackTone = 'success' | 'info' | 'warning' | 'error';
 
 const feedbackIcons: Record<FeedbackTone, ReactNode> = {
-  success: <CheckCircleFilled />,
+  success: <CheckCircleOutlined />,
   info: <InfoCircleOutlined />,
-  warning: <ExclamationCircleFilled />,
-  error: <CloseCircleFilled />,
+  warning: <WarningOutlined />,
+  error: <CloseCircleOutlined />,
 };
 
 const textFromNode = (value: ReactNode) => typeof value === 'string' ? value : undefined;
@@ -55,7 +55,7 @@ export const ContextHelp = ({
       size="small"
       shape="circle"
       className={['context-help-trigger', `context-help-trigger-${tone}`, className].filter(Boolean).join(' ')}
-      icon={tone === 'warning' ? <ExclamationCircleFilled /> : <InfoCircleOutlined />}
+      icon={tone === 'warning' ? <WarningOutlined /> : <InfoCircleOutlined />}
       aria-label={ariaLabel}
     />
   );

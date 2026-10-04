@@ -57,7 +57,7 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
         ]}
         pagination={false}
       />
-      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" width={760} title={<OverlayTitle title="数据操作日志详情" icon={<AuditOutlined />} description="查看填报数据操作的执行结果与明细" />} open={Boolean(selectedId)} onClose={() => { setSelectedId(undefined); setChangePage(0); }}>
+      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay" size="min(760px, 100vw)" title={<OverlayTitle title="数据操作日志详情" icon={<AuditOutlined />} description="查看填报数据操作的执行结果与明细" />} open={Boolean(selectedId)} onClose={() => { setSelectedId(undefined); setChangePage(0); }}>
         {selected?.manualVerificationRequired && <Alert type="warning" showIcon title="操作结果待人工核对" description="目标数据库可能已完成部分或全部操作；请根据日志和目标数据核对，系统不会自动重放。" />}
         {selected && <Descriptions column={1} bordered size="small" items={[
           { key: 'operation', label: '操作', children: operationLabels[selected.operationType] },
@@ -89,7 +89,7 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
           />
         </>}
       </Drawer>
-      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" width={760} title={<OverlayTitle title="记录变更历史" icon={<HistoryOutlined />} description="查看记录的历史变更与操作结果" />}
+      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay" size="min(760px, 100vw)" title={<OverlayTitle title="记录变更历史" icon={<HistoryOutlined />} description="查看记录的历史变更与操作结果" />}
         open={Boolean(recordKey)} onClose={() => { setRecordKey(undefined); setRecordPage(0); }}>
         <Table<DataEntryRecordChange>
           size="small" rowKey="id" loading={recordChangesQuery.isLoading}

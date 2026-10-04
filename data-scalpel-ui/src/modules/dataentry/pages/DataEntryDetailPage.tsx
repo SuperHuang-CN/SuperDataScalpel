@@ -1,5 +1,7 @@
-import { ArrowLeftOutlined, DeleteOutlined, ExclamationCircleOutlined, PauseCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
-import { Button, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import '../../../shared/theme/resource-workspace.css';
+import { ArrowLeftOutlined, DeleteOutlined, ExclamationCircleOutlined, FormOutlined, PauseCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import { ConfigProvider, Button, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -49,9 +51,10 @@ export const DataEntryDetailPage = () => {
   };
 
   const remove = () => modalApi.confirm({
-    icon: null,
-    rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title={`删除填报表单“${detail.form.modelName ?? detail.form.id}”？`} icon={<DeleteOutlined />} tone="danger" />,
-    content: '关联下拉配置和操作日志将一并删除；目标物理表数据不会删除。',
+    rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay resource-delete-modal',
+    width: 440, centered: true, icon: null, focusable: { autoFocusButton: 'cancel' },
+    title: <OverlayTitle title="删除填报表单" icon={<DeleteOutlined />} tone="danger" />,
+    content: <div className="resource-delete-content"><p>确定删除以下填报表单？</p><div className="resource-delete-target"><FormOutlined /><strong>{detail.form.modelName ?? detail.form.id}</strong></div><p className="resource-delete-note">关联下拉配置和操作日志将一并删除；目标物理表数据不会删除。</p></div>,
     okText: '删除', okButtonProps: { danger: true }, cancelText: '取消',
     onOk: async () => {
       await deleteMutation.mutateAsync(id);
@@ -60,13 +63,14 @@ export const DataEntryDetailPage = () => {
   });
 
   return (
-    <div className="business-detail-page data-entry-detail-page">
+    <ConfigProvider theme={workspaceResourceTheme}>
+    <div className="business-detail-page data-entry-detail-page resource-workspace-detail">
       {contextHolder}{modalContext}
       <div className="data-entry-detail-header business-detail-header">
         <div className="data-entry-detail-identity">
           <div className="data-entry-detail-title-row">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/data-entry')}>返回列表</Button>
-            <span className="business-detail-resource-icon business-detail-resource-icon-purple">填</span>
+            <span className="business-detail-resource-icon"><FormOutlined /></span>
             <span className="data-entry-detail-title">{detail.form.modelName ?? '目标模型已删除'}</span>
             <code>{detail.form.modelCode ?? detail.form.modelId}</code>
             <Tooltip title={detail.health.issues.length ? healthDescription : undefined} trigger={['hover', 'focus', 'click']} placement="bottom">
@@ -87,8 +91,8 @@ export const DataEntryDetailPage = () => {
             <span>发布版本 {detail.form.publishedModelSchemaVersion ?? '—'}</span>
           </div>
         </div>
-        <Space>
-          <Tooltip title="重新检查"><Button type="text" icon={<ReloadOutlined />} loading={query.isFetching} onClick={() => void query.refetch()} /></Tooltip>
+        <Space wrap>
+          <Tooltip title="重新检查"><Button type="text" aria-label="重新检查填报表单" icon={<ReloadOutlined />} loading={query.isFetching} onClick={() => void query.refetch()} /></Tooltip>
           {canManage && detail.form.status !== 'PUBLISHED' && <Tooltip title={!detail.health.canPublish ? publishBlockReason : undefined} trigger={['hover', 'focus', 'click']}>
             <span className="data-entry-publish-action" tabIndex={!detail.health.canPublish ? 0 : undefined} aria-label={!detail.health.canPublish ? `${publishLabel}不可用：${publishBlockReason}` : undefined}>
               <Button type="primary" icon={<SendOutlined />} disabled={!detail.health.canPublish} loading={commandMutation.isPending} onClick={() => void execute('publish')}>{publishLabel}</Button>
@@ -104,5 +108,6 @@ export const DataEntryDetailPage = () => {
         { key: 'logs', label: '操作日志', children: <DataEntryOperationLogPanel formId={id} /> },
       ]} />
     </div>
+    </ConfigProvider>
   );
 };

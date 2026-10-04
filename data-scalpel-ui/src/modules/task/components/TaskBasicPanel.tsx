@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { DeploymentUnitOutlined, FileTextOutlined, ProfileOutlined } from '@ant-design/icons';
 import { Descriptions, Tag, Typography } from 'antd';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
@@ -15,11 +16,7 @@ interface TaskBasicPanelProps {
   directoryName?: string;
 }
 
-const dateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-  hour12: false,
-}).format(new Date(value));
+const dateTime = formatManagementDateTime;
 
 export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => (
   <div className="task-detail-tab-panel task-basic-panel">

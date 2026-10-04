@@ -57,7 +57,7 @@
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: 11px;
+  border-radius: var(--ds-radius-panel);
   background: linear-gradient(145deg, #3967e8, #7459d6);
   box-shadow: 0 8px 20px rgba(55, 87, 207, 0.24);
 }
@@ -131,14 +131,14 @@
 
 .asset-portal-management-button.ant-btn {
   border-color: #dce2f0;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
   background: #f9faff;
 }
 
 .asset-portal-login-button.ant-btn {
   margin-left: 3px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
   background: linear-gradient(110deg, var(--asset-portal-blue), var(--asset-portal-purple));
   box-shadow: 0 6px 14px rgba(58, 84, 194, 0.2);
 }
@@ -225,7 +225,7 @@
   gap: 7px;
   padding: 6px 12px;
   border: 1px solid rgba(87, 109, 192, 0.16);
-  border-radius: 999px;
+  border-radius: var(--ds-radius-control);
   background: rgba(255, 255, 255, 0.58);
 }
 
@@ -256,7 +256,7 @@
   margin-top: 28px;
   padding: 6px;
   border: 1px solid rgba(107, 124, 174, 0.18);
-  border-radius: 15px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 18px 50px rgba(50, 72, 137, 0.15);
   backdrop-filter: blur(12px);
@@ -272,7 +272,7 @@
 .asset-portal-search .ant-input-group-addon .ant-btn {
   height: 42px;
   padding-inline: 22px;
-  border-radius: 9px !important;
+  border-radius: var(--ds-radius-control) !important;
   background: linear-gradient(110deg, var(--asset-portal-blue), var(--asset-portal-purple));
   box-shadow: 0 7px 16px rgba(60, 84, 194, 0.22);
 }
@@ -394,7 +394,7 @@
   overflow: hidden;
   color: var(--asset-portal-ink);
   border: 1px solid var(--asset-portal-border);
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
   background: linear-gradient(145deg, #fff, #fafbff);
   box-shadow: 0 8px 24px rgba(62, 77, 121, 0.055);
   text-align: left;
@@ -422,7 +422,7 @@
 .asset-portal-category-skeleton .ant-skeleton-image {
   width: 100%;
   height: 112px;
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .asset-portal-category-icon {
@@ -431,7 +431,7 @@
   justify-content: center;
   width: 52px;
   height: 52px;
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
   font-size: 22px;
 }
 
@@ -499,7 +499,7 @@
   gap: 5px;
   padding: 4px;
   border: 1px solid #e5e9f2;
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.82);
 }
 
@@ -508,7 +508,7 @@
   padding: 0 12px;
   color: #67738b;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--ds-radius-control);
   background: transparent;
   cursor: pointer;
 }
@@ -531,7 +531,7 @@
   padding: 18px;
   flex-direction: column;
   border: 1px solid var(--asset-portal-border);
-  border-radius: 15px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 9px 28px rgba(55, 68, 111, 0.07);
   backdrop-filter: blur(12px);
@@ -556,7 +556,7 @@
   width: 39px;
   height: 39px;
   margin-right: 9px;
-  border-radius: 11px;
+  border-radius: var(--ds-radius-panel);
   font-size: 17px;
 }
 
@@ -576,7 +576,7 @@
   margin: 0;
   color: #5e6a82;
   border-color: #e4e8f1;
-  border-radius: 5px;
+  border-radius: var(--ds-radius-tag);
   background: #f8f9fc;
 }
 
@@ -609,7 +609,7 @@
   width: max-content;
   padding: 2px 8px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--ds-radius-tag);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -714,7 +714,7 @@
   gap: 9px;
   color: #919aad;
   border: 1px dashed #ccd3e1;
-  border-radius: 15px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.7);
 }
 
@@ -732,7 +732,7 @@
   min-height: 285px;
   padding: 22px;
   border: 1px solid var(--asset-portal-border);
-  border-radius: 15px;
+  border-radius: var(--ds-radius-panel);
   background: #fff;
 }
 
@@ -750,7 +750,7 @@
 .asset-portal-load-more .ant-btn {
   min-width: 180px;
   border-color: #dce2f0;
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   color: #405bc0;
   background: rgba(255, 255, 255, 0.9);
 }
@@ -792,7 +792,7 @@
   justify-content: center;
   width: 72px;
   height: 72px;
-  border-radius: 20px;
+  border-radius: var(--ds-radius-panel);
   font-size: 29px;
   box-shadow: 0 12px 28px rgba(54, 75, 138, 0.11);
 }
@@ -835,7 +835,7 @@
   min-width: 126px;
   height: 42px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   background: linear-gradient(110deg, var(--asset-portal-blue), var(--asset-portal-purple));
   box-shadow: 0 9px 20px rgba(58, 84, 194, 0.22);
 }
@@ -850,7 +850,7 @@
 .asset-portal-detail-panel {
   padding: 26px;
   border: 1px solid var(--asset-portal-border);
-  border-radius: 16px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 12px 34px rgba(55, 68, 111, 0.07);
   backdrop-filter: blur(12px);
@@ -878,7 +878,7 @@
 .asset-portal-detail-panel .ant-descriptions-view {
   overflow: hidden;
   border-color: #e5e9f2;
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .asset-portal-detail-panel .ant-descriptions-item-label {
@@ -950,7 +950,7 @@
   min-height: 135px;
   padding: 17px;
   border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 13px;
+  border-radius: var(--ds-radius-panel);
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
 }
@@ -1023,7 +1023,7 @@
   .asset-portal-statistic-item:nth-child(n + 4) { display: none; }
   .asset-portal-detail-hero { padding: 18px 0 32px; }
   .asset-portal-detail-identity { grid-template-columns: 52px minmax(0, 1fr); gap: 14px; }
-  .asset-portal-detail-type-icon { width: 52px; height: 52px; border-radius: 15px; font-size: 21px; }
+  .asset-portal-detail-type-icon { width: 52px; height: 52px; border-radius: var(--ds-radius-panel); font-size: 21px; }
   .asset-portal-detail-identity > .ant-btn-primary { grid-column: 1 / -1; width: 100%; }
   .asset-portal-detail-panel { padding: 18px 14px; }
   .asset-portal-detail-panel-heading { flex-direction: column; }

@@ -130,6 +130,39 @@ class SpatialJdbcRuntimeSupportTest {
         assertFalse(duplicateException.getMessage().contains("7"));
     }
 
+    @Test
+    void directWriteAdapterRetainsMappingAndGeometryMetadataValidation() {
+        CanvasColumnSchema location = new CanvasColumnSchema("location", PlatformDataType.GEOMETRY,
+                null, null, null, true, null, false, false, null,
+                new GeometryTypeDefinition(GeometryKind.POINT, CrsReference.epsg(4326), CoordinateDimension.XY));
+        CanvasTableSchema target = new CanvasTableSchema("target", null, List.of(location));
+        Dataset<Row> dataset = sparkSession.createDataFrame(List.of(), SparkTypeMapper.toStructType(List.of(location)));
+        var missing = preparedOutput(target, dataset);
+        var failure = assertThrows(RunnerExecutionException.class,
+                () -> SpatialJdbcRuntimeSupport.directWriteSrids(missing, dataset));
+        assertEquals("SPATIAL_TARGET_METADATA_UNAVAILABLE", failure.code());
+        assertEquals(missing.node().id(), failure.nodeId());
+        var complete = new CanvasPreparedOutput(missing.node(), missing.writeId(), missing.sourceTableName(),
+                missing.runtimeDataSource(), missing.targetTable(), missing.qualifiedTableName(), missing.displayTarget(),
+                JdbcWriteMode.APPEND, dataset, target, Map.of("location", 4326), List.of());
+        assertEquals(Map.of("location", 4326), SpatialJdbcRuntimeSupport.directWriteSrids(complete, dataset));
+        var unmapped = dataset.withColumnRenamed("location", "unexpected");
+        var mappingFailure = assertThrows(RunnerExecutionException.class,
+                () -> SpatialJdbcRuntimeSupport.directWriteSrids(missing, unmapped));
+        assertEquals("OUTPUT_MAPPING_INVALID", mappingFailure.code());
+    }
+
+    @Test
+    void sharedKeyValidationSupportsLiteralColumnNamesAndReportsMissingKeys() {
+        var dataset = sparkSession.createDataFrame(List.of(RowFactory.create(1L)),
+                new org.apache.spark.sql.types.StructType().add("key.id", org.apache.spark.sql.types.DataTypes.LongType));
+        DirectJdbcWriter.validateUpsertKeys(dataset, List.of("key.id"), null);
+        var failure = assertThrows(RunnerExecutionException.class,
+                () -> DirectJdbcWriter.validateUpsertKeys(dataset, List.of("missing"), "output"));
+        assertEquals("UPSERT_KEY_NOT_MAPPED", failure.code());
+        assertEquals("output", failure.nodeId());
+    }
+
     private static CanvasPreparedOutput preparedOutput(
             CanvasTableSchema target,
             Dataset<Row> dataset

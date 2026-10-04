@@ -34,8 +34,6 @@ describe('DataModelListToolbar', () => {
       list={listState(MAX_STATISTICS_REFRESH_COUNT + 1)}
       actions={actions()}
       canPublish
-      canCreate={false}
-      createMenuItems={[]}
     />);
 
     expect(screen.getByRole('button', { name: /刷新统计/ })).toBeDisabled();
@@ -48,8 +46,6 @@ describe('DataModelListToolbar', () => {
       list={listState(MAX_BATCH_PUBLISH_COUNT + 1)}
       actions={actions()}
       canPublish
-      canCreate={false}
-      createMenuItems={[]}
     />);
 
     expect(screen.getByRole('button', { name: /批量发布/ })).toBeDisabled();

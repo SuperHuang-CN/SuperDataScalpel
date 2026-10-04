@@ -14,7 +14,7 @@ SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和�
 
 脚本服务第一版固定使用 Groovy、`POST`、`/open-api/v1/` 静态路径和一个默认数据源。脚本作者视为可信，允许查询和写入，并保留 API Studio 当前的 `db`、`log`、`Assert`、`Utils`、`Pager`、事务、日志与 SQL Trace 行为；暂不提供沙箱、超时中断、编译缓存、多数据源依赖、请求/响应 Schema、灰度发布或其他脚本语言。
 
-一个 `ServiceEngine` 是独立 JVM 和独立 PostgreSQL 运行库，不为每个服务启动进程。Admin 是控制面，Engine 是运行面；Engine 持久化无凭据的服务快照，数据源配置、运行时连接和已发布脚本统一交给内嵌的 API Studio 管理，不访问 Admin 数据库。API Studio 当前按自身既有方式明文保存数据库密码。
+一个逻辑 `ServiceEngine` 使用独立 PostgreSQL 运行库，可以是一个 JVM，也可以是共享该运行库的多个 JVM 副本，不为每个服务启动进程。Admin 是控制面，Engine 是运行面；Engine 持久化无凭据的服务快照，数据源配置、运行时连接和已发布脚本统一交给内嵌的 API Studio 管理，不访问 Admin 数据库。API Studio 当前按自身既有方式明文保存数据库密码。多副本同步和部署要求见 [Engine 高可用](service-engine-ha.md)。
 
 ## 管理领域模型
 
@@ -203,7 +203,7 @@ Engine 本地部署状态为：
 
 部署先持久化 `DEPLOYING`，再注册运行时路由，最后标记 `DEPLOYED`。标准与 SQL 服务由 `DynamicServiceRouteRegistry` 注册或替换 Spring MVC `POST` 路由；脚本服务不进入该注册表，由 API Studio 保存 `ApiInfo` 并注册路由。两套路由在注册前检查现有 Spring Mapping，禁止不同服务占用相同 `POST` 路径。注册失败会撤销该服务的运行时路由并标记 `DEPLOY_FAILED`，绝不返回成功。Engine 停用先标记 `REMOVING`，幂等注销对应路由；脚本服务同时幂等删除 API Studio `ApiInfo`，最后标记 `REMOVED`，失败则记录 `REMOVE_FAILED`。
 
-启动时先由 API Studio Bootstrap 从自身配置表恢复数据源和已发布脚本路由，再逐一处理服务：`DEPLOYED`、`DEPLOYING` 重新校验并注册，脚本服务通过幂等 `upsert` 只修复缺失或不同的配置；`DEPLOY_FAILED` 不自动暴露；`REMOVING`、`REMOVE_FAILED` 确保注销并完成为 `REMOVED`。单个服务恢复失败会记录完整日志和失败状态，不影响其他服务或应用启动。
+默认开启 PostgreSQL 配置协调。启动时 API Studio Bootstrap 恢复自身资源，Engine 随后加载共享快照，通过 readiness 后才允许新业务请求。`DEPLOYING`、`REMOVING`、`REMOVE_FAILED` 在跨节点配置锁下恢复；`DEPLOYED` 仅加载本机路由，不由副本重复写回共享脚本定义；`DEPLOY_FAILED` 不暴露路由。内部 generation 阻止旧操作回调覆盖新操作。显式关闭协调时保留原单实例恢复方式，不支持多个进程共享运行库。
 
 Engine 接收 SQL 快照时再次检查只读单语句、占位符数量、参数顺序、输出快照和数据库 `SQL_SERVICE_QUERY` capability。当前 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle、SQL Server 与 ClickHouse 声明该 capability；这些数据库均可注册到 DataScalpel Service Engine，并承载标准表、SQL 查询和脚本服务。
 
@@ -290,6 +290,9 @@ Engine 通过 `ApiDataSourceRegistry` 取得 API Studio 按数据源复用的连
 | `DATASCALPEL_ENGINE_QUERY_MAXIMUM_IN_VALUES` | `1000` | 单个 IN/NOT_IN 条件最大值数量 |
 | `DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET` | `100000` | 最大分页偏移 |
 | `DATASCALPEL_ENGINE_QUERY_TIMEOUT_SECONDS` | `30` | JDBC 查询超时 |
+| `DATASCALPEL_ENGINE_CLUSTER_ENABLED` | `true` | PostgreSQL 副本协调；关闭仅用于旧单实例/隔离 H2 测试 |
+| `DATASCALPEL_ENGINE_CLUSTER_POLL_INTERVAL_MS` | `1000` | 版本检查间隔，200–30000 毫秒；不在业务请求中查询 |
+| `DATASCALPEL_ENGINE_CLUSTER_MAX_STALE_MS` | `10000` | 失联保护阈值，1000–120000 毫秒且大于两个检查周期 |
 
 其他必需配置包括 Engine 独立数据库连接、稳定 Engine 编码和 Admin/Engine 共享管理 Token；不再配置 Engine 数据源快照加密密钥。Engine 编码由 Engine 自身配置，必须以字母开头且只包含字母、数字和下划线，最长 64 位；Admin 登记 Engine 时通过 `/internal/v1/info` 自动发现并保存为不可修改的内部指纹，不由用户手工录入。首次登记会校验编码唯一性，后续修改管理地址或 Management Token 时会重新读取并核对该指纹，连接失败或指纹不一致时拒绝保存。管理接口位于 `/internal/v1/**` 并要求 Bearer Token；公开调用统一从已发布的网关 Proxy 地址进入，网关发布细节见[数据服务启停与网关发布设计](data-service-gateway-publishing.md)。
 
@@ -299,6 +302,6 @@ Engine 通过 `ApiDataSourceRegistry` 取得 API Studio 按数据源复用的连
 
 ## 2026-09 部署并发约束
 
-Service Engine 对同一服务的完整部署、卸载与启动恢复串行协调，包含运行路由修改及结果落库；运行锁不跨越数据库事务边界，也不把外部调用放进管理数据库事务。启动恢复在获得协调锁后重新读取当前部署状态，避免旧快照恢复已卸载路由。Engine code 仍标识单个运行实例，未引入多实例共享同一动态路由表的能力。
+配置命令通过 PostgreSQL 会话 advisory lock 跨节点串行协调，Engine 自有状态使用短事务，内嵌 API Studio 原有事务行为不变；竞争返回 409。Engine code 标识逻辑运行组，同组副本共享运行库与 API Studio service-name，进程另有随机 instanceId。动态路由仍是每个 JVM 的本机内存，通过持久化版本轮询最终收敛。成功响应不是全部副本同时生效的确认，详见 [高可用语义](service-engine-ha.md)。
 
 Admin 的每次启用/移除使用独立 operationId，包括复用同一 revision 的相同定义重试；准备与完成阶段持有服务行锁，旧 operationId 的结果返回冲突，不能覆盖新操作状态或样式结果。HTTP 契约仍是按 serviceId 覆盖/卸载；operationId 是本地并发归属，不改变部署 revision 的公开语义。

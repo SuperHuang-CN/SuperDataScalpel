@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ApiOutlined, ProfileOutlined } from '@ant-design/icons';
 import { Descriptions, Space, Tag, Typography } from 'antd';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
@@ -22,11 +23,7 @@ const statusColors: Record<DataServiceStatus, string> = {
   DISABLED: 'warning',
 };
 
-const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-  hour12: false,
-}).format(new Date(value));
+const formatDateTime = formatManagementDateTime;
 
 export const DataServiceBasicPanel = ({
   dataService,

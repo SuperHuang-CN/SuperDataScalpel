@@ -35,6 +35,15 @@ public class GatewaySubscriptionEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private SubscriptionStatus status;
+    private java.time.Instant validFrom;
+    private java.time.Instant expiresAt;
+    private Integer requestsPerSecond;
+    public java.time.Instant getValidFrom() { return validFrom; }
+    public java.time.Instant getExpiresAt() { return expiresAt; }
+    public int getRequestsPerSecond() { return requestsPerSecond == null ? 0 : requestsPerSecond; }
+    public void setValidity(java.time.Instant from, java.time.Instant to, int rate) {
+        validFrom = from; expiresAt = to; requestsPerSecond = rate;
+    }
 
     @Column(nullable = false, length = 64)
     private String source;

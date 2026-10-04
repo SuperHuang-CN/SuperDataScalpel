@@ -1,18 +1,19 @@
 import { DatabaseOutlined, ProfileOutlined } from '@ant-design/icons';
-import { Space, Table, Tag } from 'antd';
+import { Badge, Space, Table, Tag } from 'antd';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
-import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
-import type { DataSource, HttpApiAuthentication, HttpApiNamedValue } from '../model/dataSource';
-import { dataSourcePurposeLabels, dataSourceTypeLabels } from '../model/dataSource';
+import type { DataSource, DataSourceTypeDefinition, HttpApiAuthentication, HttpApiNamedValue } from '../model/dataSource';
+import { dataSourcePurposeLabels } from '../model/dataSource';
+import { DataSourcePurposeIcon } from './DataSourcePurposeIcon';
 
 interface DataSourceBasicPanelProps {
   dataSource: DataSource;
   directoryName?: string;
+  typeDefinition?: DataSourceTypeDefinition;
 }
 
 const configured = (value: boolean) => (
-  <Tag color={value ? 'success' : 'default'}>{value ? '已配置' : '未配置'}</Tag>
+  <Badge status={value ? 'success' : 'default'} text={value ? '已配置' : '未配置'} />
 );
 
 const authenticationLabel = (authentication: HttpApiAuthentication) => {
@@ -40,25 +41,27 @@ const namedValues = (values: HttpApiNamedValue[]) => values.length ? (
   </Space>
 ) : '—';
 
-const connectionItems = (dataSource: DataSource) => {
+const connectionItems = (dataSource: DataSource, definition?: DataSourceTypeDefinition) => {
   const connection = dataSource.connection;
   switch (connection.kind) {
     case 'JDBC': return [
       { key: 'endpoint', label: '主机 / 端口', children: <code>{connection.host}:{connection.port}</code> },
-      { key: 'database', label: '数据库', children: connection.databaseName },
-      { key: 'schema', label: '默认 Schema', children: connection.schemaName || '—' },
+      { key: 'database', label: definition?.databaseNameLabel || '数据库', children: connection.databaseName },
+      { key: 'schema', label: definition?.schemaNameLabel || '默认 Schema', children: connection.schemaName || '—' },
       { key: 'username', label: '用户名', children: connection.username },
       { key: 'password', label: '密码', children: configured(connection.passwordConfigured) },
       {
         key: 'options', label: 'JDBC 定制参数', span: 2,
         children: Object.keys(connection.options).length ? (
           <Table<{ name: string; value: string }>
+            className="management-table data-source-connection-options"
+            tableLayout="fixed"
             size="small"
             rowKey="name"
             pagination={false}
             dataSource={Object.entries(connection.options).map(([name, value]) => ({ name, value }))}
             columns={[
-              { title: '参数', dataIndex: 'name', width: 240, render: (value: string) => <code>{value}</code> },
+              { title: '参数', dataIndex: 'name', width: '40%', render: (value: string) => <code>{value}</code> },
               { title: '值', dataIndex: 'value', render: (value: string) => <code>{value}</code> },
             ]}
           />
@@ -98,37 +101,28 @@ const connectionItems = (dataSource: DataSource) => {
   }
 };
 
-export const DataSourceBasicPanel = ({ dataSource, directoryName }: DataSourceBasicPanelProps) => (
+export const DataSourceBasicPanel = ({ dataSource, directoryName, typeDefinition }: DataSourceBasicPanelProps) => (
   <div className="data-source-detail-tab-panel data-source-basic-panel">
-    <BusinessDetailSection
-      title="管理信息"
-     description="数据源的基础属性与归属信息"
-      icon={<ProfileOutlined />}
-    >
+    <section className="data-source-overview-section data-source-connection-section" aria-labelledby="data-source-connection-heading">
+      <h2 id="data-source-connection-heading"><DatabaseOutlined />连接配置</h2>
       <BusinessDetailDescriptions
-        column={{ xs: 1, md: 2, xl: 4 }}
+        column={2}
+        items={connectionItems(dataSource, typeDefinition)}
+      />
+    </section>
+    <section className="data-source-overview-section data-source-management-section" aria-labelledby="data-source-management-heading">
+      <h2 id="data-source-management-heading"><ProfileOutlined />管理信息</h2>
+      <BusinessDetailDescriptions
+        column={1}
         items={[
-          { key: 'name', label: '名称', children: dataSource.name },
           { key: 'code', label: '编码', children: <code>{dataSource.code}</code> },
-          { key: 'type', label: '类型', children: dataSourceTypeLabels[dataSource.type] },
-          { key: 'status', label: '状态', children: <Tag color={dataSource.enabled ? 'success' : 'default'}>{dataSource.enabled ? '启用' : '停用'}</Tag> },
-          { key: 'purposes', label: '用途', children: <Space size={4}>{dataSource.purposes.map((purpose) => <Tag key={purpose}>{dataSourcePurposeLabels[purpose]}</Tag>)}</Space> },
+          { key: 'purposes', label: '用途', children: <Space size={[12, 6]} wrap>{dataSource.purposes.map((purpose) => <span className="data-source-detail-purpose" key={purpose}><DataSourcePurposeIcon purpose={purpose} size={14} />{dataSourcePurposeLabels[purpose]}</span>)}</Space> },
           { key: 'directory', label: '目录', children: directoryName || '未分类' },
-          { key: 'description', label: '说明', span: 2, children: dataSource.description || '—' },
+          { key: 'description', label: '说明', children: dataSource.description || '—' },
           { key: 'createdAt', label: '创建时间', children: formatManagementDateTime(dataSource.createdAt) },
           { key: 'updatedAt', label: '更新时间', children: formatManagementDateTime(dataSource.updatedAt) },
         ]}
       />
-    </BusinessDetailSection>
-    <BusinessDetailSection
-      title="连接配置"
-     description="访问外部资源所需的连接参数"
-      icon={<DatabaseOutlined />}
-    >
-      <BusinessDetailDescriptions
-        column={{ xs: 1, md: 2, xl: 3 }}
-        items={connectionItems(dataSource)}
-      />
-    </BusinessDetailSection>
+    </section>
   </div>
 );

@@ -1,25 +1,28 @@
-import { DatabaseOutlined } from '@ant-design/icons';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { ModelDataSourcePicker } from './ModelResourcePicker';
+import './model-create.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   CheckCircleOutlined,
+  DatabaseOutlined,
   CloseCircleOutlined,
   EditOutlined,
   LoadingOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Switch, Table, Tag, TreeSelect, Typography } from 'antd';
+import { Button, ConfigProvider, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Switch, Table, Tag, TreeSelect, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
   useDataSourceNamespaces,
   useDataSourceTables,
-  useDataSources,
+  useDataSource,
   type DataSourceNamespace,
   type DataSourceTable,
 } from '../../datasource';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
+import { directoryTreeSelectOptions, useDirectoryTree } from '../../directory';
 import {
   type ManagedDataModelDraftResult,
   useCreateManagedDataModelDrafts,
@@ -38,7 +41,6 @@ import {
   applyManagedDraftWarehouseLayer,
   clearDuplicateManagedDraftCodeCandidates,
   hasManagedTableDraftIssues,
-  isManagedImportSourceSelectable,
   isManagedImportTargetSelectable,
   mergeManagedTableModelDrafts,
   managedTableDraftIssues,
@@ -64,13 +66,6 @@ interface ManagedImportFieldEditorProps {
   onCancel: () => void;
   onSave: (field: ManagedImportFieldDraft) => void;
 }
-
-const jdbcDataSourceRequest = {
-  search: 'enabled:"true"',
-  page: 0,
-  size: 500,
-  sort: 'code',
-} as const;
 
 const enabledWarehouseLayerRequest = {
   search: 'enabled:"true"',
@@ -170,7 +165,7 @@ export const ManagedImportFieldEditor = ({
 
   return (
     <Modal
-      rootClassName="business-overlay business-modal-overlay"
+      rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay"
       title={<OverlayTitle title={field ? `调整字段：${field.sourceName}` : '调整字段'} icon={<DatabaseOutlined />} />}
       open={open}
       width={680}
@@ -304,12 +299,13 @@ export const ManagedTableModelImportDrawer = ({
   const [directoryId, setDirectoryId] = useState<string | undefined>(initialDirectoryId);
   const [warehouseLayerId, setWarehouseLayerId] = useState<string>();
   const [keyword, setKeyword] = useState('');
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(20);
   const [selectedTables, setSelectedTables] = useState<Map<string, DataSourceTable>>(new Map());
   const [drafts, setDrafts] = useState<ManagedTableModelDraft[]>([]);
   const [results, setResults] = useState<ManagedDataModelDraftResult[]>([]);
   const [editingField, setEditingField] = useState<{ draftKey: string; fieldKey: string }>();
   const [modalApi, modalContext] = Modal.useModal();
-  const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
   const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const namespacesQuery = useDataSourceNamespaces(sourceDataSourceId, open && step === 0);
@@ -336,23 +332,10 @@ export const ManagedTableModelImportDrawer = ({
   ), [results]);
   const successCount = results.length - failedKeys.size;
   const busy = previewMutation.isPending || createMutation.isPending;
-  const selectedTarget = dataSourcesQuery.data?.content.find((source) => (
-    source.id === targetStorageDataSourceId && isManagedImportTargetSelectable(source)
-  ));
+  const targetQuery = useDataSource(targetStorageDataSourceId, open);
+  const selectedTarget = targetQuery.data && isManagedImportTargetSelectable(targetQuery.data) ? targetQuery.data : undefined;
   const effectiveTargetStorageDataSourceId = selectedTarget?.id;
 
-  const sourceOptions = dataSourcesQuery.data?.content
-    .filter(isManagedImportSourceSelectable)
-    .map((source) => ({
-      value: source.id,
-      label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
-    })) ?? [];
-  const targetOptions = dataSourcesQuery.data?.content
-    .filter(isManagedImportTargetSelectable)
-    .map((source) => ({
-      value: source.id,
-      label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
-    })) ?? [];
   const namespaceOptions = namespacesQuery.data?.map((namespace) => ({
     value: namespaceKey(namespace),
     label: namespace.displayName,
@@ -436,7 +419,7 @@ export const ManagedTableModelImportDrawer = ({
       modalApi.confirm({
         icon: null,
 
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
         title: <OverlayTitle title="切换目标数据存储" icon={<DatabaseOutlined />} />,
         content: '切换后需要按新目标重新映射字段，当前字段调整会被重置。确认继续吗？',
         okText: '确认切换',
@@ -455,7 +438,7 @@ export const ManagedTableModelImportDrawer = ({
       modalApi.confirm({
         icon: null,
 
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
         title: <OverlayTitle title="重新读取源表结构" icon={<DatabaseOutlined />} />,
         content: '重新读取会重置当前字段调整，但会保留模型编码、名称、说明和目标表名。确认继续吗？',
         okText: '重新读取',
@@ -651,6 +634,8 @@ export const ManagedTableModelImportDrawer = ({
       width: 190,
       render: (_value, draft) => (
         <Select
+          popupMatchSelectWidth={320}
+          classNames={{ popup: { root: 'model-create-select-popup' } }}
           allowClear
           showSearch
           optionFilterProp="label"
@@ -775,13 +760,13 @@ export const ManagedTableModelImportDrawer = ({
   })();
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
         title={<OverlayTitle title="从 JDBC 表结构创建模型" icon={<DatabaseOutlined />} description="读取 JDBC 表结构并创建模型草稿" />}
         open={open}
-        size="large"
+        size="min(1280px, 100vw)"
         className="managed-table-model-import-drawer"
         closable={!busy}
         maskClosable={!busy}
@@ -803,24 +788,23 @@ export const ManagedTableModelImportDrawer = ({
               title="这里只读取 JDBC 表结构，不绑定源表、不导入数据，也不会创建或修改任何物理表。"
             />
             <div className="managed-import-toolbar">
-              <Select
-                showSearch
-                optionFilterProp="label"
+              <div className="model-create-resource-field"><span className="model-create-field-label">来源数据源</span><ModelDataSourcePicker
                 value={sourceDataSourceId}
-                loading={dataSourcesQuery.isFetching}
-                options={sourceOptions}
-                placeholder="选择任意已启用的 JDBC 来源"
+                placeholder="选择来源数据源"
                 className="managed-import-source-select"
                 onChange={(value) => {
                   setSourceDataSourceId(value);
                   setNamespaceId(undefined);
                   setKeyword('');
+                  setTablePage(1);
                   setSelectedTables(new Map());
                   setDrafts([]);
                   setResults([]);
                 }}
-              />
-              <Select
+              /></div>
+              <div className="model-create-filter-field"><span className="model-create-field-label">命名空间</span><Select
+                popupMatchSelectWidth={320}
+                classNames={{ popup: { root: 'model-create-select-popup' } }}
                 showSearch
                 optionFilterProp="label"
                 value={selectedNamespace ? namespaceKey(selectedNamespace) : undefined}
@@ -832,14 +816,16 @@ export const ManagedTableModelImportDrawer = ({
                 onChange={(value) => {
                   setNamespaceId(value);
                   setKeyword('');
+                  setTablePage(1);
                 }}
-              />
+              /></div>
               <Input.Search
+                autoComplete="off"
                 allowClear
                 value={keyword}
                 placeholder="筛选物理表"
                 className="managed-import-search"
-                onChange={(event) => setKeyword(event.target.value)}
+                onChange={(event) => { setKeyword(event.target.value); setTablePage(1); }}
               />
             </div>
             {selectedNamespace && (
@@ -850,13 +836,20 @@ export const ManagedTableModelImportDrawer = ({
             {namespacesQuery.isError && <Alert showIcon type="error" title="读取 JDBC 数据源命名空间失败" />}
             {tablesQuery.isError && <Alert showIcon type="error" title="读取物理表失败，请检查 JDBC 数据源连接和元数据权限" />}
             {tablesQuery.data?.truncated && <Alert showIcon type="warning" title="表列表已截断为前 500 项，请使用关键字缩小范围" />}
+            <div className="model-create-selection-summary">
+              <span>翻页、搜索和切换命名空间保留已选表</span>
+              <Button type="link" size="small" disabled={selectedTables.size === 0} onClick={() => setSelectedTables(new Map())}>清空选择</Button>
+            </div>
             <Table<DataSourceTable>
               size="small"
               rowKey={managedTableKey}
               columns={selectColumns}
               dataSource={tablesQuery.data?.tables ?? []}
               loading={namespacesQuery.isFetching || tablesQuery.isFetching}
-              pagination={false}
+              pagination={{ current: tablePage, pageSize: tablePageSize, showSizeChanger: true,
+                pageSizeOptions: [20, 50, 100], showTotal: (total) => `共 ${total} 张表`,
+                onChange: (page, size) => { setTablePage(size === tablePageSize ? page : 1); setTablePageSize(size); } }}
+              locale={{ emptyText: sourceDataSourceId ? '没有符合条件的物理表，请调整命名空间或搜索条件' : '请先选择来源数据源' }}
               scroll={{ x: 760, y: 430 }}
               rowSelection={{
                 preserveSelectedRowKeys: true,
@@ -878,30 +871,34 @@ export const ManagedTableModelImportDrawer = ({
                 : `已准备好 ${drafts.length} 个受管模型草稿。创建草稿不会执行建表 DDL。`}
             />
             <div className="managed-import-toolbar">
-              <Select
-                showSearch
-                optionFilterProp="label"
+              <div className="model-create-resource-field"><span className="model-create-field-label">目标数据存储</span><ModelDataSourcePicker
+                storageOnly
                 value={effectiveTargetStorageDataSourceId}
-                loading={dataSourcesQuery.isFetching}
                 disabled={busy}
-                options={targetOptions}
-                placeholder="选择具有 STORAGE 用途的目标 JDBC 数据存储"
+                placeholder="选择目标数据存储"
                 className="managed-import-target-select"
                 onChange={selectTarget}
-              />
+              /></div>
               {canViewDirectories && (
-                <TreeSelect
+                <div className="model-create-filter-field"><span className="model-create-field-label">模型目录</span><TreeSelect
+                  treeIcon
+                  showSearch
+                  treeNodeFilterProp="title"
+                  popupMatchSelectWidth={360}
+                  classNames={{ popup: { root: 'model-create-select-popup' } }}
                   allowClear
                   treeDefaultExpandAll
                   value={directoryId}
                   disabled={busy}
-                  treeData={directoryTreeSelectData(directoriesQuery.data ?? [])}
+                  treeData={directoryTreeSelectOptions(directoriesQuery.data ?? [])}
                   placeholder="模型目录：未分类"
                   className="managed-import-directory-select"
                   onChange={setDirectoryId}
-                />
+                /></div>
               )}
               <Select
+                popupMatchSelectWidth={320}
+                classNames={{ popup: { root: 'model-create-select-popup' } }}
                 allowClear
                 showSearch
                 optionFilterProp="label"
@@ -995,6 +992,6 @@ export const ManagedTableModelImportDrawer = ({
         onCancel={() => setEditingField(undefined)}
         onSave={saveField}
       />
-    </>
+    </ConfigProvider>
   );
 };

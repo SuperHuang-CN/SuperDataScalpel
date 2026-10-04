@@ -6,10 +6,9 @@ import {
   MoreOutlined,
   ReloadOutlined,
   SwapOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Button, Dropdown, Modal, Space, Table, Tag, Tooltip, Upload, message } from 'antd';
+import { Button, Dropdown, Modal, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
@@ -17,11 +16,8 @@ import {
   useDeleteFileDatasetFile,
   useDownloadFileDatasetFile,
   useFileDatasetFiles,
-  useUploadFileDatasetFiles,
 } from '../hooks/useFileDatasets';
 import {
-  fileDatasetAccept,
-  fileDatasetAllowsAdditionalUpload,
   fileDatasetCompressionLabels,
   fileDatasetFormatLabels,
   formatFileSize,
@@ -29,12 +25,15 @@ import {
   type FileDatasetFile,
   type FileDatasetFileStatus,
 } from '../model/fileDataset';
+import { FileDatasetUploadControl } from './FileDatasetUploadControl';
+import { FileDatasetParseHistoryPanel } from './FileDatasetParseHistoryPanel';
 import { ReplaceFileDatasetContentDrawer } from './ReplaceFileDatasetContentDrawer';
 
 interface FileDatasetFilesPanelProps {
   dataset: FileDataset;
   canUpdate: boolean;
   onRefreshTables: () => void;
+  onViewHistory: () => void;
 }
 
 const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
@@ -53,18 +52,16 @@ export const FileDatasetFilesPanel = ({
   dataset,
   canUpdate,
   onRefreshTables,
+  onViewHistory,
 }: FileDatasetFilesPanelProps) => {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [replacingFile, setReplacingFile] = useState<FileDatasetFile | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const filesQuery = useFileDatasetFiles(dataset.id, true);
-  const uploadMutation = useUploadFileDatasetFiles();
   const deleteMutation = useDeleteFileDatasetFile();
   const downloadMutation = useDownloadFileDatasetFile();
   const files = useMemo(() => filesQuery.data?.content ?? [], [filesQuery.data?.content]);
   const observedPreparation = useRef(false);
-  const uploadDisabled = !fileDatasetAllowsAdditionalUpload(dataset.type, files.length);
 
   useEffect(() => {
     if (dataset.type !== 'GDB' && dataset.type !== 'SHP' && dataset.type !== 'GPKG') return;
@@ -76,18 +73,6 @@ export const FileDatasetFilesPanel = ({
       onRefreshTables();
     }
   }, [dataset.type, files, onRefreshTables]);
-
-  const upload = async () => {
-    if (selectedFiles.length === 0) return;
-    try {
-      await uploadMutation.mutateAsync({ id: dataset.id, files: selectedFiles });
-      messageApi.success('文件已上传并提交后台解析');
-      setSelectedFiles([]);
-      onRefreshTables();
-    } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '上传文件失败');
-    }
-  };
 
   const download = async (file: FileDatasetFile) => {
     try {
@@ -167,9 +152,6 @@ export const FileDatasetFilesPanel = ({
     <div className="file-dataset-detail-tab-panel file-dataset-files-panel">
       {messageContext}
       {modalContext}
-      {uploadDisabled && (
-        <Alert type="info" showIcon message={`${dataset.type === 'GDB' ? 'FileGDB' : dataset.type === 'GPKG' ? 'GeoPackage' : 'Excel'} 数据集只允许一个物理文件；需要更新内容时请使用文件行的“替换文件”。`} />
-      )}
       {filesQuery.isError && (
         <Alert
           type="error"
@@ -179,33 +161,7 @@ export const FileDatasetFilesPanel = ({
         />
       )}
       <div className="file-dataset-detail-toolbar">
-        <div className="file-dataset-upload-actions">
-          {canUpdate && (
-            <>
-              <Upload
-                accept={fileDatasetAccept(dataset.type)}
-                multiple={false}
-                disabled={uploadDisabled}
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  setSelectedFiles([file]);
-                  return Upload.LIST_IGNORE;
-                }}
-              >
-                <Button icon={<UploadOutlined />} disabled={uploadDisabled}>选择文件</Button>
-              </Upload>
-              {selectedFiles.length > 0 && (
-                <>
-                  <span className="file-dataset-selected-files" title={selectedFiles.map((file) => file.name).join('、')}>
-                    已选择：{selectedFiles[0]?.name}
-                  </span>
-                  <Button type="link" onClick={() => setSelectedFiles([])}>清空</Button>
-                  <Button type="primary" loading={uploadMutation.isPending} onClick={() => void upload()}>上传并解析</Button>
-                </>
-              )}
-            </>
-          )}
-        </div>
+        {canUpdate && <FileDatasetUploadControl dataset={dataset} onUploaded={onRefreshTables} />}
         <Button
           icon={<ReloadOutlined />}
           onClick={() => {
@@ -224,9 +180,10 @@ export const FileDatasetFilesPanel = ({
         dataSource={files}
         loading={filesQuery.isFetching}
         pagination={false}
-        scroll={{ x: 1100, y: '100%' }}
-        locale={{ emptyText: '尚未上传文件' }}
+        scroll={{ x: 860 }}
+        locale={{ emptyText: '暂无保留的文件。若已上传，请查看下方解析记录。' }}
       />
+      <FileDatasetParseHistoryPanel datasetId={dataset.id} compact onViewAll={onViewHistory} />
       <ReplaceFileDatasetContentDrawer
         fileDataset={dataset}
         file={replacingFile}

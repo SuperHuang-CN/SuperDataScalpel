@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.system.configuration.service;
 
 import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfiguration;
+import cn.superhuang.data.scalpel.business.system.configuration.domain.PanoramaMapConfiguration;
 import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfigurationDefinition;
 import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfigurationValueType;
 import cn.superhuang.data.scalpel.business.system.configuration.repository.SystemConfigurationRepository;
@@ -51,6 +52,11 @@ public class SystemConfigurationService {
                 result.getNumber(),
                 result.getSize()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public PanoramaMapConfiguration mapConfiguration() {
+        return PanoramaMapConfiguration.parse(requireValue(SystemConfigurationDefinition.PANORAMA_MAP.getConfigKey()));
     }
 
     @Transactional(readOnly = true)

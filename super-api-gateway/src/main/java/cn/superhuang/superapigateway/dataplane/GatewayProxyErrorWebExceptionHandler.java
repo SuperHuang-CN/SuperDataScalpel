@@ -22,6 +22,10 @@ public class GatewayProxyErrorWebExceptionHandler implements ErrorWebExceptionHa
 
     @Override
     public Mono<Void> handle(ServerWebExchange exchange, Throwable failure) {
+        return render(exchange, failure).doOnSuccess(ignored -> GatewayDispatchFilter.publishAccessLog(exchange));
+    }
+
+    private Mono<Void> render(ServerWebExchange exchange, Throwable failure) {
         if (!Boolean.TRUE.equals(
                 exchange.getAttribute(GatewayDispatchFilter.PROXY_REQUEST_ATTRIBUTE)
         )) {
@@ -29,6 +33,15 @@ public class GatewayProxyErrorWebExceptionHandler implements ErrorWebExceptionHa
         }
         if (exchange.getResponse().isCommitted()) return Mono.error(failure);
         Throwable cause = rootCause(failure);
+        if (cause.getClass().getSimpleName().startsWith("PoolAcquire")) {
+            exchange.getResponse().getHeaders().set("Retry-After", "1");
+            return problems.write(exchange, HttpStatus.SERVICE_UNAVAILABLE, "GATEWAY_CONNECTION_POOL_BUSY",
+                    "Gateway busy", "The bounded upstream connection pool is busy; retry later");
+        }
+        if (cause instanceof GatewayDispatchFilter.RequestSizeLimitException) {
+            return problems.write(exchange, HttpStatus.PAYLOAD_TOO_LARGE, "GATEWAY_REQUEST_TOO_LARGE",
+                    "Request too large", "The request exceeds the configured size limit");
+        }
         boolean timeout = cause instanceof TimeoutException
                 || cause.getClass().getSimpleName().contains("Timeout");
         return problems.write(

@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { api, post } from '../api';
+import { TrafficPolicyDrawer } from './TrafficPolicyDrawer';
 import type { AccessMode, GatewayHttpMethod, PageResponse, Route, Service } from '../model';
 
 interface ServiceForm {
@@ -58,6 +59,7 @@ const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS
 export const ServicesPage = () => {
   const queryClient = useQueryClient();
   const [selectedServiceId, setSelectedServiceId] = useState<string>();
+  const [policyService, setPolicyService] = useState<Service>();
   const [editingService, setEditingService] = useState<Service>();
   const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<Route>();
@@ -174,13 +176,13 @@ export const ServicesPage = () => {
           scroll={{ y: 'calc(100vh - 210px)', x: 850 }}
           columns={[
             { title: 'Code', dataIndex: 'code', width: 150, fixed: 'left', ellipsis: true },
-            { title: '名称', dataIndex: 'name', width: 150, ellipsis: true },
+            { title: '名称', dataIndex: 'name', width: 150, ellipsis: true, render: (name: string, record: Service) => <Space orientation="vertical" size={0}>{name}{record.source === 'DATASCALPEL' && <Tag>DataScalpel 托管</Tag>}<Button type="link" size="small" onClick={() => setPolicyService(record)}>保护策略</Button></Space> },
             { title: '访问', dataIndex: 'accessMode', width: 150, render: (value: AccessMode) => <Tag color={value === 'PUBLIC' ? 'blue' : 'gold'}>{value}</Tag> },
             { title: '路由', dataIndex: 'routeCount', width: 70 },
             { title: '状态', dataIndex: 'enabled', width: 75, render: (enabled: boolean) => <Tag color={enabled ? 'success' : 'default'}>{enabled ? '启用' : '停用'}</Tag> },
             {
               title: '操作', fixed: 'right', width: 130,
-              render: (_: unknown, record: Service) => (
+              render: (_: unknown, record: Service) => record.source === 'DATASCALPEL' ? <Tag>Admin 端管理</Tag> : (
                 <Space size={2}>
                   <Tooltip title="编辑"><Button type="text" icon={<EditOutlined />} onClick={() => openService(record)} /></Tooltip>
                   <Tooltip title={record.enabled ? '停用' : '启用'}>
@@ -199,7 +201,7 @@ export const ServicesPage = () => {
       <section className="panel">
         <div className="toolbar">
           <Space><strong>路由</strong><span>{selectedService?.name ?? '请选择服务'}</span></Space>
-          <Button type="primary" icon={<PlusOutlined />} disabled={!selectedServiceId} onClick={() => openRoute()}>新建路由</Button>
+          <Button type="primary" icon={<PlusOutlined />} disabled={!selectedServiceId || selectedService?.source === 'DATASCALPEL'} onClick={() => openRoute()}>新建路由</Button>
         </div>
         <Table
           rowKey="id"
@@ -217,7 +219,7 @@ export const ServicesPage = () => {
             { title: '状态', dataIndex: 'enabled', width: 75, render: (enabled: boolean) => <Tag color={enabled ? 'success' : 'default'}>{enabled ? '启用' : '停用'}</Tag> },
             {
               title: '操作', fixed: 'right', width: 130,
-              render: (_: unknown, record: Route) => (
+              render: (_: unknown, record: Route) => record.source === 'DATASCALPEL' ? <Tag>Admin 端管理</Tag> : (
                 <Space size={2}>
                   <Tooltip title="编辑"><Button type="text" icon={<EditOutlined />} onClick={() => openRoute(record)} /></Tooltip>
                   <Tooltip title={record.enabled ? '停用' : '启用'}>
@@ -279,6 +281,7 @@ export const ServicesPage = () => {
           </Space>}
         </Form>
       </Drawer>
+      <TrafficPolicyDrawer service={policyService} onClose={() => setPolicyService(undefined)} />
     </div>
   );
 };

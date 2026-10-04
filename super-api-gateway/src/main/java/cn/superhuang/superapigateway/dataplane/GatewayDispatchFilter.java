@@ -32,29 +32,52 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
     public static final String REQUEST_ID_HEADER = "X-Request-ID";
     public static final String PROXY_REQUEST_ATTRIBUTE =
             GatewayDispatchFilter.class.getName() + ".proxyRequest";
+    private static final String ACCESS_LOG_ATTRIBUTE = GatewayDispatchFilter.class.getName() + ".accessLog";
+    private static final String PROXY_START_ATTRIBUTE = GatewayDispatchFilter.class.getName() + ".proxyStart";
+    private static final String TERMINAL_STATUS_ATTRIBUTE = GatewayDispatchFilter.class.getName() + ".terminalStatus";
 
     private final GatewayRuntimeHolder runtime;
     private final ApiKeySecretService secrets;
     private final ProblemResponseWriter problems;
     private final AccessLogPublisher accessLogs;
     private final GatewayRuntimeCoordinator coordinator;
+    private final TrafficGuard trafficGuard;
 
     public GatewayDispatchFilter(
             GatewayRuntimeHolder runtime,
             ApiKeySecretService secrets,
             ProblemResponseWriter problems,
             AccessLogPublisher accessLogs,
-            GatewayRuntimeCoordinator coordinator
+            GatewayRuntimeCoordinator coordinator,
+            TrafficGuard trafficGuard
     ) {
         this.runtime = runtime;
         this.secrets = secrets;
         this.problems = problems;
         this.accessLogs = accessLogs;
         this.coordinator = coordinator;
+        this.trafficGuard = trafficGuard;
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        return dispatch(exchange, chain).doOnSuccess(ignored -> publishAccessLog(exchange))
+                .doOnError(failure -> {
+                    // A truncated stream must not be recorded as a successful 200 response.
+                    if (exchange.getResponse().isCommitted()) {
+                        exchange.getAttributes().put(TERMINAL_STATUS_ATTRIBUTE, 502);
+                        publishAccessLog(exchange);
+                    }
+                })
+                .doFinally(signal -> {
+                    if (signal == reactor.core.publisher.SignalType.CANCEL) {
+                        exchange.getAttributes().put(TERMINAL_STATUS_ATTRIBUTE, 499);
+                        publishAccessLog(exchange);
+                    }
+                });
+    }
+
+    private Mono<Void> dispatch(ServerWebExchange exchange, GatewayFilterChain chain) {
         long startedNanos = System.nanoTime();
         String requestId = requestId(exchange);
         exchange.getResponse().getHeaders().set(REQUEST_ID_HEADER, requestId);
@@ -155,12 +178,36 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
                 matched,
                 consumerIdentity
         );
+        var policy = matched.trafficPolicy();
+        var remote = exchange.getRequest().getRemoteAddress();
+        if (!policy.permits(remote == null ? null : remote.getAddress())) {
+            return problems.write(exchange, HttpStatus.FORBIDDEN, "GATEWAY_IP_DENIED", "IP denied",
+                    "The TCP client address is not permitted by this service policy");
+        }
+        long maxBytes = policy.settings().maxRequestBytes();
+        if (maxBytes > 0 && exchange.getRequest().getHeaders().getContentLength() > maxBytes) {
+            return problems.write(exchange, HttpStatus.PAYLOAD_TOO_LARGE, "GATEWAY_REQUEST_TOO_LARGE",
+                    "Request too large", "The request exceeds the configured size limit");
+        }
+        int subscriptionRate = consumerIdentity == null ? 0 : snapshot.subscriptionRate(consumerIdentity.id(), matched.serviceId());
+        int consumerRate = policy.settings().consumerRequestsPerSecond();
+        if (subscriptionRate > 0) consumerRate = consumerRate == 0 ? subscriptionRate : Math.min(consumerRate, subscriptionRate);
+        var lease = trafficGuard.acquire(matched.serviceId(), consumerIdentity == null ? null : consumerIdentity.id(),
+                policy.settings().requestsPerSecond(), consumerRate,
+                policy.settings().maxConcurrentRequests());
+        if (lease == null) {
+            exchange.getResponse().getHeaders().set(HttpHeaders.RETRY_AFTER, "1");
+            return problems.write(exchange, HttpStatus.TOO_MANY_REQUESTS, "GATEWAY_CAPACITY_EXCEEDED",
+                    "Gateway capacity exceeded", "The per-node service or consumer rate/concurrency limit was reached");
+        }
         exchange.getAttributes().put(PROXY_REQUEST_ATTRIBUTE, Boolean.TRUE);
+        exchange.getAttributes().put(PROXY_START_ATTRIBUTE, System.nanoTime());
         ServerWebExchange routed = exchange.mutate()
                 .request(builder -> builder
                         .path(rewrittenPath)
                         .headers(headers -> {
                             headers.remove(API_KEY_HEADER);
+                            headers.remove("X-Super-Gateway-Admin-Token");
                             headers.remove(CONSUMER_ID_HEADER);
                             headers.remove(CONSUMER_CODE_HEADER);
                             if (consumerIdentity != null) {
@@ -170,9 +217,26 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
                             headers.set(REQUEST_ID_HEADER, requestId);
                         }))
                 .build();
+        if (maxBytes > 0) {
+            var request = new org.springframework.http.server.reactive.ServerHttpRequestDecorator(routed.getRequest()) {
+                @Override
+                public reactor.core.publisher.Flux<org.springframework.core.io.buffer.DataBuffer> getBody() {
+                    return reactor.core.publisher.Flux.defer(() -> {
+                        var received = new java.util.concurrent.atomic.AtomicLong();
+                        return super.getBody().handle((buffer, sink) -> {
+                            if (received.addAndGet(buffer.readableByteCount()) > maxBytes) {
+                                org.springframework.core.io.buffer.DataBufferUtils.release(buffer);
+                                sink.error(new RequestSizeLimitException());
+                            } else sink.next(buffer);
+                        });
+                    });
+                }
+            };
+            routed = routed.mutate().request(request).build();
+        }
         routed.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, matched.gatewayRoute());
-
-        return chain.filter(routed);
+        ServerWebExchange protectedExchange = routed;
+        return Mono.defer(() -> chain.filter(protectedExchange)).doFinally(signal -> lease.close());
     }
 
     private void registerAccessLog(
@@ -184,31 +248,61 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
             GatewayRuntimeSnapshot.RuntimeConsumer consumer
     ) {
         AtomicBoolean published = new AtomicBoolean();
+        long startedAtEpochMs = System.currentTimeMillis() - (System.nanoTime() - startedNanos) / 1_000_000;
         Runnable publish = () -> {
             if (!published.compareAndSet(false, true)) return;
             int status = exchange.getResponse().getStatusCode() == null
-                    ? 500 : exchange.getResponse().getStatusCode().value();
+                    ? 200 : exchange.getResponse().getStatusCode().value();
+            Integer terminalStatus = exchange.getAttribute(TERMINAL_STATUS_ATTRIBUTE);
+            if (terminalStatus != null) status = terminalStatus;
+            long durationMs = (System.nanoTime() - startedNanos) / 1_000_000;
+            Long proxyStart = exchange.getAttribute(PROXY_START_ATTRIBUTE);
+            Object clientResponse = exchange.getAttribute(ServerWebExchangeUtils.CLIENT_RESPONSE_ATTR);
+            String upstreamStatus = clientResponse instanceof reactor.netty.http.client.HttpClientResponse response
+                    ? Integer.toString(response.status().code()) : null;
+            Long proxyMs = upstreamStatus == null || proxyStart == null ? null
+                    : (System.nanoTime() - proxyStart) / 1_000_000;
+            var remote = exchange.getRequest().getRemoteAddress();
             accessLogs.publish(new GatewayAccessLog(
-                    1,
+                    "1.0",
+                    "gateway.access",
+                    UUID.randomUUID().toString(),
                     Instant.now(),
-                    requestId,
+                    "DATASCALPEL",
+                    startedAtEpochMs,
                     coordinator.instanceId(),
-                    matched == null ? null : matched.serviceId().toString(),
-                    matched == null ? null : matched.serviceCode(),
-                    matched == null ? null : matched.routeId().toString(),
-                    matched == null ? null : matched.routeCode(),
-                    consumer == null ? null : consumer.id().toString(),
-                    consumer == null ? null : consumer.code(),
-                    method,
-                    matched == null ? null : matched.pathTemplate(),
-                    status,
-                    (System.nanoTime() - startedNanos) / 1_000_000
+                    matched == null ? new GatewayAccessLog.Reference("unmatched", "unmatched", null)
+                            : new GatewayAccessLog.Reference(matched.serviceId().toString(),
+                            matched.serviceCode(), matched.serviceExternalId()),
+                    matched == null ? null : new GatewayAccessLog.Reference(matched.routeId().toString(),
+                            matched.routeCode(), matched.routeExternalId()),
+                    consumer == null ? null : new GatewayAccessLog.Consumer(consumer.id().toString(),
+                            consumer.code(), consumer.externalId()),
+                    new GatewayAccessLog.Request(requestId, method, matched == null ? "/_unmatched"
+                            : matched.pathTemplate(), knownLength(exchange.getRequest().getHeaders().getContentLength())),
+                    new GatewayAccessLog.Response(status, knownLength(exchange.getResponse().getHeaders().getContentLength())),
+                    new GatewayAccessLog.Latencies(durationMs, proxyMs == null ? durationMs : Math.max(0, durationMs - proxyMs),
+                            proxyMs, null),
+                    remote == null || remote.getAddress() == null ? null : remote.getAddress().getHostAddress(),
+                    upstreamStatus
             ));
         };
+        exchange.getAttributes().put(ACCESS_LOG_ATTRIBUTE, publish);
         exchange.getResponse().beforeCommit(() -> {
-            publish.run();
+            // Proxy failures are rendered by the outer exception handler after this filter unwinds.
+            // Normal proxy responses are recorded only after the streamed body completes.
+            if (exchange.getAttribute(ServerWebExchangeUtils.CLIENT_RESPONSE_ATTR) == null) publish.run();
             return Mono.empty();
         });
+    }
+
+    private static Long knownLength(long length) { return length < 0 ? null : length; }
+
+    public static final class RequestSizeLimitException extends RuntimeException {}
+
+    static void publishAccessLog(ServerWebExchange exchange) {
+        Runnable publish = exchange.getAttribute(ACCESS_LOG_ATTRIBUTE);
+        if (publish != null) publish.run();
     }
 
     @Override
@@ -217,8 +311,7 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
     }
 
     private static String requestId(ServerWebExchange exchange) {
-        String existing = exchange.getRequest().getHeaders().getFirst(REQUEST_ID_HEADER);
-        if (existing != null && existing.matches("[A-Za-z0-9._-]{8,128}")) return existing;
+        // An untrusted caller must not collapse distinct calls through the ingestion deduplication key.
         return UUID.randomUUID().toString();
     }
 

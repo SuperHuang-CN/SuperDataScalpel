@@ -71,7 +71,7 @@ const RolePermissionsEditor = ({
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="system-role-permissions-drawer"
         title={<OverlayTitle icon={<SafetyCertificateOutlined />} title="配置角色权限" description={`${role.name} · 按业务模块分配可访问功能`} />}
         extra={<Tag className="system-role-permissions-header-tag">已选 {selectedPermissionIds.length} 项</Tag>}

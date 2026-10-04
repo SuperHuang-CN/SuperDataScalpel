@@ -17,6 +17,7 @@ import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -108,7 +109,7 @@ public class GatewayServiceBinding extends BaseEntity {
         this.accessMode = Objects.requireNonNull(accessMode, "Gateway access mode is required");
         resetReconciliation();
         publicationStatus = GatewayServicePublicationStatus.PUBLISHING;
-        operationStartedAt = Instant.now();
+        operationStartedAt = operationTime();
         lastError = null;
     }
 
@@ -161,7 +162,7 @@ public class GatewayServiceBinding extends BaseEntity {
     public void beginRemoval() {
         resetReconciliation();
         publicationStatus = GatewayServicePublicationStatus.REMOVING;
-        operationStartedAt = Instant.now();
+        operationStartedAt = operationTime();
         lastError = null;
     }
 
@@ -169,6 +170,12 @@ public class GatewayServiceBinding extends BaseEntity {
         publicationStatus = GatewayServicePublicationStatus.REMOVE_FAILED;
         operationStartedAt = null;
         lastError = limit(message, "网关服务撤回失败");
+    }
+
+    private static Instant operationTime() {
+        // This value also identifies the operation across transactions. PostgreSQL stores
+        // timestamps at microsecond precision; normalize before capturing the in-memory token.
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     public boolean hasRecentOperation(Instant now, Duration timeout) {

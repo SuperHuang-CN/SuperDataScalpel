@@ -70,7 +70,7 @@ const Locations = ({ locations }: { locations: TaskModelReferenceLocation[] }) =
           <Tag>{locationLabel(location)}</Tag>
         </Tooltip>
       ))}
-      {locations.length > visible.length && <Tag>+{locations.length - visible.length}</Tag>}
+      {locations.length > visible.length && <Tooltip title={locations.slice(visible.length).map(locationLabel).join('；')}><Tag tabIndex={0}>+{locations.length - visible.length}</Tag></Tooltip>}
     </Space>
   );
 };
@@ -267,7 +267,7 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
       />
       <Table<ModelRelatedTask>
         size="small"
-        className="management-table"
+        className="management-table model-related-tasks-table"
         rowKey="taskId"
         columns={columns}
         dataSource={relatedTasksQuery.data?.content ?? []}

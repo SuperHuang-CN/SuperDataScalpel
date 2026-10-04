@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -36,9 +37,7 @@ interface TaskSchedulesPanelProps {
   canDelete: boolean;
 }
 
-const dateTime = (value: string | null) => value ? new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'short', timeStyle: 'medium', hour12: false,
-}).format(new Date(value)) : '—';
+const dateTime = formatManagementDateTime;
 
 export const TaskSchedulesPanel = ({ task, canUpdate, canPublish, canDelete }: TaskSchedulesPanelProps) => {
   const [drawerOpen, setDrawerOpen] = useState(false);

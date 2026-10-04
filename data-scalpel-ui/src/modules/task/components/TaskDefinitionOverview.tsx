@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { taskPageHref } from '../model/taskViews';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CodeOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
@@ -247,7 +248,7 @@ const LocalSqlDefinitionOverview = ({
             {definition.writeMode === 'APPEND' ? 'APPEND · 追加写入' : 'OVERWRITE · 清空后重写'}
           </Descriptions.Item>
           <Descriptions.Item label="执行超时">{definition.timeoutSeconds} 秒</Descriptions.Item>
-          <Descriptions.Item label="更新时间">{definition.updatedAt ? new Date(definition.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '—'}</Descriptions.Item>
+          <Descriptions.Item label="更新时间">{definition.updatedAt ? formatManagementDateTime(definition.updatedAt) : '—'}</Descriptions.Item>
         </Descriptions>
       </div>
     </div>

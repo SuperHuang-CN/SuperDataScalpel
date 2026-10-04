@@ -54,8 +54,8 @@ public record FileDatasetTableResponse(
                 table.getId(), table.getFileDatasetId(), table.getCode(), table.getName(),
                 table.getParseStatus(), sourceCount, totalRowCount, table.getCurrentLoadJobId(),
                 metadata.sampledRecordCount(), metadata.truncated(),
-                table.getParseStatus() != FileDatasetParseStatus.SCHEMA_READY,
-                metadata.sourceMetadata(), table.getSpatialReferenceOverride(),
+                table.getParseStatus() == FileDatasetParseStatus.READY,
+                table.getPendingCrsFileId()==null?metadata.sourceMetadata():Map.of("pendingCrsWkt",table.getPendingCrsWkt()==null?"":table.getPendingCrsWkt(),"pendingCrsFileId",table.getPendingCrsFileId().toString()), table.getSpatialReferenceOverride(),
                 table.getCreatedAt(), table.getUpdatedAt()
         );
     }

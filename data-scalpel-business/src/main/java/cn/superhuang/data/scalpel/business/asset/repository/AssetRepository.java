@@ -14,6 +14,10 @@ import java.util.UUID;
 
 public interface AssetRepository extends SearchRepository<Asset, UUID> {
 
+    @Query("select a.syncStatus, count(a) from Asset a where a.status='PUBLISHED' group by a.syncStatus")
+    List<Object[]> statisticsGroups();
+
+
     boolean existsByAssetTypeAndResourceId(AssetType assetType, UUID resourceId);
 
     Optional<Asset> findByAssetTypeAndResourceId(AssetType assetType, UUID resourceId);

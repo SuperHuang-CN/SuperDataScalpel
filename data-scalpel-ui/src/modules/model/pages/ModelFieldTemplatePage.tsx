@@ -7,18 +7,17 @@ import {
   DeleteOutlined,
   EditOutlined,
   FileTextOutlined,
-  MoreOutlined,
   MinusCircleOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import type { MenuProps, TableProps } from 'antd';
-import { Badge, Button, Card, Col, Drawer, Dropdown, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
+import type { TableProps } from 'antd';
+import { Badge, Button, Card, Col, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import {
   isStandardDictionaryTypeFamilyCompatible,
@@ -154,7 +153,7 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
       modalApi.confirm({
         icon: null,
 
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
         title: <OverlayTitle title="放弃未保存修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
         content: '常用字段模板内容已修改，关闭后这些修改不会保留。',
         okText: '放弃修改',
@@ -237,7 +236,7 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
       {messageContext}
       {modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="data-model-drawer field-template-drawer"
         title={<OverlayTitle title={template ? '修改常用字段模板' : '新建常用字段模板'} icon={<AppstoreOutlined />} description="定义可复用的字段组合、类型约束与业务标准" />}
         extra={template?.code ? <Tag className="data-model-drawer-header-tag">{template.code}</Tag> : undefined}
@@ -524,7 +523,8 @@ export const ModelFieldTemplatePage = () => {
   const [filterForm] = Form.useForm<TemplateFilters>();
   const [advancedFilterForm] = Form.useForm<TemplateFilters>();
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState<TemplateFilters>({});
+  const advancedSnapshot = useRef<TemplateFilters>({});
+  const advancedDraft = Form.useWatch((values: TemplateFilters) => values, { form: advancedFilterForm, preserve: true });
   const [filters, setFilters] = useState<TemplateFilters>({});
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
@@ -541,7 +541,7 @@ export const ModelFieldTemplatePage = () => {
     sort: 'category,sortOrder,name,code',
   }), [filters, page, size]);
   const templatesQuery = useModelFieldTemplates(request);
-  const advancedFilterCount = Number(advancedFilters.enabled !== undefined);
+  const advancedFilterCount = Number(advancedDraft?.enabled !== undefined);
   const enableMutation = useModelFieldTemplateCommand('enable');
   const disableMutation = useModelFieldTemplateCommand('disable');
   const deleteMutation = useDeleteModelFieldTemplate();
@@ -558,7 +558,7 @@ export const ModelFieldTemplatePage = () => {
   const removeTemplate = (template: ModelFieldTemplate) => modalApi.confirm({
     icon: null,
 
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
     title: <OverlayTitle title="删除常用字段模板" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${template.name}（${template.code}）”吗？已复制到模型的字段不会受影响。`,
     okText: '删除',
@@ -571,7 +571,7 @@ export const ModelFieldTemplatePage = () => {
   });
 
   const columns: TableProps<ModelFieldTemplate>['columns'] = [
-    { title: '模板', dataIndex: 'name', width: 260, render: (value: string, template) => <ManagementListCell icon={<AppstoreOutlined />} iconTone="cyan" primary={value} secondary={<><ManagementCode value={template.code} /> {template.description || ''}</>} /> },
+    { title: '模板', dataIndex: 'name', width: 260, render: (value: string, template) => <ManagementListCell icon={<AppstoreOutlined />} iconTone="cyan" primary={<ManagementName name={template.name} code={template.code} description={template.description}><span>{value}</span></ManagementName>} secondary={<><ManagementCode value={template.code} /> {template.description || ''}</>} /> },
     {
       title: '分类 / 状态', width: 160,
       render: (_value: unknown, template) => <ManagementListCell primary={template.category || '未分类'} secondary={<ManagementStatusIndicator label={template.enabled ? '启用' : '停用'} tone={template.enabled ? 'success' : 'default'} />} />,
@@ -592,40 +592,37 @@ export const ModelFieldTemplatePage = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 112,
+      align: 'center' as const,
+      fixed: 'right',
+      width: 120,
       render: (_value, template) => canUpdate ? (
-        <div className="management-row-actions">
-          <div className="management-row-actions-shortcuts">
-            <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${template.name}`} onClick={() => { setEditingTemplate(template); setDrawerOpen(true); }} /></Tooltip>
-            <Tooltip title={template.enabled ? '停用' : '启用'}><Button type="text" icon={template.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} aria-label={`${template.enabled ? '停用' : '启用'}${template.name}`} loading={(template.enabled ? disableMutation : enableMutation).isPending && (template.enabled ? disableMutation : enableMutation).variables === template.id} onClick={() => void toggleTemplate(template)} /></Tooltip>
-          </div>
-          <Dropdown menu={{ items: [
-            { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditingTemplate(template); setDrawerOpen(true); } },
-            { key: 'lifecycle', icon: template.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: template.enabled ? '停用' : '启用', onClick: () => void toggleTemplate(template) },
-            { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => removeTemplate(template) },
-          ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${template.name}的更多操作`} /></Tooltip></Dropdown>
+        <div className="modeling-row-actions">
+          <Tooltip title="修改"><Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改${template.name}`} onClick={() => { setEditingTemplate(template); setDrawerOpen(true); }} /></Tooltip>
+          <Tooltip title={template.enabled ? '停用' : '启用'}><Button type="text" size="small" icon={template.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} aria-label={`${template.enabled ? '停用' : '启用'}${template.name}`} loading={(template.enabled ? disableMutation : enableMutation).isPending && (template.enabled ? disableMutation : enableMutation).variables === template.id} onClick={() => void toggleTemplate(template)} /></Tooltip>
+          <Tooltip title="删除"><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除${template.name}`} onClick={() => removeTemplate(template)} /></Tooltip>
         </div>
       ) : '—',
     },
   ];
   const applyDirect = (values: TemplateFilters) => {
     const enabled = advancedFilterForm.getFieldValue('enabled');
-    setAdvancedFilters({ enabled });
     setFilters({ keyword: values.keyword, category: values.category, enabled });
     setPage(0);
   };
-  const confirmAdvanced = () => { setAdvancedFilters({ enabled: advancedFilterForm.getFieldValue('enabled') }); setAdvancedFilterOpen(false); };
+  const confirmAdvanced = () => setAdvancedFilterOpen(false);
+  const cancelAdvanced = () => { if (advancedFilterOpen) advancedFilterForm.setFieldValue('enabled', advancedSnapshot.current.enabled); setAdvancedFilterOpen(false); };
   const clearAdvanced = () => advancedFilterForm.setFieldValue('enabled', undefined);
-  const reset = () => { filterForm.resetFields(); advancedFilterForm.resetFields(); advancedFilterForm.setFieldValue('enabled', undefined); setAdvancedFilters({}); setAdvancedFilterOpen(false); setFilters({}); setPage(0); };
+  const reset = () => { filterForm.resetFields(); advancedFilterForm.resetFields(); advancedFilterForm.setFieldValue('enabled', undefined); setAdvancedFilterOpen(false); setFilters({}); setPage(0); };
 
   return (
     <>
       {messageContext}
       {modalContext}
-      <section className="management-workbench">
-        <div className="management-filter-strip">
+      <section className="management-workbench modeling-workspace">
+        <div className="management-filter-strip modeling-list-controls">
           <Form<TemplateFilters>
+            id="template-list-filters"
+            name="template-list-filters"
             autoComplete="off"
             form={filterForm}
             layout="inline"
@@ -637,35 +634,26 @@ export const ModelFieldTemplatePage = () => {
             <ManagementAdaptiveMoreFilters
               count={advancedFilterCount}
               open={advancedFilterOpen}
-              onOpenChange={(open) => {
-                setAdvancedFilterOpen(open);
-                if (open) {
-                  advancedFilterForm.resetFields();
-                  advancedFilterForm.setFieldValue('enabled', advancedFilters.enabled);
-                }
-              }}
+              onOpenChange={open => { if (open) { advancedSnapshot.current = advancedFilterForm.getFieldsValue(true); setAdvancedFilterOpen(true); } else cancelAdvanced(); }}
               onClear={clearAdvanced}
-              onCancel={() => {
-                advancedFilterForm.setFieldValue('enabled', advancedFilters.enabled);
-                setAdvancedFilterOpen(false);
-              }}
+              onCancel={cancelAdvanced}
               onConfirm={confirmAdvanced}
             >
-              <Form<TemplateFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}><Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item></Form>
+              <Form<TemplateFilters> form={advancedFilterForm} layout="vertical" className="modeling-advanced-filters" autoComplete="off" onFinish={() => { setAdvancedFilterOpen(false); filterForm.submit(); }}><Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item></Form>
             </ManagementAdaptiveMoreFilters>
-          <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={templatesQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-          <div className="management-result-title">常用字段模板 <span className="management-result-count">共 {templatesQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
-            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新字段模板" onClick={() => void templatesQuery.refetch()} /></Tooltip>
+          <div className="modeling-page-actions management-filter-actions"><ManagementFilterActions formId="template-list-filters" form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={templatesQuery.isFetching} onReset={reset} /><div className="modeling-page-commands">
+            <Tooltip title="刷新列表"><Button icon={<ReloadOutlined />} aria-label="刷新字段模板" onClick={() => void templatesQuery.refetch()} /></Tooltip>
             {canUpdate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingTemplate(null); setDrawerOpen(true); }}>
                 新建
               </Button>
             )}
-          </Space>
+          </div></div>
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title"><AppstoreOutlined aria-hidden />常用字段模板 <span className="management-result-count">共 {templatesQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {templatesQuery.isError && (
             <Alert

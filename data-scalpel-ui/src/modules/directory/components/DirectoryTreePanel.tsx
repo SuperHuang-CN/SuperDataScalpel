@@ -1,4 +1,4 @@
-import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined, FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Dropdown, Modal, Segmented, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
@@ -9,6 +9,7 @@ import { useDeleteDirectory, useExportDirectoryTree } from '../hooks/useDirector
 import type { DirectoryScope, DirectoryTreeNode } from '../model/directory';
 import { DirectoryDrawer } from './DirectoryDrawer';
 import { DirectoryImportModal } from './DirectoryImportModal';
+import './workspace-directory.css';
 
 const DIRECTORY_PANEL_COLLAPSED_STORAGE_KEY_PREFIX = 'data-scalpel.ui.directory-panel.collapsed';
 const DIRECTORY_PANEL_WIDTH_STORAGE_KEY = 'data-scalpel.ui.directory-panel.width';
@@ -67,7 +68,11 @@ interface DirectoryTreePanelProps {
   selection: DirectorySelection;
   canManage?: boolean;
   showResourceCounts?: boolean;
+  /** Authoritative total, including uncategorized resources. */
+  totalResourceCount?: number;
   showVirtualNodes?: boolean;
+  showFolderIcons?: boolean;
+  menuPopupClassName?: string;
   navigationTabs?: {
     activeKey: 'directories' | 'resources';
     resourceLabel: string;
@@ -85,10 +90,14 @@ export const DirectoryTreePanel = ({
   selection,
   canManage = false,
   showResourceCounts = true,
+  totalResourceCount: suppliedTotalResourceCount,
   showVirtualNodes = true,
+  showFolderIcons = scope === 'DATA_SOURCE' || scope === 'FILE_DATASET' || scope === 'PANORAMA' || scope === 'MODEL' || scope === 'METRIC' || scope === 'BUSINESS_OBJECT' || scope === 'TASK' || scope === 'DATA_SERVICE' || scope === 'MCP_SERVER' || scope === 'ASSET',
+  menuPopupClassName = scope === 'DATA_SOURCE' || scope === 'FILE_DATASET' || scope === 'PANORAMA' || scope === 'MODEL' || scope === 'METRIC' || scope === 'BUSINESS_OBJECT' || scope === 'TASK' || scope === 'DATA_SERVICE' || scope === 'MCP_SERVER' || scope === 'ASSET' ? 'workspace-directory-menu' : undefined,
   navigationTabs,
   onSelectionChange,
 }: DirectoryTreePanelProps) => {
+  const resourceStyle = scope === 'DATA_SOURCE' || scope === 'FILE_DATASET' || scope === 'PANORAMA' || scope === 'MODEL' || scope === 'METRIC' || scope === 'BUSINESS_OBJECT' || scope === 'TASK' || scope === 'DATA_SERVICE' || scope === 'MCP_SERVER' || scope === 'ASSET';
   const [messageApi, messageContext] = message.useMessage();
   const [modal, modalContext] = Modal.useModal();
   const [collapsed, setCollapsed] = useState(() => readDirectoryPanelCollapsedPreference(scope));
@@ -128,11 +137,20 @@ export const DirectoryTreePanel = ({
 
   const confirmRemove = (directory: DirectoryTreeNode) => {
     modal.confirm({
+      rootClassName: `business-overlay business-modal-overlay${resourceStyle ? ' workspace-resource-overlay resource-delete-modal' : ''}`,
+      width: resourceStyle ? 440 : undefined,
+      centered: resourceStyle,
+      ...(resourceStyle ? { focusable: { autoFocusButton: 'cancel' as const } } : {}),
       icon: null,
-
-      rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title={`删除${label}`} icon={<DeleteOutlined />} tone="danger" />,
-      content: `确认删除${label}“${directory.name}”吗？`,
-      okText: '删除',
+      title: <OverlayTitle title={`删除${label}`} icon={<DeleteOutlined />} tone="danger" />,
+      content: resourceStyle ? (
+        <div className="resource-delete-content">
+          <p>确定删除以下{label}？</p>
+          <div className="resource-delete-target"><FolderOutlined aria-hidden="true" /><strong>{directory.name}</strong></div>
+          <p className="resource-delete-note">删除后无法恢复。包含子目录或业务数据的目录不能删除。</p>
+        </div>
+      ) : `确认删除${label}“${directory.name}”吗？`,
+      okText: resourceStyle ? `删除${label}` : '删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
       onOk: () => remove(directory),
@@ -217,9 +235,10 @@ export const DirectoryTreePanel = ({
   const treeData: DataNode[] = (() => {
     const buildNodes = (nodes: DirectoryTreeNode[]): DataNode[] => nodes.map((directory) => ({
       key: directory.id,
+      icon: showFolderIcons ? ({ expanded }) => expanded ? <FolderOpenOutlined /> : <FolderOutlined /> : undefined,
       title: (
         <Dropdown
-          classNames={{ root: 'directory-context-menu' }}
+          classNames={{ root: ['directory-context-menu', menuPopupClassName].filter(Boolean).join(' ') }}
           trigger={['contextMenu']}
           disabled={!canManage}
           open={canManage && contextMenuId === directory.id}
@@ -298,12 +317,12 @@ export const DirectoryTreePanel = ({
   })();
 
   const selectedKeys = selection === null || selection === undefined ? [] : [selection];
-  const totalResourceCount = tree.reduce((total, directory) => total + directory.resourceCount, 0);
+  const totalResourceCount = suppliedTotalResourceCount ?? tree.reduce((total, directory) => total + directory.resourceCount, 0);
 
   return (
     <aside
       ref={panelRef}
-      className={`directory-tree-panel${collapsed ? ' directory-tree-panel-collapsed' : ''}${resizing ? ' directory-tree-panel-resizing' : ''}`}
+      className={`directory-tree-panel${resourceStyle ? ' workspace-directory-panel' : ''}${collapsed ? ' directory-tree-panel-collapsed' : ''}${resizing ? ' directory-tree-panel-resizing' : ''}`}
       style={collapsed ? undefined : { flexBasis: panelWidth, width: panelWidth }}
     >
       {messageContext}
@@ -329,7 +348,7 @@ export const DirectoryTreePanel = ({
                 options={[{ label: '目录', value: 'directories' }, { label: navigationTabs.resourceLabel, value: 'resources' }]}
                 onChange={(value) => navigationTabs.onChange(value as 'directories' | 'resources')}
               />
-            ) : <span>{label}</span>}
+            ) : <span className="directory-tree-panel-heading">{showFolderIcons && <FolderOutlined />} {label}</span>}
             <span className="directory-tree-panel-header-actions">
               {canManage && (!navigationTabs || navigationTabs.activeKey === 'directories') && (
                 <Tooltip title={`新建顶级${label}`}>
@@ -338,6 +357,7 @@ export const DirectoryTreePanel = ({
               )}
               {(!navigationTabs || navigationTabs.activeKey === 'directories') && <Tooltip title={`${label}导入导出`}>
                 <Dropdown
+                  classNames={{ root: menuPopupClassName }}
                   trigger={['click']}
                   placement="bottomRight"
                   menu={{
@@ -404,6 +424,7 @@ export const DirectoryTreePanel = ({
         <Spin spinning={loading} size="small" className="directory-tree-spin">
           <Tree
             blockNode
+            showIcon={showFolderIcons}
             showLine={{ showLeafIcon: false }}
             switcherIcon={({ expanded }) => expanded ? <DownOutlined /> : <RightOutlined />}
             defaultExpandAll

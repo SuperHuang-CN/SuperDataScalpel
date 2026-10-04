@@ -23,7 +23,7 @@ import { Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from '
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { getTaskView, taskPageHref, taskViews, type TaskListView } from '../model/taskViews';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
@@ -142,7 +142,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
   };
 
   const remove = (task: DataTask) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle icon={<DeleteOutlined />} title="删除任务" tone="danger" />, icon: null,
     content: `确认删除“${task.name}”吗？已有运行记录的任务不能删除。`,
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
@@ -160,7 +160,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
   const lifecycle = (task: DataTask) => {
     if (task.status === 'DRAFT') {
       modalApi.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
         title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="发布任务" />, icon: null,
         content: task.type === 'WORKFLOW' ? '发布会校验依赖图和引用任务的发布状态。' : task.type === 'SPARK_MODEL_QUALITY'
           ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
@@ -187,8 +187,8 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
             icon={<Tooltip title={typeLabel}>{visual.icon}</Tooltip>}
             iconLabel={`任务类型：${typeLabel}`}
             iconTone={visual.tone}
-            primary={<Button type="link" size="small" onClick={() => navigate(detailHref(task))}>{name}</Button>}
-            secondary={task.description || '—'}
+            primary={<ManagementName name={name} description={task.description}><Tooltip title={name}><Button type="link" size="small" onClick={() => navigate(detailHref(task))}>{name}</Button></Tooltip></ManagementName>}
+            secondary={task.description ? <Tooltip title={task.description}><span className="management-cell-summary">{task.description}</span></Tooltip> : '—'}
           />
         );
       },
@@ -215,7 +215,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
     },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
-      title: '操作', width: 112,
+      title: '操作', width: 112, fixed: 'right',
       render: (_, task) => {
         const lifecycleIcon = task.status === 'DRAFT' ? <SendOutlined /> : task.status === 'PUBLISHED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />;
         const lifecycleLabel = task.status === 'DRAFT' ? '发布' : task.status === 'PUBLISHED' ? '停用' : '启用';
@@ -270,18 +270,18 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
         {canViewDirectories && <DirectoryTreePanel showResourceCounts={view === 'all'} scope="TASK" tree={directoriesQuery.data ?? []} loading={directoriesQuery.isLoading} selection={selection} canManage={canManageDirectories} onSelectionChange={(next) => { setSelection(next); setPage(0); }} />}
         <section className="management-workbench">
           <div className="management-filter-strip">
-              <Form<TaskFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" initialValues={filters} onFinish={(values) => { setFilters(values); setPage(0); }}>
+              <Form<TaskFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" initialValues={filters} onFinish={(values) => { setFilters(values); setPage(0); }} id="task-list-page-filters-0">
                 <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索任务名称" /></Form.Item>
                 <Form.Item name="status"><Select allowClear placeholder="全部状态" style={{ width: 130 }} options={Object.entries(taskStatusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
                 {viewConfig.types.length > 1 && <Form.Item name="type"><Select allowClear aria-label={view === 'all' ? '任务类型' : '执行方式'} placeholder={view === 'all' ? '全部类型' : '执行方式'} style={{ width: 170 }} options={viewConfig.types.map(value => ({ value, label: taskTypeLabels[value] }))} /></Form.Item>}
               </Form>
-              <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={selection !== undefined} loading={tasksQuery.isFetching} onReset={() => { filterForm.resetFields(); setFilters({}); setSelection(undefined); setPage(0); }} />
+              <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={selection !== undefined} loading={tasksQuery.isFetching} onReset={() => { filterForm.resetFields(); setFilters({}); setSelection(undefined); setPage(0); }} commands={<div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新任务列表" onClick={() => void tasksQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setDrawerTask(null); }}>新建{view === 'all' ? '任务' : viewConfig.label}</Button>}</div>} formId="task-list-page-filters-0" />
           </div>
           <div className="management-results-surface">
-            <div className="management-result-toolbar"><span className="management-result-title"><Dropdown menu={{ selectedKeys: [view], items: taskViews.map(item => ({ key: item.id, label: item.label, onClick: () => navigate(item.path) })) }}><Button type="text" aria-label="切换任务视图">{viewConfig.label} <DownOutlined /></Button></Dropdown> <span className="management-result-count">共 {tasksQuery.data?.totalElements ?? 0} 项</span></span><div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新任务列表" onClick={() => void tasksQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setDrawerTask(null); }}>新建{view === 'all' ? '任务' : viewConfig.label}</Button>}</div></div>
+            <div className="management-result-toolbar"><span className="management-result-title"><Dropdown menu={{ selectedKeys: [view], items: taskViews.map(item => ({ key: item.id, label: item.label, onClick: () => navigate(item.path) })) }}><Button type="text" aria-label="切换任务视图">{viewConfig.label} <DownOutlined /></Button></Dropdown> <span className="management-result-count">共 {tasksQuery.data?.totalElements ?? 0} 项</span></span></div>
             {tasksQuery.isError && <InlineFeedback tone="error" label={tasksQuery.error instanceof ApiError ? tasksQuery.error.message : '任务列表加载失败'} action={<Button size="small" onClick={() => void tasksQuery.refetch()}>重试</Button>} />}
             <Table<DataTask>
-            size="small" className="management-table" rowKey="id" loading={tasksQuery.isLoading} columns={columns} dataSource={tasksQuery.data?.content ?? []} scroll={{ y: '100%' }}
+            size="small" className="management-table" rowKey="id" loading={tasksQuery.isLoading} columns={columns} dataSource={tasksQuery.data?.content ?? []} scroll={{ x: 1002, y: '100%' }}
             pagination={{
               current: page + 1, pageSize: size, total: tasksQuery.data?.totalElements ?? 0, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 项`,
               onChange: (nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); },

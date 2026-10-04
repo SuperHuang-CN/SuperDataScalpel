@@ -15,4 +15,8 @@ describe('file dataset parse job monitoring model', () => {
     expect(fileDatasetParseJobMonitorInterval(true)).toBe(FILE_DATASET_PARSE_JOB_MONITOR_INTERVAL_MS);
     expect(fileDatasetParseJobMonitorInterval(false)).toBe(false);
   });
+  it('keeps dataset history scoped with and without a status filter', () => {
+    expect(buildFileDatasetParseJobSearch({ fileDatasetId: 'dataset-1' })).toBe('fileDatasetId:"dataset-1"');
+    expect(buildFileDatasetParseJobSearch({ fileDatasetId: 'dataset-1', status: 'FAILED' })).toBe('status:"FAILED" AND fileDatasetId:"dataset-1"');
+  });
 });

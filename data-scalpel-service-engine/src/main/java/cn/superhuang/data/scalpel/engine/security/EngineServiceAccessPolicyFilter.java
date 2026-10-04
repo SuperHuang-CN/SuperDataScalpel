@@ -16,6 +16,9 @@ import java.io.IOException;
 @Component
 public class EngineServiceAccessPolicyFilter extends OncePerRequestFilter {
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cn.superhuang.data.scalpel.engine.cluster.EngineClusterCoordinator cluster;
+
     private static final String SERVICE_PREFIX = "/open-api/v1/";
 
     private final EngineAccessPolicyService policyService;
@@ -40,6 +43,11 @@ public class EngineServiceAccessPolicyFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        if(cluster!=null && !cluster.ready()) {
+            response.setHeader("Retry-After","1");
+            problemDetailWriter.write(request,response,ProblemType.SERVICE_UNAVAILABLE,"当前 Engine 节点尚未同步最新配置或已失联，请稍后重试");
+            return;
+        }
         EngineAccessPolicyService.PolicyDecision decision = policyService.evaluate(request.getRemoteAddr());
         if (!decision.allowed()) {
             problemDetailWriter.write(request, response, ProblemType.ACCESS_DENIED, decision.denialDetail());

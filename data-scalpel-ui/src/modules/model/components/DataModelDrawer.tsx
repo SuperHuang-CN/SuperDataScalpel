@@ -1,16 +1,19 @@
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { ModelDataSourcePicker } from './ModelResourcePicker';
+import './model-create.css';
 import { DatabaseOutlined, IdcardOutlined, TableOutlined } from '@ant-design/icons';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import type { TableProps } from 'antd';
-import { Badge, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
+import { Badge, Button, ConfigProvider, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   useDataSourceNamespaces,
   useDataSourceTables,
-  useDataSources,
+  useDataSource,
 } from '../../datasource';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
+import { directoryTreeSelectOptions, useDirectoryTree } from '../../directory';
 import {
   useCreateDataModel,
   useExternalTableImportPreview,
@@ -26,7 +29,6 @@ import {
   type PhysicalTableMode,
   type UpdateDataModelRequest,
 } from '../model/dataModel';
-import { isModelDataSourceSelectable } from '../model/managedTableImport';
 
 interface DataModelDrawerProps {
   open: boolean;
@@ -83,12 +85,6 @@ const DataModelFormSection = ({
     <div className="data-model-form-section-body">{children}</div>
   </section>
 );
-
-const jdbcDataSourceRequest = {
-  page: 0,
-  size: 500,
-  sort: 'code',
-} as const;
 
 const enabledWarehouseLayerRequest = {
   search: 'enabled:"true"',
@@ -168,12 +164,11 @@ export const DataModelDrawer = ({
   const createMutation = useCreateDataModel();
   const updateMutation = useUpdateDataModel();
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
-  const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
   const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const selectedStorageId = Form.useWatch('storageDataSourceId', form);
   const selectedPhysicalTableMode = Form.useWatch('physicalTableMode', form);
   const selectedPhysicalTableName = Form.useWatch('physicalTableName', form);
-  const selectedStorage = dataSourcesQuery.data?.content.find((source) => source.id === selectedStorageId);
+  const selectedStorage = useDataSource(selectedStorageId, open).data;
   const editing = Boolean(model);
   const physicalDefinitionLocked = model?.status !== undefined && model.status !== 'DRAFT';
   const externalTableMode = selectedPhysicalTableMode === 'EXTERNAL';
@@ -212,16 +207,6 @@ export const DataModelDrawer = ({
       ...(externalPreviewQuery.data?.issues ?? []),
     ].filter((issue): issue is string => Boolean(issue))
   ), [externalPreviewQuery.data, selectedExternalTable]);
-  const storageOptions = useMemo(() => dataSourcesQuery.data?.content
-    .filter((source) => isModelDataSourceSelectable(
-      source,
-      externalTableMode ? 'EXTERNAL' : 'MANAGED',
-      model?.storageDataSourceId,
-    ))
-    .map((source) => ({
-      value: source.id,
-      label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
-    })) ?? [], [dataSourcesQuery.data, externalTableMode, model?.storageDataSourceId]);
   const warehouseLayerOptions = useMemo(() => {
     const layers = [...(warehouseLayersQuery.data?.content ?? [])];
     if (model?.warehouseLayer && !layers.some((layer) => layer.id === model.warehouseLayer?.id)) {
@@ -390,10 +375,10 @@ export const DataModelDrawer = ({
   );
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
         className="data-model-drawer"
         title={<OverlayTitle title={editing ? '修改模型' : '新建模型'} icon={<TableOutlined />} description="定义模型标识、业务归属与物理存储位置" />}
         open={open}
@@ -466,9 +451,14 @@ export const DataModelDrawer = ({
                 <Col span={12} xs={24} sm={12}>
                   <Form.Item label="目录" name="directoryId">
                     <TreeSelect
+                      treeIcon
+                      showSearch
+                      treeNodeFilterProp="title"
+                      popupMatchSelectWidth={360}
+                      classNames={{ popup: { root: 'model-create-select-popup' } }}
                       allowClear
                       treeDefaultExpandAll
-                      treeData={directoryTreeSelectData(directoriesQuery.data ?? [])}
+                      treeData={directoryTreeSelectOptions(directoriesQuery.data ?? [])}
                       placeholder="未分类"
                     />
                   </Form.Item>
@@ -483,6 +473,8 @@ export const DataModelDrawer = ({
                     : '可选；只表达业务组织，不影响物理表结构。'}
                 >
                   <Select
+                    popupMatchSelectWidth={320}
+                    classNames={{ popup: { root: 'model-create-select-popup' } }}
                     allowClear
                     showSearch
                     optionFilterProp="label"
@@ -540,13 +532,11 @@ export const DataModelDrawer = ({
                   name="storageDataSourceId"
                   rules={[{ required: true, message: externalTableMode ? '请选择 JDBC 数据源' : '请选择数据存储' }]}
                 >
-                  <Select
-                    showSearch
-                    optionFilterProp="label"
-                    loading={dataSourcesQuery.isFetching}
+                  <ModelDataSourcePicker
+                    storageOnly={!externalTableMode}
+                    currentDataSourceId={model?.storageDataSourceId}
                     disabled={physicalDefinitionLocked}
-                    options={storageOptions}
-                    placeholder={externalTableMode ? '选择已启用的 JDBC 数据源' : '选择具有数据存储用途的 JDBC 数据源'}
+                    placeholder={externalTableMode ? '选择 JDBC 数据源' : '选择目标数据存储'}
                     onChange={selectStorage}
                   />
                 </Form.Item>
@@ -560,6 +550,8 @@ export const DataModelDrawer = ({
                   extra={selectedNamespace ? `仅显示 JDBC 数据源默认命名空间：${selectedNamespace.displayName}` : undefined}
                 >
                   <Select
+                    popupMatchSelectWidth={320}
+                    classNames={{ popup: { root: 'model-create-select-popup' } }}
                     allowClear
                     showSearch
                     filterOption={false}
@@ -635,6 +627,8 @@ export const DataModelDrawer = ({
                   ]}
                 >
                   <Select
+                    popupMatchSelectWidth={320}
+                    classNames={{ popup: { root: 'model-create-select-popup' } }}
                     mode="tags"
                     tokenSeparators={[',']}
                     disabled={physicalDefinitionLocked}
@@ -647,6 +641,6 @@ export const DataModelDrawer = ({
           </DataModelFormSection>
         </Form>
       </Drawer>
-    </>
+    </ConfigProvider>
   );
 };

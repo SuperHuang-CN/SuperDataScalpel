@@ -186,7 +186,7 @@ export const SqlModelPickerDrawer = ({
 
   return (
     <Drawer closable={{ placement: 'end' }}
-      rootClassName="business-overlay business-drawer-overlay sql-model-picker-drawer"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay sql-model-picker-drawer"
       open={open}
       size="min(1080px, calc(100vw - 24px))"
       title={<OverlayTitle title={readOnly ? '查看关联模型' : '选择关联模型'} icon={<DatabaseOutlined />} description={`当前数据源：${dataSourceName ?? dataSourceId}`} />}

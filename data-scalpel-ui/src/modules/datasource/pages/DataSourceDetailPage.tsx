@@ -1,19 +1,22 @@
 import {
   ApiOutlined,
+  ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
-import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { Badge, Button, ConfigProvider, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import './data-source-detail.css';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { ApiResourcePanel } from '../components/ApiResourceListDrawer';
 import { ConnectionTestResultModal } from '../components/ConnectionTestResultModal';
+import { dataSourceDeleteConfirmation } from '../components/dataSourceDeleteConfirmation';
 import { DataSourceBasicPanel } from '../components/DataSourceBasicPanel';
 import { DataSourceDrawer } from '../components/DataSourceDrawer';
 import { DataSourceMetadataPanel } from '../components/DataSourceMetadataDrawer';
@@ -33,7 +36,6 @@ import {
   useTestSavedDataSourceConnection,
 } from '../hooks/useDataSources';
 import {
-  dataSourcePurposeLabels,
   dataSourceTypeLabels,
   type ConnectionTestResult,
   type DataSource,
@@ -201,26 +203,16 @@ export const DataSourceDetailPage = () => {
     }
   };
 
-  const remove = (target: DataSource) => modalApi.confirm({
-    icon: null,
-
-    rootClassName: 'business-overlay business-modal-overlay',
-    title: <OverlayTitle title="删除数据源" icon={<DeleteOutlined />} tone="danger" />,
-    content: `确认删除“${target.name}”吗？被任务直接引用的数据源不能删除。`,
-    okText: '删除',
-    okButtonProps: { danger: true },
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await deleteMutation.mutateAsync(target.id);
-        messageApi.success('数据源已删除');
-        navigate('/datasource', { replace: true });
-      } catch (error) {
-        messageApi.error(error instanceof ApiError ? error.message : '删除数据源失败');
-        throw error;
-      }
-    },
-  });
+  const remove = (target: DataSource) => modalApi.confirm(dataSourceDeleteConfirmation(target, async () => {
+    try {
+      await deleteMutation.mutateAsync(target.id);
+      messageApi.success('数据源已删除');
+      navigate('/datasource', { replace: true });
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '删除数据源失败');
+      throw error;
+    }
+  }));
 
   if (!id) {
     return <Result status="404" title="数据源地址无效" extra={<Button type="primary" onClick={() => navigate('/datasource')}>返回数据源列表</Button>} />;
@@ -277,6 +269,7 @@ export const DataSourceDetailPage = () => {
       children: (
         <DataSourceBasicPanel
           dataSource={dataSource}
+          typeDefinition={typeDefinition}
           directoryName={dataSource.directoryId ? directoryNameById.get(dataSource.directoryId) : undefined}
         />
       ),
@@ -296,28 +289,24 @@ export const DataSourceDetailPage = () => {
   ];
 
   return (
+    <ConfigProvider theme={workspaceResourceTheme}>
     <div className="data-source-detail-page business-detail-page">
       {messageContext}
       {modalContext}
       <div className="data-source-detail-header business-detail-header">
+        <Tooltip title="返回数据源列表"><Button type="text" icon={<ArrowLeftOutlined />} aria-label="返回数据源列表" onClick={backToList} /></Tooltip>
+        <span className="business-detail-resource-icon"><DataSourceTypeIcon type={dataSource.type} /></span>
         <div className="data-source-detail-identity">
           <div className="data-source-detail-title-row">
-            <span className="business-detail-resource-icon business-detail-resource-icon-blue">
-              <DataSourceTypeIcon type={dataSource.type} />
-            </span>
-            <span className="data-source-detail-title">{dataSource.name}</span>
-            <code>{dataSource.code}</code>
-            <Tag>{typeDefinition?.displayName ?? dataSourceTypeLabels[dataSource.type]}</Tag>
-            <Tag color={dataSource.enabled ? 'success' : 'default'}>{dataSource.enabled ? '启用' : '停用'}</Tag>
+            <Tooltip title={dataSource.name}><span className="data-source-detail-title">{dataSource.name}</span></Tooltip>
+            <span className="data-source-detail-type">{typeDefinition?.displayName ?? dataSourceTypeLabels[dataSource.type]}</span>
+            <Badge status={dataSource.enabled ? 'success' : 'default'} text={dataSource.enabled ? '启用' : '停用'} />
           </div>
           <div className="data-source-detail-subtitle">
-            <span>{dataSource.purposes.map((purpose) => dataSourcePurposeLabels[purpose]).join(' / ')}</span>
-            <span>·</span>
-            <code>{connectionSummary(dataSource)}</code>
-            {dataSource.description && <><span>·</span><span className="data-source-detail-description">{dataSource.description}</span></>}
+            <Tooltip title={connectionSummary(dataSource)}><span className="data-source-detail-endpoint">{connectionSummary(dataSource)}</span></Tooltip>
           </div>
         </div>
-        <Space size={4}>
+        <Space size={8} wrap className="data-source-detail-actions">
           <Tooltip title="刷新数据源">
             <Button icon={<ReloadOutlined />} aria-label="刷新数据源详情" loading={detailQuery.isFetching} onClick={refreshDetail} />
           </Tooltip>
@@ -366,5 +355,6 @@ export const DataSourceDetailPage = () => {
         />
       )}
     </div>
+    </ConfigProvider>
   );
 };

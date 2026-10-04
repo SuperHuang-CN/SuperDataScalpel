@@ -82,6 +82,17 @@ final class SuperApiGatewayAdminClient {
         );
     }
 
+    cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayTrafficPolicyResponse getTrafficPolicy(UUID id) {
+        return exchange("查询保护策略", client().get().uri("/admin-api/v1/services/{id}/traffic-policy", id),
+                cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayTrafficPolicyResponse.class);
+    }
+
+    cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayTrafficPolicyResponse updateTrafficPolicy(
+            UUID id, cn.superhuang.data.scalpel.business.service.gateway.web.request.GatewayTrafficPolicyRequest request) {
+        return exchange("更新保护策略", client().post().uri("/admin-api/v1/services/{id}/actions/update-traffic-policy", id).body(request),
+                cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayTrafficPolicyResponse.class);
+    }
+
     ServiceResponse createService(CreateServiceRequest request) {
         return exchange(
                 "创建 Service",
@@ -189,6 +200,16 @@ final class SuperApiGatewayAdminClient {
                 CONSUMER_PAGE
         );
         return unique(page == null ? null : page.content(), "Consumer");
+    }
+
+    cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayAccessValidityResponse getValidity(String kind, UUID id) {
+        return exchange("查询有效期", client().get().uri("/admin-api/v1/access-validities/{kind}/{id}", kind, id),
+                cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayAccessValidityResponse.class);
+    }
+    cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayAccessValidityResponse updateValidity(String kind, UUID id,
+            cn.superhuang.data.scalpel.business.service.gateway.web.request.GatewayAccessValidityRequest request) {
+        return exchange("更新有效期", client().post().uri("/admin-api/v1/access-validities/{kind}/{id}/actions/update", kind, id).body(request),
+                cn.superhuang.data.scalpel.business.service.gateway.web.response.GatewayAccessValidityResponse.class);
     }
 
     ConsumerResponse getConsumer(UUID id) {

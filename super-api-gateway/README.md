@@ -7,7 +7,7 @@ Super API Gateway 是一个独立的 Spring Cloud Gateway WebFlux 网关及管�
 - Server：单端口 `19000`，`/admin-api/v1/**` 提供控制面 API，其他已配置路径承载代理流量。
 - UI：独立 Vite 应用，开发端口 `19080`。
 - PostgreSQL：与 DataScalpel Admin 可以使用同一个数据库实例和数据库账号，但只使用 `super_api_gateway` schema。
-- Kafka：异步输出脱敏访问日志，默认 topic 为 `super-api-gateway.access-log.v1`。
+- Kafka：异步输出脱敏访问日志，默认 topic 为 `datascalpel.gateway.access.v1`，可独立配置。
 
 ## 本地启动
 
@@ -24,6 +24,12 @@ cp config/application-local.example.yml config/application-local.yml
 - Gateway 与 Admin API：`http://localhost:19000`
 - 管理 UI：`http://localhost:19080`
 - 健康检查：`http://localhost:19000/actuator/health`
+
+如使用 IDEA 启动 `SuperApiGatewayApplication`，必须显式设置 Active profiles 为
+`local`，Working directory 为本工程目录。也可将本地配置放在
+`src/main/resources/config/application-local.yml`，由 Spring Boot 的 classpath 配置加载。
+不要将工作目录设为上级 DataScalpel 根目录，也不要复用其 `spring.config.location`；
+未激活 `local` 时，本地 Machine Token 不会生效。配置修改后需要重启网关进程。
 
 独立构建与检查：
 
@@ -55,3 +61,9 @@ X-Super-Gateway-Admin-Token: <configured-machine-token>
 - Key 不会转发到上游；网关会覆盖注入可信的 `X-Super-Gateway-Consumer-Id` 和 `X-Super-Gateway-Consumer-Code`。
 
 详细设计见 [第一阶段设计](docs/design/phase-one.md)。
+
+## 网关保护与监控
+
+当前能力、HTTP 字段、状态码和部署边界见 [保护与可观测性](docs/gateway-protection-and-observability.md)。
+现有服务默认没有新增流量限制；部署新版本不会自动给旧服务设置限流或到期时间。
+生产环境（非 local/test）会拒绝默认/弱管理凭据，请配置独立密码、JWT 密钥和机器 Token。

@@ -182,7 +182,7 @@ export const DataServiceBasicDrawer = ({
     }
     modalApi.confirm({
       icon: null,
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
       title: <OverlayTitle title={editing ? '放弃未保存的基础信息？' : '放弃创建数据服务？'} icon={<ExclamationCircleOutlined />} />,
       content: editing
         ? '关闭后，本次对服务基础信息的修改将丢失。'
@@ -255,7 +255,7 @@ export const DataServiceBasicDrawer = ({
       {messageContext}
       {modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-basic-drawer"
         title={<OverlayTitle title={title} icon={effectiveType ? <DataServiceTypeIcon type={effectiveType} /> : <ApiOutlined />} description={editing ? '维护服务标识、目录归属与运行引擎' : '先建立服务草稿，服务定义可在创建后继续配置'} />}
         extra={effectiveType ? <Tag className="data-service-basic-drawer-header-tag">{dataServiceTypeLabels[effectiveType]}</Tag> : undefined}

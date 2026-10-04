@@ -58,7 +58,7 @@ export const SystemRoleDrawer = ({ open, role, onClose }: SystemRoleDrawerProps)
     <>
       {messageContext}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-role-drawer"
         title={<OverlayTitle icon={<TeamOutlined />} title={isEditing ? '修改系统角色' : '新建系统角色'} description="定义角色身份与职责边界，权限在保存后单独配置" />}
         extra={role?.builtIn ? <Tag className="data-model-drawer-header-tag">内置角色</Tag> : undefined}

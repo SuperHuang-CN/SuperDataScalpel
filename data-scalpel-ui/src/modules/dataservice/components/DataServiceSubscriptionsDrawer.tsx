@@ -170,7 +170,7 @@ export const DataServiceSubscriptionsDrawer = ({
       if (key === 'revoke') {
         modalApi.confirm({
           icon: null,
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
           title: <OverlayTitle title="撤回消费者订阅" icon={<DeleteOutlined />} tone="danger" />,
           content: `确认撤回“${subscription.consumerName}”对当前服务的调用权限吗？`,
           okText: '撤回',
@@ -244,7 +244,7 @@ export const DataServiceSubscriptionsDrawer = ({
     <>
       {messageContext}{modalContext}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-subscriptions-drawer"
         title={<OverlayTitle title="管理服务订阅" icon={<LinkOutlined />} description={`${dataService?.name ?? '数据服务'} · 管理消费者调用授权与网关同步`} />}
         extra={<Tag className="data-service-subscriptions-header-tag">{subscriptions.length} 个消费者</Tag>}

@@ -37,7 +37,7 @@ export const PublishDataServiceModal = ({
 
   return (
     <Modal
-      rootClassName="business-overlay business-modal-overlay publish-data-service-modal"
+      rootClassName="business-overlay business-modal-overlay resource-workspace-overlay publish-data-service-modal"
       title={<OverlayTitle title="发布数据服务到网关" icon={<CloudUploadOutlined />} description="配置稳定公开路径与调用方访问模式" />}
       open={Boolean(service)}
       closable={!loading}

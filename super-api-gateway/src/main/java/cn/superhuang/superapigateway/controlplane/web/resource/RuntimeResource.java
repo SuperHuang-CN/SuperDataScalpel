@@ -17,10 +17,16 @@ public class RuntimeResource {
 
     private final GatewayManagementService service;
     private final ControlPlaneExecutor executor;
+    private final cn.superhuang.superapigateway.runtime.GatewayTelemetry telemetry;
+    private final cn.superhuang.superapigateway.accesslog.AccessLogPublisher logs;
 
-    public RuntimeResource(GatewayManagementService service, ControlPlaneExecutor executor) {
+    public RuntimeResource(GatewayManagementService service, ControlPlaneExecutor executor,
+                           cn.superhuang.superapigateway.runtime.GatewayTelemetry telemetry,
+                           cn.superhuang.superapigateway.accesslog.AccessLogPublisher logs) {
         this.service = service;
         this.executor = executor;
+        this.telemetry = telemetry;
+        this.logs = logs;
     }
 
     @GetMapping
@@ -31,5 +37,11 @@ public class RuntimeResource {
     @PostMapping("/actions/reload")
     public Mono<Map<String, Long>> reload() {
         return executor.execute(() -> Map.of("targetRevision", service.requestReload()));
+    }
+
+    @GetMapping("/telemetry")
+    public Mono<cn.superhuang.superapigateway.controlplane.web.response.RuntimeTelemetryResponse> telemetry() {
+        return executor.execute(() -> new cn.superhuang.superapigateway.controlplane.web.response.RuntimeTelemetryResponse(
+                telemetry.snapshot(), logs.deliveryStatus()));
     }
 }

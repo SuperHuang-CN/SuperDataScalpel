@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SearchRequest } from '../../../shared/search';
 import {
+  fetchDataEntryCandidatePage,
+  fetchDataEntryCandidateFilters,
   createDataEntryForm,
   deleteDataEntries,
   deleteDataEntryForm,
@@ -23,11 +25,18 @@ import type { DataEntryFormStatus, DataEntryLookupInput } from '../model/dataEnt
 
 const key = ['data-entry'] as const;
 
-export const useDataEntryForms = (parameters: { status?: DataEntryFormStatus; keyword?: string; page: number; size: number }) => useQuery({
+export const useDataEntryForms = (parameters: { status?: DataEntryFormStatus; keyword?: string; page: number; size: number }, enabled = true) => useQuery({
   queryKey: [...key, 'forms', parameters], queryFn: () => fetchDataEntryForms(parameters),
+  enabled,
 });
 export const useDataEntryCandidates = (enabled: boolean, keyword?: string) => useQuery({
   queryKey: [...key, 'candidates', keyword], queryFn: () => fetchDataEntryCandidates(keyword), enabled,
+});
+export const useDataEntryCandidatePage = (request: SearchRequest) => useQuery({
+  queryKey: [...key, 'candidate-page', request], queryFn: () => fetchDataEntryCandidatePage(request),
+});
+export const useDataEntryCandidateFilters = () => useQuery({
+  queryKey: [...key, 'candidate-filters'], queryFn: fetchDataEntryCandidateFilters,
 });
 export const useDataEntryForm = (id?: string) => useQuery({
   queryKey: [...key, id], queryFn: () => fetchDataEntryForm(id as string), enabled: Boolean(id),

@@ -57,7 +57,7 @@ export const SystemConfigurationDrawer = ({
     <>
       {messageContext}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-configuration-drawer"
         title={<OverlayTitle icon={<SettingOutlined />} title="修改系统配置" description="调整平台运行参数，配置标识与类型保持不变" />}
         extra={configuration && <Tag className="data-model-drawer-header-tag">{configuration.valueType}</Tag>}

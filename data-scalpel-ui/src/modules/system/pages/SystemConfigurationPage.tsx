@@ -2,7 +2,7 @@ import { EditOutlined, EllipsisOutlined, ReloadOutlined, SettingOutlined } from 
 import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Input, Table, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
-import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { PanoramaMapSettingsDrawer } from '../components/PanoramaMapSettingsDrawer';
 import { panoramaMapSettingsSummary } from '../model/panoramaMapSettings';
@@ -40,7 +40,7 @@ export const SystemConfigurationPage = () => {
   const columns: TableProps<SystemConfiguration>['columns'] = [
     {
       title: '配置项', dataIndex: 'name', width: 260,
-      render: (value: string, configuration) => <ManagementListCell icon={<SettingOutlined />} iconTone="violet" primary={value} secondary={configuration.description || '—'} />,
+      render: (value: string, configuration) => <ManagementListCell icon={<SettingOutlined />} iconTone="violet" primary={<ManagementName name={value} description={configuration.description}><Tooltip title={value}><span>{value}</span></Tooltip></ManagementName>} />,
     },
     { title: '配置键', dataIndex: 'configKey', width: 230, render: (value: string) => <ManagementCode value={value} /> },
     {
@@ -85,16 +85,16 @@ export const SystemConfigurationPage = () => {
     <>
       <section className="management-workbench">
         <div className="management-filter-strip">
-          <Form<SystemConfigurationFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
+          <Form<SystemConfigurationFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search} id="system-configuration-page-filters-0">
             <Form.Item name="name"><ManagementSearchInput allowClear placeholder="搜索配置名称" /></Form.Item>
             <Form.Item name="configKey"><Input allowClear placeholder="配置键，如 platform.name" /></Form.Item>
           </Form>
-          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={configurationsQuery.isFetching} onReset={reset} />
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={configurationsQuery.isFetching} onReset={reset} commands={<div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新配置列表" onClick={() => void configurationsQuery.refetch()} /></Tooltip></div>} formId="system-configuration-page-filters-0" />
         </div>
         <div className="management-results-surface">
           <div className="management-result-toolbar">
           <span className="management-result-title">配置列表 <span className="management-result-count">共 {configurationsQuery.data?.totalElements ?? 0} 项</span></span>
-          <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新配置列表" onClick={() => void configurationsQuery.refetch()} /></Tooltip></div>
+
           </div>
           <Table<SystemConfiguration>
           size="small"
@@ -103,7 +103,7 @@ export const SystemConfigurationPage = () => {
           columns={columns}
           dataSource={configurationsQuery.data?.content ?? []}
           loading={configurationsQuery.isFetching}
-          scroll={{ y: '100%' }}
+          scroll={{ x: 1100, y: '100%' }}
           pagination={{
             current: page + 1,
             pageSize: size,

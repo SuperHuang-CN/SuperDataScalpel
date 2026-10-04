@@ -37,7 +37,7 @@ public class EngineDeployment {
     @Column(name = "service_id", nullable = false, updatable = false)
     private UUID serviceId;
 
-    /** Legacy storage column retained for ddl-auto compatibility; Engine ordering no longer uses it. */
+    /** Internal generation fences late completion; not an Admin API revision. */
     @Column(nullable = false)
     private long revision;
 
@@ -96,6 +96,7 @@ public class EngineDeployment {
             String definitionJson,
             UUID dataSourceId
     ) {
+        this.revision = Math.incrementExact(this.revision);
         this.serviceCode = serviceCode;
         this.routePath = routePath;
         this.definitionDigest = definitionDigest;
@@ -119,6 +120,7 @@ public class EngineDeployment {
     }
 
     public void beginRemoval() {
+        this.revision = Math.incrementExact(this.revision);
         this.status = EngineDeploymentRecordStatus.REMOVING;
         this.lastError = null;
         this.updatedAt = Instant.now();
@@ -154,6 +156,8 @@ public class EngineDeployment {
     public String getEngineCode() {
         return engineCode;
     }
+
+    public long getRevision() { return revision; }
 
     public UUID getServiceId() {
         return serviceId;

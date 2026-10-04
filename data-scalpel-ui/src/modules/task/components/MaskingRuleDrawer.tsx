@@ -164,7 +164,7 @@ export const MaskingRuleDrawer = ({
     <>
       {contextHolder}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer masking-rule-drawer"
         open={open}
         size={720}

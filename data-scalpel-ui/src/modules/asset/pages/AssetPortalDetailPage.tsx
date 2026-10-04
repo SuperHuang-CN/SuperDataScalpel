@@ -11,10 +11,11 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { Button, Descriptions, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError, hasAccessToken } from '../../../shared/api/http';
 import { AssetPortalHeader } from '../components/AssetPortalHeader';
+import { AssetPortalFooter } from '../components/AssetPortalFeedback';
 import { useAssetPortalDetail, useAssetSourceNavigation } from '../hooks/useAssetPortal';
 import {
   assetPortalSourceDisplayStatusLabels,
@@ -27,6 +28,7 @@ import {
   type AssetType,
 } from '../model/asset';
 import './assetPortal.css';
+import './assetPortalCustomer.css';
 
 const assetTypeIcons: Record<AssetType, ReactNode> = {
   DATA_MODEL: <DatabaseOutlined />,
@@ -97,7 +99,7 @@ const MetadataPanel = ({ asset }: { asset: AssetPortalAssetDetail }) => {
   const labels = metadataLabels[asset.assetType];
   const entries = Object.entries(labels);
   return (
-    <Descriptions column={{ xs: 1, sm: 2, lg: 3 }} bordered size="middle">
+    <Descriptions column={{ xs: 1, sm: 2, lg: 3 }} layout="vertical" size="middle">
       {entries.map(([key, label]) => (
         <Descriptions.Item key={key} label={label}>{displayValue(asset.metadata[key])}</Descriptions.Item>
       ))}
@@ -108,10 +110,13 @@ const MetadataPanel = ({ asset }: { asset: AssetPortalAssetDetail }) => {
 export const AssetPortalDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const returnPath = typeof location.state?.returnTo === 'string' && /^\/assets(?:\/browse)?(?:\?|$)/.test(location.state.returnTo)
+    ? location.state.returnTo : '/assets/browse';
   const navigate = useNavigate();
   const [messageApi, messageContext] = message.useMessage();
   const detailQuery = useAssetPortalDetail(id);
   const sourceNavigationMutation = useAssetSourceNavigation();
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
 
   const enterSourceAsset = async () => {
     if (!id) return;
@@ -138,16 +143,16 @@ export const AssetPortalDetailPage = () => {
 
   if (!id) {
     return (
-      <div className="asset-portal-page asset-portal-detail-page">
+      <div className="asset-portal-page portal-customer asset-portal-detail-page">
         <AssetPortalHeader page="detail" />
-        <Result status="404" title="资产地址无效" extra={<Button type="primary" onClick={() => navigate('/assets')}>返回资产门户</Button>} />
+        <Result status="404" title="资产地址无效" extra={<Button type="primary" onClick={() => navigate('/assets/browse')}>返回资产目录</Button>} />
       </div>
     );
   }
 
   if (detailQuery.isPending) {
     return (
-      <div className="asset-portal-page asset-portal-detail-page">
+      <div className="asset-portal-page portal-customer asset-portal-detail-page">
         <AssetPortalHeader page="detail" />
         <main className="asset-portal-container asset-portal-detail-loading"><Skeleton active paragraph={{ rows: 10 }} /></main>
       </div>
@@ -157,7 +162,7 @@ export const AssetPortalDetailPage = () => {
   if (!detailQuery.data || detailQuery.isError) {
     const notFound = detailQuery.error instanceof ApiError && detailQuery.error.status === 404;
     return (
-      <div className="asset-portal-page asset-portal-detail-page">
+      <div className="asset-portal-page portal-customer asset-portal-detail-page">
         <AssetPortalHeader page="detail" />
         <Result
           status={notFound ? '404' : 'error'}
@@ -165,7 +170,7 @@ export const AssetPortalDetailPage = () => {
           subTitle={notFound ? '只有仍处于已发布状态的资产可以从门户访问。' : detailQuery.error instanceof ApiError ? detailQuery.error.message : '请稍后重试。'}
           extra={(
             <Space>
-              <Button onClick={() => navigate('/assets')}>返回资产门户</Button>
+              <Button onClick={() => navigate('/assets/browse')}>返回资产目录</Button>
               {!notFound ? <Button type="primary" icon={<ReloadOutlined />} onClick={() => void detailQuery.refetch()}>重试</Button> : null}
             </Space>
           )}
@@ -176,19 +181,19 @@ export const AssetPortalDetailPage = () => {
 
   const asset = detailQuery.data;
   return (
-    <div className="asset-portal-page asset-portal-detail-page">
+    <div className="asset-portal-page portal-customer asset-portal-detail-page">
       {messageContext}
       <AssetPortalHeader page="detail" />
       <main>
         <section className="asset-portal-detail-hero">
           <div className="asset-portal-container">
-            <Button type="text" icon={<ArrowLeftOutlined />} className="asset-portal-detail-back" onClick={() => navigate('/assets')}>返回资产门户</Button>
+            <Button type="text" icon={<ArrowLeftOutlined />} className="asset-portal-detail-back" onClick={() => navigate(returnPath)}>{returnPath === '/assets' ? '返回门户首页' : '返回资产目录'}</Button>
             <div className="asset-portal-detail-identity">
               <span className={`asset-portal-detail-type-icon asset-portal-asset-type-${asset.assetType.toLocaleLowerCase()}`}>{assetTypeIcons[asset.assetType]}</span>
               <div className="asset-portal-detail-title">
                 <div className="asset-portal-detail-tags">
                   <Tag>{assetTypeLabels[asset.assetType]}</Tag>
-                  {asset.featured ? <Tag color="purple">推荐资产</Tag> : null}
+                  {asset.featured ? <Tag color="cyan">推荐资产</Tag> : null}
                   <span className={sensitivityClass(asset.sensitivityLevel)}><SafetyCertificateOutlined /> {assetSensitivityLevelLabels[asset.sensitivityLevel]}</span>
                 </div>
                 <Typography.Title level={1}>{asset.name}</Typography.Title>
@@ -210,9 +215,10 @@ export const AssetPortalDetailPage = () => {
             />
           ) : null}
 
+          <div className="portal-detail-grid"><div className="portal-detail-sections">
           <section className="asset-portal-detail-panel">
-            <div className="asset-portal-detail-panel-heading"><div><span className="asset-portal-section-kicker">GOVERNANCE</span><Typography.Title level={2}>资产治理信息</Typography.Title></div></div>
-            <Descriptions column={{ xs: 1, sm: 2, lg: 3 }} bordered size="middle">
+            <div className="asset-portal-detail-panel-heading"><div><Typography.Title level={2}>资源信息</Typography.Title></div></div>
+            <Descriptions column={{ xs: 1, sm: 2, lg: 3 }} layout="vertical" size="middle">
               <Descriptions.Item label="业务领域">{asset.directoryPath || '—'}</Descriptions.Item>
               <Descriptions.Item label="负责人">{asset.ownerName || '—'}</Descriptions.Item>
               <Descriptions.Item label="更新频率">{asset.updateFrequency || '—'}</Descriptions.Item>
@@ -225,11 +231,11 @@ export const AssetPortalDetailPage = () => {
 
           <section className="asset-portal-detail-panel">
             <div className="asset-portal-detail-panel-heading asset-portal-source-heading">
-              <div><span className="asset-portal-section-kicker">SOURCE METADATA</span><Typography.Title level={2}>来源安全元数据</Typography.Title><Typography.Paragraph>{sourceStatusDescription(asset.sourceDisplayStatus)}</Typography.Paragraph></div>
+              <div><Typography.Title level={2}>来源安全元数据</Typography.Title><Typography.Paragraph>{sourceStatusDescription(asset.sourceDisplayStatus)}</Typography.Paragraph></div>
               <Tag color={sourceStatusTone[asset.sourceDisplayStatus]}>{assetPortalSourceDisplayStatusLabels[asset.sourceDisplayStatus]}</Tag>
             </div>
             {asset.sourceDisplayStatus !== 'AVAILABLE' ? <Alert className="asset-portal-source-alert" type={asset.sourceDisplayStatus === 'UNAVAILABLE' ? 'warning' : 'info'} showIcon message={sourceStatusDescription(asset.sourceDisplayStatus)} /> : null}
-            <Descriptions className="asset-portal-source-basics" column={{ xs: 1, sm: 2, lg: 3 }} bordered size="middle">
+            <Descriptions className="asset-portal-source-basics" column={{ xs: 1, sm: 2, lg: 3 }} layout="vertical" size="middle">
               <Descriptions.Item label="来源名称">{asset.sourceName || '—'}</Descriptions.Item>
               <Descriptions.Item label="来源编码">{asset.sourceCode || '—'}</Descriptions.Item>
               <Descriptions.Item label="来源状态">{asset.sourceStatus || '—'}</Descriptions.Item>
@@ -239,12 +245,17 @@ export const AssetPortalDetailPage = () => {
             <div className="asset-portal-metadata-title">{assetTypeLabels[asset.assetType]}元数据</div>
             <MetadataPanel asset={asset} />
           </section>
+          </div><aside className="asset-portal-detail-panel portal-detail-aside">
+            <h2>开始使用这项资产</h2>
+            <p>先确认资源说明与更新频率是否满足业务需求，再进入资源查看和使用。</p>
+            <Button type="primary" loading={sourceNavigationMutation.isPending} onClick={() => void enterSourceAsset()}>{hasAccessToken() ? '进入资源' : '登录后使用'}</Button>
+            <p>实际使用范围以您的账号权限为准。</p>
+            <hr /><h3>所属业务领域</h3><p>{asset.directoryPath || '未设置业务领域'}</p>
+          </aside></div>
         </section>
       </main>
 
-      <footer className="asset-portal-footer">
-        <div className="asset-portal-container"><span>DataScalpel 数据资产门户</span><span>公开安全元数据 · 来源权限内使用</span></div>
-      </footer>
+      <AssetPortalFooter />
     </div>
   );
 };

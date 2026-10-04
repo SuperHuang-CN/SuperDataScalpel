@@ -27,7 +27,7 @@ function ServerDrawerForm({ server, directories, defaultDirectoryId, onClose, on
     if (saving) return;
     if (!dirty) { onClose(); return; }
     modal.confirm({ icon: null, title: <OverlayTitle title="放弃未保存的基础信息？" icon={<ExclamationCircleOutlined />} tone="danger" />, okText: '放弃', cancelText: '继续编辑', onOk: onClose,
-      rootClassName: 'business-overlay business-modal-overlay' });
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay' });
   };
   const submit = async () => {
     if (saving) return;
@@ -42,7 +42,7 @@ function ServerDrawerForm({ server, directories, defaultDirectoryId, onClose, on
       }
     } catch (error) { if (error instanceof ApiError) messageApi.error(error.message); }
   };
-  return <Drawer open width={560} rootClassName="business-overlay business-drawer-overlay"
+  return <Drawer open width={560} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
     title={<OverlayTitle title={server ? '编辑 MCP Server' : '新建 MCP Server'} icon={<ApiOutlined />} description="维护 Server 基础信息与 Tool 组织目录" />} onClose={close}
     footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
       <Button disabled={saving} onClick={close}>取消</Button>

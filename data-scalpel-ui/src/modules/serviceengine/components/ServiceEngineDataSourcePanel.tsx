@@ -2,10 +2,10 @@ import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert, ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { DashboardOutlined, DeleteOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Dropdown, Form, Modal, Progress, Select, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Modal, Progress, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
 import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useDataSources } from '../../datasource';
 import {
@@ -127,7 +127,7 @@ export const ServiceEngineDataSourcePanel = ({
   };
 
   const confirmRemove = (registration: ServiceEngineDataSourceRegistration) => modal.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle icon={<DeleteOutlined />} title="解除数据源注册" tone="danger" />, icon: null,
     content: `确认解除“${registration.dataSourceName}”吗？已发布服务使用时不能解除。`,
     okText: '解除', cancelText: '取消', okButtonProps: { danger: true },
@@ -168,10 +168,13 @@ export const ServiceEngineDataSourcePanel = ({
       title: '数据源',
       width: 230,
       render: (_: unknown, registration) => (
-        <ManagementListCell primary={registration.dataSourceName} secondary={registration.dataSourceCode} />
+        <ManagementListCell
+          primary={<ManagementName name={registration.dataSourceName} code={registration.dataSourceCode}><Typography.Text ellipsis={{ tooltip: registration.dataSourceName }}>{registration.dataSourceName}</Typography.Text></ManagementName>}
+          secondary={<ManagementCode value={registration.dataSourceCode} />}
+        />
       ),
     },
-    { title: '数据库', dataIndex: 'databaseType', width: 100, render: (value: string | null) => value ?? '—' },
+    { title: '数据库', dataIndex: 'databaseType', width: 120, ellipsis: true, render: (value: string | null) => value ?? '—' },
     {
       title: '同步状态 / 错误',
       width: 190,

@@ -310,6 +310,14 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
         );
     }
 
+    @Override
+    public void streamSpatialPreview(DataSource source, DataModel model, SpatialPreviewColumn column,
+            int maximumRows, Duration timeout, java.util.function.Consumer<byte[]> consumer) {
+        DatabaseDialect dialect=registry.require(source.getType().name());
+        spatialPreviewExecutor.stream(source.getType().name(), source.getConnection().toJdbcConnectionConfig(),
+                tableIdentifier(dialect, source, model), column, maximumRows, timeout, consumer);
+    }
+
     private static ModelPhysicalTableInspection unsupported(TableIdentifier table, String message) {
         return new ModelPhysicalTableInspection(table, PhysicalTableState.UNSUPPORTED, false, message, List.of());
     }

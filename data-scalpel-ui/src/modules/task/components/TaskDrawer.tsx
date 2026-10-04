@@ -98,7 +98,7 @@ export const TaskDrawer = ({
 
   return (
     <Drawer closable={{ placement: 'end' }}
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="data-model-drawer task-basic-drawer"
       title={<OverlayTitle icon={<ApartmentOutlined />} title={task ? '修改任务基本信息' : `新建${view === 'all' ? '任务' : viewConfig.label}`} description="维护任务身份、所属目录与默认执行资源" />}
       extra={<Tag className="data-model-drawer-header-tag">{taskType ? taskTypeLabels[taskType] : '待选择类型'}</Tag>}

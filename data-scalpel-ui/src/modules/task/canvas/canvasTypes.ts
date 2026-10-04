@@ -78,7 +78,7 @@ export type {
 } from '../model/maskingRule';
 
 export const CANVAS_SCHEMA_VERSION = 4 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 77 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 78 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
@@ -1956,7 +1956,13 @@ export interface CanvasColumnMapping {
 
 export type JdbcColumnMapping = CanvasColumnMapping;
 
+export interface BatchWriteOptions {
+  overwriteCondition: CanvasFilterCondition | null;
+  allowEmptyOverwrite: boolean;
+}
+
 export interface JdbcOutputWrite {
+  batchWrite?: BatchWriteOptions | null;
   writeId: string;
   sourceTableName: string;
   targetTableName: string;
@@ -1977,6 +1983,7 @@ export interface JdbcOutputConfiguration {
 }
 
 export interface ModelOutputWrite {
+  batchWrite?: BatchWriteOptions | null;
   writeId: string;
   sourceTableName: string;
   targetModelId: string;

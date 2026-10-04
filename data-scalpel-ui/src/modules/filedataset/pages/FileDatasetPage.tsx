@@ -1,26 +1,30 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DashboardOutlined,
   EditOutlined,
-  EllipsisOutlined,
+  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { Button, ConfigProvider, Empty, Form, Modal, Select, Table, Tooltip, message } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useCurrentUser } from '../../system';
+import { FileDatasetUploadDrawer } from '../components/FileDatasetUploadDrawer';
+import { fileDatasetDeleteConfirmation } from '../components/fileDatasetDeleteConfirmation';
 import { FileDatasetDrawer } from '../components/FileDatasetDrawer';
 import { FileDatasetParseQueueDrawer } from '../components/FileDatasetParseQueueDrawer';
 import { FileDatasetTypeIcon } from '../components/FileDatasetTypeIcon';
-import { fileDatasetTypeIconTones } from '../components/fileDatasetTypeIconTone';
+import { fileDatasetReadiness } from '../model/fileDatasetReadiness';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import './file-dataset-list.css';
 import { useDeleteFileDataset, useFileDatasets } from '../hooks/useFileDatasets';
 import {
   fileDatasetTypeLabels,
@@ -33,12 +37,22 @@ import { buildFileDatasetSearch } from '../model/fileDatasetSearch';
 const DEFAULT_PAGE_SIZE = 20;
 
 export const FileDatasetPage = () => {
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [resultsWidth, setResultsWidth] = useState(900);
+  useEffect(() => {
+    const results = resultsRef.current;
+    if (!results || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => setResultsWidth(Math.floor(entry.contentRect.width)));
+    observer.observe(results);
+    return () => observer.disconnect();
+  }, []);
   const [filterForm] = Form.useForm<FileDatasetFilters>();
   const [filters, setFilters] = useState<FileDatasetFilters>({});
   const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(undefined);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editingFileDataset, setEditingFileDataset] = useState<FileDataset | null>(null);
+  const [uploadDataset, setUploadDataset] = useState<FileDataset | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [parseQueueDrawerOpen, setParseQueueDrawerOpen] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
@@ -56,7 +70,15 @@ export const FileDatasetPage = () => {
     search: buildFileDatasetSearch(filters), page, size, sort: '-updatedAt,name',
   }), [filters, page, size]);
   const fileDatasetsQuery = useFileDatasets(request);
+  const totalsQuery = useFileDatasets({ page: 0, size: 1 }, canViewDirectories);
   const deleteMutation = useDeleteFileDataset();
+  const refresh = () => {
+    void fileDatasetsQuery.refetch();
+    if (canViewDirectories) {
+      void directoriesQuery.refetch();
+      void totalsQuery.refetch();
+    }
+  };
 
   const search = (nextFilters: FileDatasetFilters) => {
     setFilters(nextFilters);
@@ -90,14 +112,7 @@ export const FileDatasetPage = () => {
 
   const confirmDelete = (fileDataset: FileDataset) => {
     modalApi.confirm({
-      icon: null,
-
-      rootClassName: 'business-overlay business-modal-overlay',
-      title: <OverlayTitle title="删除文件数据集" icon={<DeleteOutlined />} tone="danger" />,
-      content: `确认删除“${fileDataset.name}”及其 ${fileDataset.fileCount} 个文件、${fileDataset.tableCount} 张表吗？`,
-      okText: '删除',
-      cancelText: '取消',
-      okButtonProps: { danger: true },
+      ...fileDatasetDeleteConfirmation(fileDataset),
       onOk: async () => {
         try {
           await deleteMutation.mutateAsync(fileDataset.id);
@@ -110,70 +125,85 @@ export const FileDatasetPage = () => {
     });
   };
 
+  const informationWidth = Math.max(900, resultsWidth - 16) - 112;
   const columns: TableProps<FileDataset>['columns'] = [
     {
-      title: '数据集', dataIndex: 'name', width: 280,
-      render: (value: string, dataset: FileDataset) => (
+      title: '数据集 / 说明', dataIndex: 'name', width: informationWidth * 0.32,
+      render: (value: string, dataset) => (
         <ManagementListCell
-          icon={<FileDatasetTypeIcon type={dataset.type} />}
-          iconLabel={`文件数据集类型：${fileDatasetTypeLabels[dataset.type]}`}
-          iconTone={fileDatasetTypeIconTones[dataset.type]}
-          primary={<Button type="link" className="file-dataset-name-button" onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}>{value}</Button>}
-          secondary={dataset.description || '—'}
+          primary={<ManagementName name={dataset.name} description={dataset.description}><Tooltip title={value}><Button type="link" className="file-dataset-name-button" onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}>{value}</Button></Tooltip></ManagementName>}
+          secondary={dataset.description ? <Tooltip title={dataset.description}><span>{dataset.description}</span></Tooltip> : '—'}
         />
       ),
     },
-    { title: '数据规模', width: 130, align: 'right', render: (_value: unknown, dataset) => <ManagementListCell primary={`${dataset.fileCount} 个文件`} secondary={`${dataset.tableCount} 张表`} /> },
     {
-      title: '表就绪情况',
-      width: 140,
-      render: (_value: unknown, dataset: FileDataset) => dataset.tableCount === 0
-        ? <ManagementStatusIndicator label="尚未上传" />
-        : <ManagementStatusIndicator label={`${dataset.readyTableCount} / ${dataset.tableCount} 已就绪`} tone={dataset.readyTableCount === dataset.tableCount ? 'success' : 'processing'} />,
+      title: '文件类型', dataIndex: 'type', width: informationWidth * 0.18,
+      render: (type: FileDataset['type']) => <span className="file-dataset-format"><FileDatasetTypeIcon type={type} /><span>{fileDatasetTypeLabels[type]}</span></span>,
     },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
+    { title: '数据规模', width: informationWidth * 0.14, align: 'right', render: (_value: unknown, dataset) => <ManagementListCell primary={`${dataset.fileCount} 个文件`} secondary={`${dataset.tableCount} 张表`} /> },
     {
-      title: '操作', key: 'action', width: 112, render: (_value: unknown, dataset: FileDataset) => (canUpdate || canDelete) && (
+      title: '表就绪情况', width: informationWidth * 0.20,
+      render: (_value: unknown, dataset) => {
+        const readiness = fileDatasetReadiness(dataset);
+        return <ManagementListCell
+          primary={<ManagementStatusIndicator label={readiness.label} tone={readiness.tone} title={readiness.help} />}
+          secondary={readiness.detail}
+        />;
+      },
+    },
+    { title: '更新时间', dataIndex: 'updatedAt', width: informationWidth * 0.16, render: (value: string) => <ManagementDateTime value={value} /> },
+    {
+      title: '操作', key: 'action', width: 112, fixed: 'right', className: 'file-dataset-actions-column',
+      render: (_value: unknown, dataset) => (canUpdate || canDelete) && (
         <div className="management-row-actions">
-          <div className="management-row-actions-shortcuts">{canUpdate && <Tooltip title="修改数据集"><Button type="text" icon={<EditOutlined />} aria-label={`修改${dataset.name}`} onClick={() => setEditingFileDataset(dataset)} /></Tooltip>}</div>
-          <Dropdown trigger={['click']} menu={{ items: [
-            ...(canUpdate ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingFileDataset(dataset) }] : []),
-            ...(canUpdate && canDelete ? [{ type: 'divider' as const }] : []),
-            ...(canDelete ? [{ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除', onClick: () => confirmDelete(dataset) }] : []),
-          ] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${dataset.name}的更多操作`} /></Tooltip></Dropdown>
+          {canUpdate && <Tooltip title="上传文件"><Button type="text" icon={<UploadOutlined />} aria-label={`上传文件到${dataset.name}`} onClick={() => setUploadDataset(dataset)} /></Tooltip>}
+          {canUpdate && <Tooltip title="修改数据集"><Button type="text" icon={<EditOutlined />} aria-label={`修改${dataset.name}`} onClick={() => setEditingFileDataset(dataset)} /></Tooltip>}
+          {canDelete && <Tooltip title="删除数据集"><Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除${dataset.name}`} onClick={() => confirmDelete(dataset)} /></Tooltip>}
         </div>
       ),
     },
   ];
+  const hasFilters = Boolean(filters.keyword || filters.type || directorySelection !== undefined);
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {messageContext}
       {modalContext}
-      <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
-        {canViewDirectories && <DirectoryTreePanel scope="FILE_DATASET" tree={directoriesQuery.data ?? []} loading={directoriesQuery.isFetching} selection={directorySelection} canManage={canManageDirectories} onSelectionChange={selectDirectory} />}
+      <div className={`file-dataset-list-page ${canViewDirectories ? 'directory-management-layout' : 'page-stack'}`}>
+        {canViewDirectories && <DirectoryTreePanel scope="FILE_DATASET" totalResourceCount={totalsQuery.data?.totalElements ?? 0} tree={directoriesQuery.data ?? []} loading={directoriesQuery.isFetching} selection={directorySelection} canManage={canManageDirectories} onSelectionChange={selectDirectory} />}
         <section className="management-workbench">
           <div className="management-filter-strip">
             <Form<FileDatasetFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={applyDirectFilters}>
-              <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索数据集名称" className="file-dataset-keyword-input" /></Form.Item>
-              <Form.Item name="type"><Select allowClear placeholder="全部类型" options={fileDatasetTypeOptions} className="file-dataset-format-select" /></Form.Item>
+              <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索数据集名称" aria-label="搜索数据集名称" className="file-dataset-keyword-input" /></Form.Item>
+              <Form.Item name="type"><Select allowClear showSearch={{ optionFilterProp: 'label' }} aria-label="文件类型" placeholder="全部文件类型" options={fileDatasetTypeOptions}
+                popupMatchSelectWidth={240} classNames={{ popup: { root: 'file-dataset-format-popup' } }}
+                optionRender={(option) => <span className="file-dataset-format"><FileDatasetTypeIcon type={option.data.value} /><span>{option.data.label}</span></span>}
+                labelRender={({ value, label }) => <span className="file-dataset-format"><FileDatasetTypeIcon type={value as FileDataset['type']} /><span>{label}</span></span>}
+                className="file-dataset-format-select" /></Form.Item>
             </Form>
             <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={directorySelection !== undefined} loading={fileDatasetsQuery.isFetching} onReset={reset} />
+            <div className="file-dataset-list-commands">
+              <Tooltip title="刷新列表与目录"><Button icon={<ReloadOutlined />} aria-label="刷新文件数据集列表与目录" onClick={refresh} /></Tooltip>
+              <Button icon={<DashboardOutlined />} onClick={() => setParseQueueDrawerOpen(true)}>解析队列</Button>
+              {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建数据集</Button>}
+            </div>
           </div>
-          <div className="management-results-surface">
+          <div className="management-results-surface" ref={resultsRef}>
             <div className="management-result-toolbar">
-            <span className="management-result-title">文件数据集 <span className="management-result-count">共 {fileDatasetsQuery.data?.totalElements ?? 0} 项</span></span>
-            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新文件数据集列表" onClick={() => void fileDatasetsQuery.refetch()} /></Tooltip><Button icon={<DashboardOutlined />} onClick={() => setParseQueueDrawerOpen(true)}>解析队列</Button>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}</div>
+            <span className="management-result-title"><FileTextOutlined aria-hidden="true" />文件数据集 <span className="management-result-count">共 {fileDatasetsQuery.data?.totalElements ?? 0} 项</span></span>
+
             </div>
             {fileDatasetsQuery.isError && <Alert type="error" showIcon className="management-query-error" message="文件数据集加载失败" action={<Button size="small" onClick={() => void fileDatasetsQuery.refetch()}>重试</Button>} />}
             <Table<FileDataset>
             size="small"
-            className="management-table"
+            className="management-table management-table-comfortable"
             rowKey="id"
             columns={columns}
             dataSource={fileDatasetsQuery.data?.content ?? []}
             loading={fileDatasetsQuery.isFetching}
-            scroll={{ y: '100%' }}
+            scroll={{ x: 900, y: '100%' }}
+            tableLayout="fixed"
+            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={hasFilters ? '没有符合当前条件的数据集' : '暂无文件数据集'}>{hasFilters ? <Button onClick={reset}>清空筛选</Button> : canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建数据集</Button>}</Empty> }}
             pagination={{
               current: page + 1,
               pageSize: size,
@@ -185,7 +215,7 @@ export const FileDatasetPage = () => {
               showTotal: (total) => `共 ${total} 项`,
             }}
             onChange={(pagination) => {
-              setPage((pagination.current ?? 1) - 1);
+              setPage(pagination.pageSize !== size ? 0 : (pagination.current ?? 1) - 1);
               setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
             }}
             />
@@ -199,10 +229,11 @@ export const FileDatasetPage = () => {
         canViewDirectories={canViewDirectories}
         onClose={() => { setCreateDrawerOpen(false); setEditingFileDataset(null); }}
       />
+      <FileDatasetUploadDrawer dataset={canUpdate ? uploadDataset : null} onClose={() => { setUploadDataset(null); refresh(); }} onOpenDetail={(tab) => { if (uploadDataset) navigate(`/file-dataset/${uploadDataset.id}?tab=${tab}`, { state: { fromFileDatasetList: true } }); setUploadDataset(null); }} />
       <FileDatasetParseQueueDrawer
         open={parseQueueDrawerOpen}
         onClose={() => setParseQueueDrawerOpen(false)}
       />
-    </>
+    </ConfigProvider>
   );
 };

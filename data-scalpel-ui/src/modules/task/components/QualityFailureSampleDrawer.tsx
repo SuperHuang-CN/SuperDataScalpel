@@ -67,7 +67,7 @@ export const QualityFailureSampleDrawer = ({
 
   return (
     <Drawer closable={{ placement: 'end' }}
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       open={open}
       size="large"
       destroyOnHidden

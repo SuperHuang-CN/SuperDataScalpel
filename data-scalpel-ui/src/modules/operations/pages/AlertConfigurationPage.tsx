@@ -1,6 +1,5 @@
-import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { ExclamationCircleOutlined, MoreOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
-import { MoreOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Form, Modal, Select, Space, Tabs, Tag, Tooltip, message } from 'antd';
 import type { TableProps } from 'antd';
 import { useState } from 'react';
@@ -11,7 +10,7 @@ import { andSearch, searchContains, searchEquals } from '../../../shared/search'
 import { useChannels, useOperationsMutation, useRules } from '../hooks/useOperations';
 import { commandChannel, commandRule } from '../api/operationsApi';
 import { isContinuousRule, ruleLabels, severityLabels, type AlertChannel, type AlertRule, type AlertRuleType } from '../model/operations';
-import { OperationsTable } from '../components/OperationsTable';
+import { OperationsTable, OperationsTableActions } from '../components/OperationsTable';
 import { AlertRuleDrawer } from '../components/AlertRuleDrawer';
 import { AlertChannelDrawer } from '../components/AlertChannelDrawer';
 import { AlertDeliveriesPanel } from '../components/AlertDeliveriesPanel';
@@ -28,20 +27,20 @@ const RulesPanel = () => {
     { title: '状态 / 级别', width: 170, render: (_, r) => <Space><Tag color={r.enabled ? 'success' : 'default'}>{r.enabled ? '开启' : '关闭'}</Tag><Tag color={r.severity === 'CRITICAL' ? 'error' : 'warning'}>{severityLabels[r.severity]}</Tag></Space> },
     { title: '阈值 / 冷却', width: 190, render: (_, r) => <ManagementListCell primary={isContinuousRule(r.ruleType) ? r.thresholdSeconds ? `持续 ${r.thresholdSeconds} 秒` : '尚未设置阈值' : '按运行事件'} secondary={`通知冷却 ${r.cooldownSeconds} 秒`} /> },
     { title: '通知目标', width: 210, render: (_, r) => `站内 ${r.userIds.length} 人 · Webhook ${r.channelIds.length} 个` },
-    { title: '操作', width: 70, render: (_, r) => <Dropdown trigger={['click']} menu={{ items: [
+    { title: '操作', width: 104, render: (_, r) => <div className="management-row-actions"><Tooltip title="编辑规则"><Button type="text" icon={<EditOutlined />} aria-label={`编辑${r.subjectName}的${ruleLabels[r.ruleType]}`} onClick={() => setEditing(r)} /></Tooltip><Dropdown trigger={['click']} menu={{ items: [
       { key: 'edit', label: '编辑规则', onClick: () => setEditing(r) },
       { key: 'toggle', label: r.enabled ? '关闭规则' : '启用规则', onClick: () => void run(r.id, r.enabled ? 'disable' : 'enable') },
-      ...(r.subjectId ? [{ key: 'reset', label: '恢复全局默认', onClick: () => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="恢复全局默认" />, icon: null,
+      ...(r.subjectId ? [{ key: 'reset', label: '恢复全局默认', onClick: () => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="恢复全局默认" />, icon: null,
         content: `确认移除“${r.subjectName}”的“${ruleLabels[r.ruleType]}”覆盖配置吗？`, okText: '恢复默认', cancelText: '返回', onOk: () => run(r.id, 'reset-override') }) }] : []),
-    ] }}><Tooltip title="更多操作"><Button type="text" icon={<MoreOutlined />} loading={command.isPending && command.variables?.id === r.id} aria-label={`操作规则 ${r.subjectName} ${ruleLabels[r.ruleType]}`} /></Tooltip></Dropdown> },
+    ] }}><Tooltip title="更多操作"><Button type="text" icon={<MoreOutlined />} loading={command.isPending && command.variables?.id === r.id} aria-label={`操作规则 ${r.subjectName} ${ruleLabels[r.ruleType]}`} /></Tooltip></Dropdown></div> },
   ];
   return <section className="management-workbench">{context}{modalContext}<div className="management-filter-strip">
-    <Form form={form} layout="inline" autoComplete="off" className="management-filter-form" onFinish={v => { setFilter(v); setPage(0); }}>
+    <Form form={form} layout="inline" autoComplete="off" className="management-filter-form" onFinish={v => { setFilter(v); setPage(0); }} id="alert-configuration-page-filters-0">
       <Form.Item name="type"><Select style={{ width: 200 }} allowClear placeholder="全部规则类型" options={Object.entries(ruleLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
       <Form.Item name="scope"><Select style={{ width: 160 }} allowClear placeholder="全部配置范围" options={[{ value: 'global', label: '全局默认' }, { value: 'object', label: '对象覆盖' }]} /></Form.Item>
-    </Form><ManagementFilterActions form={form} appliedFilters={filter} onReset={() => { form.resetFields(); setFilter({}); setPage(0); }} /></div>
+    </Form><ManagementFilterActions form={form} appliedFilters={filter} onReset={() => { form.resetFields(); setFilter({}); setPage(0); }} commands={<OperationsTableActions title="告警规则" query={query} extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>配置对象覆盖</Button>} />} formId="alert-configuration-page-filters-0" /></div>
     <OperationsTable title="告警规则" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }}
-      extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>配置对象覆盖</Button>} />
+       showActions={false} />
     {editing !== undefined && <AlertRuleDrawer key={editing?.id ?? 'create'} rule={editing} onClose={() => setEditing(undefined)} />}
   </section>;
 };
@@ -55,15 +54,15 @@ const ChannelsPanel = () => {
     { title: '接收地址', width: 420, dataIndex: 'url', ellipsis: true },
     { title: '状态', width: 130, render: (_, c) => <Tag color={c.enabled ? 'success' : 'default'}>{c.enabled ? '开启' : '关闭'}</Tag> },
     { title: '认证', width: 220, render: (_, c) => `Token ${c.bearerTokenConfigured ? '已配置' : '未配置'} · 签名 ${c.hmacSecretConfigured ? '已配置' : '未配置'}` },
-    { title: '操作', width: 70, render: (_, c) => <Dropdown trigger={['click']} menu={{ items: [
+    { title: '操作', width: 104, render: (_, c) => <div className="management-row-actions"><Tooltip title="编辑渠道"><Button type="text" icon={<EditOutlined />} aria-label={`编辑渠道${c.name}`} onClick={() => setEditing(c)} /></Tooltip><Dropdown trigger={['click']} menu={{ items: [
       { key: 'edit', label: '编辑渠道', onClick: () => setEditing(c) }, { key: 'test', label: '发送测试通知', disabled: !c.enabled, onClick: () => void run(c.id, 'test') },
       { key: 'toggle', label: c.enabled ? '停用渠道' : '启用渠道', onClick: () => void run(c.id, c.enabled ? 'disable' : 'enable') },
       { key: 'history', label: '查看投递记录', onClick: () => { const next = new URLSearchParams(params); next.set('tab', 'deliveries'); next.set('channel', c.id); setParams(next); } },
-    ] }}><Tooltip title="更多操作"><Button type="text" icon={<MoreOutlined />} loading={command.isPending && command.variables?.id === c.id} aria-label={`操作渠道 ${c.name}`} /></Tooltip></Dropdown> },
+    ] }}><Tooltip title="更多操作"><Button type="text" icon={<MoreOutlined />} loading={command.isPending && command.variables?.id === c.id} aria-label={`操作渠道 ${c.name}`} /></Tooltip></Dropdown></div> },
   ];
-  return <section className="management-workbench">{context}<div className="management-filter-strip"><Form form={form} layout="inline" autoComplete="off" className="management-filter-form" onFinish={v => { setKeyword(v.keyword); setPage(0); }}>
-    <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索通知渠道" /></Form.Item></Form><ManagementFilterActions form={form} appliedFilters={{ keyword }} onReset={() => { form.resetFields(); setKeyword(undefined); setPage(0); }} /></div>
-    <OperationsTable title="Webhook 渠道" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }} extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新建渠道</Button>} />
+  return <section className="management-workbench">{context}<div className="management-filter-strip"><Form form={form} layout="inline" autoComplete="off" className="management-filter-form" onFinish={v => { setKeyword(v.keyword); setPage(0); }} id="alert-configuration-page-filters-1">
+    <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索通知渠道" /></Form.Item></Form><ManagementFilterActions form={form} appliedFilters={{ keyword }} onReset={() => { form.resetFields(); setKeyword(undefined); setPage(0); }} commands={<OperationsTableActions title="Webhook 渠道" query={query} extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新建渠道</Button>} />} formId="alert-configuration-page-filters-1" /></div>
+    <OperationsTable title="Webhook 渠道" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }}  showActions={false} />
     {editing !== undefined && <AlertChannelDrawer key={editing?.id ?? 'create'} channel={editing} onClose={() => setEditing(undefined)} />}
   </section>;
 };

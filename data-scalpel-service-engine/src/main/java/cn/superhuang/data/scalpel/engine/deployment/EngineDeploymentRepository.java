@@ -9,7 +9,13 @@ import java.util.UUID;
 
 public interface EngineDeploymentRepository extends JpaRepository<EngineDeployment, UUID> {
 
+    List<EngineDeployment> findAllByEngineCode(String engineCode);
+
     Optional<EngineDeployment> findByEngineCodeAndServiceId(String engineCode, UUID serviceId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select d from EngineDeployment d where d.engineCode=:engineCode and d.serviceId=:serviceId")
+    Optional<EngineDeployment> findForUpdate(String engineCode, UUID serviceId);
 
     List<EngineDeployment> findAllByEngineCodeAndStatus(String engineCode, EngineDeploymentRecordStatus status);
 

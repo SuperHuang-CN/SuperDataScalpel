@@ -81,7 +81,7 @@ export const SystemUserDrawer = ({ open, user, roles, onClose }: SystemUserDrawe
     <>
       {messageContext}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-user-drawer"
         title={<OverlayTitle icon={<UserAddOutlined />} title={isEditing ? '修改系统用户' : '新建系统用户'} description="维护登录身份、显示名称与系统访问角色" />}
         extra={<Tag className="data-model-drawer-header-tag" color={enabled ? 'success' : undefined}>{enabled ? '启用' : '停用'}</Tag>}

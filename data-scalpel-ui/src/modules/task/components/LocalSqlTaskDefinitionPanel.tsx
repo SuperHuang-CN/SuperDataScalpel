@@ -317,7 +317,7 @@ export const LocalSqlTaskDefinitionPanel = ({
       </div>
 
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
         title={<OverlayTitle icon={<ExclamationCircleOutlined />} title="离开未保存的任务定义？" />}
         okText="放弃并离开"

@@ -10,5 +10,7 @@ spring:
 
 data-scalpel:
   engine:
+    cluster:
+      enabled: false
     code: engine_test
     management-token: engine-test-token

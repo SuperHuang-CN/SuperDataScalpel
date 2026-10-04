@@ -47,10 +47,10 @@ export const DataEntryCreateDrawer = ({ detail, onClose, onSubmitted }: {
   return <>
     {contextHolder}
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay"
       className="data-entry-create-drawer"
       open
-      width="min(820px, 100vw)"
+      size="min(820px, 100vw)"
       destroyOnHidden
       maskClosable={!mutation.isPending}
       closable={mutation.isPending ? false : { placement: 'end' }}

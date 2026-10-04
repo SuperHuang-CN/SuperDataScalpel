@@ -51,11 +51,60 @@ class DataScalpelServiceEngineApplicationTests {
 
     private MockMvc mockMvc;
 
+    @Autowired
+    private cn.superhuang.data.scalpel.engine.deployment.EngineDeploymentStore deploymentStore;
+
+    @Test
+    void lateDeploymentCompletionCannotOverwriteNewerRemoval() throws Exception {
+        UUID id = UUID.randomUUID();
+        var request = new tools.jackson.databind.ObjectMapper().readValue(
+                deploymentRequest(id, UUID.randomUUID(), "/open-api/v1/fence_" + id),
+                cn.superhuang.data.scalpel.contract.service.ServiceDeploymentRequest.class);
+        var older = deploymentStore.beginDeployment(request).deployment();
+        var removal = deploymentStore.beginRemoval(
+                new cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest(id)).deployment();
+        org.junit.jupiter.api.Assertions.assertTrue(removal.generation() > older.generation());
+        var rejected = org.junit.jupiter.api.Assertions.assertThrows(ResponseStatusException.class,
+                () -> deploymentStore.completeDeployment(id, older.generation()));
+        assertEquals(HttpStatus.CONFLICT, rejected.getStatusCode());
+        deploymentStore.failDeployment(id, older.generation(), "late failure");
+        assertEquals(cn.superhuang.data.scalpel.engine.deployment.EngineDeploymentRecordStatus.REMOVING,
+                deploymentStore.recoverableRemoval(id).orElseThrow().status());
+        deploymentStore.completeRemoval(id, removal.generation());
+        var newer = deploymentStore.beginDeployment(request).deployment();
+        org.junit.jupiter.api.Assertions.assertThrows(ResponseStatusException.class,
+                () -> deploymentStore.completeRemoval(id, removal.generation()));
+        deploymentStore.failRemoval(id, removal.generation(), "late removal failure");
+        assertEquals(newer.generation(), deploymentStore.recoverableDeployment(id).orElseThrow().generation());
+        deploymentStore.completeDeployment(id, newer.generation());
+        var cleanup = deploymentStore.beginRemoval(
+                new cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest(id)).deployment();
+        deploymentStore.completeRemoval(id, cleanup.generation());
+    }
+
     @org.junit.jupiter.api.BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext)
                 .apply(springSecurity())
                 .build();
+        mockMvc.perform(post("/internal/v1/access-policy/actions/apply")
+                        .header("Authorization", "Bearer engine-test-token")
+                        .contentType("application/json")
+                        .content("""
+                                {"engineCode":"engine_test","revision":1,"allowCidrs":["127.0.0.1/32"],"denyCidrs":[]}
+                                """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void runtimeAndOpenApiRemainProtectedByManagementToken() throws Exception {
+        mockMvc.perform(get("/internal/v1/runtime")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/v3/api-docs")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/internal/v1/runtime").header("Authorization", "Bearer engine-test-token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        mockMvc.perform(get("/v3/api-docs").header("Authorization", "Bearer engine-test-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.schemas.EngineRuntimeStatusResponse.properties.ready.description").isNotEmpty());
     }
 
     @Test

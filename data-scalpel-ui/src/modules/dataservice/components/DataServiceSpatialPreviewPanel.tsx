@@ -372,6 +372,6 @@ const SpatialPreviewWorkspace = ({
         </div>}
       </div>
     </div>{screens.lg && <aside className="data-service-spatial-style-column">{editor}</aside>}</div>
-    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" open={!screens.lg && drawerOpen} width={440} title={<OverlayTitle title="空间服务在线配图" icon={<EditOutlined />} description="调整当前空间服务的地图样式" />} className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
+    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open={!screens.lg && drawerOpen} width={440} title={<OverlayTitle title="空间服务在线配图" icon={<EditOutlined />} description="调整当前空间服务的地图样式" />} className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
   </div>;
 };

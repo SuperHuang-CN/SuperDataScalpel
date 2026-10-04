@@ -95,7 +95,8 @@ export const DataEntryDataPanel = ({ detail, onViewLogs }: { detail: DataEntryFo
 
   const remove = () => modalApi.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    width: 440, centered: true, focusable: { autoFocusButton: 'cancel' },
+    rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay resource-delete-modal',
     title: <OverlayTitle title={`删除当前页选中的 ${selectedRows.length} 条数据？`} icon={<DeleteOutlined />} tone="danger" />,
     content: '系统会先检查业务主键是否唯一命中。删除生效后不会回滚，异常结果请通过操作日志核对。',
     okText: '删除', okButtonProps: { danger: true }, cancelText: '取消',

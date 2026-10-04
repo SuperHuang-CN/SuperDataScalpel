@@ -69,13 +69,26 @@ export interface DataEntryFormDetail {
   health: DataEntryHealth;
 }
 
+export interface DataEntryCandidateFilters {
+  layers: { id: string; name: string }[];
+  storages: { id: string; name: string }[];
+  hasUnlayered: boolean;
+}
+
 export interface DataEntryModelCandidate {
+  physicalTableMode: 'MANAGED' | 'EXTERNAL';
+  catalogName: string | null;
+  schemaName: string | null;
+  physicalTableName: string;
+  warehouseLayerId: string | null;
+  warehouseLayerName: string | null;
+  storageDataSourceId: string;
+  storageDataSourceName: string | null;
   modelId: string;
   modelCode: string;
   modelName: string;
   modelStatus: string;
   schemaVersion: number;
-  storageDataSourceName: string | null;
   warehouseLayer: ModelWarehouseLayerSummary | null;
   knownEligible: boolean;
   issues: DataEntryHealthIssue[];

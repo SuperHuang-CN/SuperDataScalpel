@@ -1,4 +1,5 @@
 import { ExclamationCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import { SpatialPreviewPanel } from '../../model';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
@@ -194,6 +195,7 @@ export const FileDatasetTableResultPanel = ({
             当前有效 CRS：{effectiveCrs ? `${effectiveCrs.authority}:${effectiveCrs.code}` : '尚未识别'}
           </div>
           <InputNumber<number>
+            aria-label="EPSG 编码"
             min={1}
             precision={0}
             style={{ width: '100%' }}
@@ -216,7 +218,7 @@ export const FileDatasetTableResultPanel = ({
             tableId: table.id,
             epsgCode,
           });
-          messageApi.success('空间参考已确认，Schema 已重新解析');
+          messageApi.success(table.parseStatus === 'WAITING_CRS' ? '空间参考已确认，正在继续解析' : '空间参考已确认，Schema 已重新解析');
         } catch (error) {
           messageApi.error(errorMessage(error, '确认空间参考失败'));
           throw error;
@@ -470,6 +472,7 @@ export const FileDatasetTableResultPanel = ({
         />
       ),
     }] : []),
+    ...(geometryField ? [{ key: 'spatial', label: '空间预览', children: <SpatialPreviewPanel key={table.id} basePath={`/v1/file-datasets/${dataset.id}/tables/${table.id}`} /> }] : []),
     {
       key: 'sources',
       label: `数据来源 ${sources.length}`,
@@ -506,7 +509,7 @@ export const FileDatasetTableResultPanel = ({
             />
           </Tooltip>
           {canUpdate && <Button icon={<EditOutlined />} onClick={rename}>修改名称</Button>}
-          {canUpdate && spatialReferenceEditable && schemaAvailable && (
+          {canUpdate && spatialReferenceEditable && (schemaAvailable || table.parseStatus === 'WAITING_CRS') && (
             <Button
               icon={<GlobalOutlined />}
               loading={spatialReferenceMutation.isPending}
@@ -568,6 +571,7 @@ export const FileDatasetTableResultPanel = ({
          description="新文件正在后台执行完整 Schema 校验；完成前当前数据、Schema 和预览保持可用。"
         />
       )}
+      {table.parseStatus === 'WAITING_CRS' && <Alert type="warning" showIcon message="请先确认空间参考" description="文件已保留。点击上方“确认 CRS”填写 EPSG 编码后继续，无需重新上传。" />}
       {(table.parseStatus === 'QUEUED' || table.parseStatus === 'PARSING') && (
         <Alert type="info" showIcon message="初始来源正在后台解析" description="完成后自动展示 Schema、预览和来源信息。" />
       )}

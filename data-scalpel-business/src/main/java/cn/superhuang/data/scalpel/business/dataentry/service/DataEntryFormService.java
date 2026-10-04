@@ -1,5 +1,8 @@
 package cn.superhuang.data.scalpel.business.dataentry.service;
 
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryCandidateFiltersResponse;
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryCandidateFilterOptionResponse;
+import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryForm;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryFormStatus;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryModelLookup;
@@ -23,9 +26,9 @@ import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
+import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
-import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
 import cn.superhuang.data.scalpel.business.standard.domain.StandardDictionary;
 import cn.superhuang.data.scalpel.business.standard.repository.StandardDictionaryRepository;
@@ -165,6 +168,37 @@ public class DataEntryFormService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<DataEntryModelCandidateResponse> candidatePage(SearchRequest request) {
+        Set<UUID> used = formRepository.findAll().stream().map(DataEntryForm::getModelId).collect(Collectors.toSet());
+        Specification<DataModel> candidates = (root, query, builder) -> builder.and(
+                builder.equal(root.get("physicalTableMode"), PhysicalTableMode.MANAGED),
+                used.isEmpty() ? builder.conjunction() : builder.not(root.get("id").in(used)));
+        Page<DataModel> result = searchEngine.search(request, DataModel.class, modelRepository, candidates);
+        return new PageResponse<>(result.getContent().stream().map(this::candidate).toList(),
+                result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize());
+    }
+
+    @Transactional(readOnly = true)
+    public DataEntryCandidateFiltersResponse candidateFilters() {
+        Set<UUID> used = formRepository.findAll().stream().map(DataEntryForm::getModelId).collect(Collectors.toSet());
+        List<DataModel> models = modelRepository.findAll().stream()
+                .filter(model -> !used.contains(model.getId()) && model.getPhysicalTableMode() == PhysicalTableMode.MANAGED)
+                .toList();
+        Map<UUID, String> layers = warehouseLayerRepository.findAll().stream()
+                .collect(Collectors.toMap(layer -> layer.getId(), layer -> layer.getCode() + " · " + layer.getName()));
+        Map<UUID, String> storages = dataSourceRepository.findAll().stream()
+                .collect(Collectors.toMap(DataSource::getId, DataSource::getName));
+        Comparator<DataEntryCandidateFilterOptionResponse> order = Comparator.comparing(DataEntryCandidateFilterOptionResponse::name)
+                .thenComparing(DataEntryCandidateFilterOptionResponse::id);
+        return new DataEntryCandidateFiltersResponse(
+                models.stream().map(DataModel::getWarehouseLayerId).filter(Objects::nonNull).distinct()
+                        .map(id -> new DataEntryCandidateFilterOptionResponse(id, layers.getOrDefault(id, id.toString()))).sorted(order).toList(),
+                models.stream().map(DataModel::getStorageDataSourceId).filter(Objects::nonNull).distinct()
+                        .map(id -> new DataEntryCandidateFilterOptionResponse(id, storages.getOrDefault(id, id.toString()))).sorted(order).toList(),
+                models.stream().anyMatch(model -> model.getWarehouseLayerId() == null));
+    }
+
     public DataEntryFormDetailResponse get(UUID id) {
         DataEntryForm form = requireForm(id);
         DataEntryMetadataSnapshot snapshot = healthService.snapshot(form);
@@ -294,15 +328,28 @@ public class DataEntryFormService {
         return form;
     }
 
+    private DataEntryModelCandidateResponse candidate(DataModel model) {
+        DataSource dataSource = dataSourceRepository.findById(model.getStorageDataSourceId()).orElse(null);
+        ModelWarehouseLayer layer = model.getWarehouseLayerId() == null ? null
+                : warehouseLayerRepository.findById(model.getWarehouseLayerId()).orElse(null);
+        return candidate(model, dataSource, layer);
+    }
+
     private DataEntryModelCandidateResponse candidate(DataModel model, DataSource dataSource, ModelWarehouseLayer layer) {
         List<DataEntryHealthIssueResponse> issues = knownIssues(model, dataSource);
         return new DataEntryModelCandidateResponse(model.getId(), model.getCode(), model.getName(), model.getStatus().name(),
                 model.getSchemaVersion(), dataSource == null ? null : dataSource.getName(),
-                ModelWarehouseLayerSummaryResponse.from(layer), issues.isEmpty(), issues);
+                ModelWarehouseLayerSummaryResponse.from(layer), issues.isEmpty(), issues,
+                model.getWarehouseLayerId(), layer == null ? null : layer.getCode() + " · " + layer.getName(),
+                model.getStorageDataSourceId(), model.getPhysicalTableMode().name(),
+                model.getCatalogName(), model.getSchemaName(), model.getPhysicalTableName());
     }
 
     private List<DataEntryHealthIssueResponse> knownIssues(DataModel model, DataSource dataSource) {
         List<DataEntryHealthIssueResponse> issues = new ArrayList<>();
+        if (model.getStatus() != DataModelStatus.PUBLISHED) {
+            issues.add(new DataEntryHealthIssueResponse("TARGET_MODEL_NOT_PUBLISHED", "目标模型不是已发布状态", List.of("PUBLISH", "SUBMIT"), null, null));
+        }
         if (model.getPhysicalTableMode() != cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode.MANAGED) {
             issues.add(new DataEntryHealthIssueResponse("TARGET_MODEL_NOT_MANAGED", "数据填报只支持受管模型", List.of("PUBLISH", "SUBMIT"), null, null));
         }

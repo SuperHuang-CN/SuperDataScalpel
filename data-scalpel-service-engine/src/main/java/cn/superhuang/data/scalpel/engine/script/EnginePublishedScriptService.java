@@ -23,6 +23,13 @@ import java.util.stream.Collectors;
 @Service
 public class EnginePublishedScriptService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.superhuang.superops.api.studio.service.ApiInfoService apiInfoService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.superhuang.superops.api.studio.extend.IScriptEncrypt scriptEncrypt;
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.superhuang.superops.api.studio.config.SuperApiStudioProperties studioProperties;
+
     private final PublishedScriptApiService publishedScriptApiService;
     private final CompletionService completionService;
     private final EngineApiStudioDataSourceService dataSourceService;
@@ -54,6 +61,33 @@ public class EnginePublishedScriptService {
 
     public void delete(UUID serviceId) {
         publishedScriptApiService.delete(serviceId.toString());
+    }
+
+    /** Replica application is local-only: never re-publish stale snapshots into the shared Studio tables. */
+    public void installRuntime(StoredServiceDeployment deployment) {
+        var request=deployment.request();
+        String id=request.serviceId().toString();
+        try {
+            var api=cn.superhuang.superops.api.studio.entity.ApiInfo.builder()
+                    .name(request.serviceCode()).path(request.routePath()).fullPath(request.routePath())
+                    .method("POST").type("Ql").options("{}").description("Managed by DataScalpel")
+                    .service(studioProperties.getServiceName()).datasource(request.dataSourceId().toString())
+                    .script(scriptEncrypt.encrypt(request.definition().scriptDefinition().script())).editor("DataScalpel").build();
+            api.setId(id);
+            apiInfoService.refreshMapping(cn.superhuang.superops.api.studio.entity.vo.RefreshMapping.builder()
+                    .oldMapping(apiInfoService.getApiInfoById(id)).newMapping(api).build());
+        } catch(Exception e){throw new IllegalStateException("加载脚本运行路由失败",e);}
+    }
+
+    public void removeRuntime(UUID id) {
+        var existing=apiInfoService.getApiInfoById(id.toString());
+        if(existing==null)return;
+        try {apiInfoService.refreshMapping(cn.superhuang.superops.api.studio.entity.vo.RefreshMapping.builder().oldMapping(existing).build());}
+        catch(Exception e){throw new IllegalStateException("移除脚本运行路由失败",e);}
+    }
+
+    public void reloadStudioRoutes() {
+        try {apiInfoService.reLoadApiInfo(true);}catch(Exception e){throw new IllegalStateException("刷新 API Studio 路由失败",e);}
     }
 
     public ScriptDraftExecutionResponse executeDraft(

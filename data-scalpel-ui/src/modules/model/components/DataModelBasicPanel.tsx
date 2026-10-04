@@ -80,13 +80,13 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </div>
       );
       if (!forCreate) {
-        modalApi.info({ icon: null, rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title="建表 SQL" icon={<CodeOutlined />} />, content, width: 820, okText: '关闭' });
+        modalApi.info({ icon: null, rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay', title: <OverlayTitle title="建表 SQL" icon={<CodeOutlined />} />, content, width: 820, okText: '关闭' });
         return;
       }
       modalApi.confirm({
         icon: null,
 
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
         title: <OverlayTitle title="创建物理表" icon={<TableOutlined />} />,
         content,
         width: 820,

@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.model.service;
 
+import cn.superhuang.data.scalpel.business.model.web.response.DataModelStatisticsResponse;
+
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
@@ -117,6 +119,33 @@ import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionS
 @Service
 public class DataModelService {
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public DataModelStatisticsResponse statistics() {
+        long published = 0, draft = 0, managed = 0, external = 0;
+        var counts = new java.util.HashMap<UUID, Long>();
+        for (var row : repository.statisticsGroups()) {
+            long amount = ((Number) row[3]).longValue();
+            if (row[0] == cn.superhuang.data.scalpel.business.model.domain.DataModelStatus.DRAFT) draft += amount;
+            if (row[0] != cn.superhuang.data.scalpel.business.model.domain.DataModelStatus.PUBLISHED) continue;
+            published += amount;
+            counts.merge((UUID) row[1], amount, Long::sum);
+            if (row[2] == cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode.MANAGED) managed += amount;
+            else external += amount;
+        }
+        var layers = new java.util.ArrayList<DataModelStatisticsResponse.Layer>();
+        for (var layer : warehouseLayerRepository.findAll(org.springframework.data.domain.Sort.by("sortOrder", "name", "id"))) {
+            layers.add(new DataModelStatisticsResponse.Layer(layer.getId(), layer.getName(), layer.getCode(), counts.getOrDefault(layer.getId(), 0L)));
+            counts.remove(layer.getId());
+        }
+        long unassigned = counts.getOrDefault(null, 0L);
+        counts.remove(null);
+        counts.entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry ->
+            layers.add(new DataModelStatisticsResponse.Layer(entry.getKey(), "分层不可用", null, entry.getValue())));
+        layers.add(new DataModelStatisticsResponse.Layer(null, "未分层", null, unassigned));
+        return new DataModelStatisticsResponse(java.time.Instant.now(), published, draft, managed, external, layers);
+    }
+
+
 
     private static final Pattern LOWER_TABLE_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]{0,127}");
     private static final Pattern LOWER_FIELD_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]{0,63}");
@@ -200,6 +229,11 @@ public class DataModelService {
         Map<UUID, String> storageNames = storageNames(result.getContent());
         Map<UUID, ModelWarehouseLayer> warehouseLayers = warehouseLayers(result.getContent());
         Map<UUID, DataModelPhysicalStatisticsResponse> physicalStatistics = physicalStatistics(result.getContent());
+        Set<UUID> spatialModelIds = result.isEmpty() ? Set.of() : Set.copyOf(
+                fieldRepository.findModelIdsByFieldType(
+                        result.getContent().stream().map(DataModel::getId).toList(), PlatformDataType.GEOMETRY
+                )
+        );
         return new PageResponse<>(
                 result.getContent().stream()
                         .map(model -> DataModelResponse.from(
@@ -210,7 +244,8 @@ public class DataModelService {
                                                 ? null
                                                 : warehouseLayers.get(model.getWarehouseLayerId())
                                 ),
-                                physicalStatistics.get(model.getId())
+                                physicalStatistics.get(model.getId()),
+                                spatialModelIds.contains(model.getId())
                         ))
                         .toList(),
                 result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize()
@@ -1105,7 +1140,8 @@ public class DataModelService {
                 .map(DataModelPhysicalStatisticsResponse::from)
                 .orElse(null);
         return new DataModelDetailResponse(
-                DataModelResponse.from(model, storageName, warehouseLayer, physicalStatistics),
+                DataModelResponse.from(model, storageName, warehouseLayer, physicalStatistics,
+                        modelFields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY)),
                 fields
         );
     }

@@ -9,7 +9,6 @@ import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
-import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
 import cn.superhuang.datascalpel.sdk.*;
@@ -17,15 +16,12 @@ import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeJdbcConnection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
-import org.apache.spark.api.java.function.ForeachPartitionFunction;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.Column;
 import org.apache.spark.storage.StorageLevel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
 
-import java.io.Serial;
-import java.io.Serializable;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -131,9 +127,9 @@ final class SparkJarJobContextImpl implements SparkJobContext {
             SparkJarExecutionPayload.ResourceBinding binding = binding(bindingName, SparkJarResourceType.MODEL, true);
             MetadataModel model = model(binding.resourceId());
             RuntimeDataSource source = modelRuntime(model.dataSourceId(), true);
-            Dataset<Row> loaded = jdbcReader(source, options)
-                    .option("dbtable", qualified(source, model.catalogName(), model.schemaName(), model.physicalTableName()))
-                    .load();
+            Dataset<Row> loaded = SpatialJdbcRuntimeSupport.readTable(spark, source,
+                    new TableIdentifier(model.catalogName(), model.schemaName(), model.physicalTableName()),
+                    new CanvasTableSchema(model.code(), null, model.columns()), jdbcReader(source, options), null);
             return lineage.modelInput(binding.bindingName(), model, loaded);
         }
 
@@ -187,6 +183,12 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         private final Dataset<Row> source;
         private final LinkedHashMap<String, String> mappings = new LinkedHashMap<>();
         private ModelWriteMode mode = ModelWriteMode.APPEND;
+        private cn.superhuang.datascalpel.sdk.BatchWriteOptions batchWrite;
+
+        @Override public ModelWriteOperation batchWrite(cn.superhuang.datascalpel.sdk.BatchWriteOptions options) {
+            if (streaming) throw new RunnerExecutionException("BATCH_WRITE_NOT_SUPPORTED", "实时任务不支持原子批写", null);
+            batchWrite = Objects.requireNonNull(options); return this;
+        }
 
         private ModelWriter(String bindingName, MetadataModel model, Dataset<Row> source) {
             this.bindingName = bindingName;
@@ -227,12 +229,15 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         .findFirst().map(MetadataUniqueKey::columns).orElse(List.of());
                 if (mode == ModelWriteMode.UPSERT && (keys.isEmpty() || !mappings.keySet().containsAll(keys)))
                     throw new RunnerExecutionException("UPSERT_KEY_NOT_MAPPED", "模型完整主键必须完成映射", null);
+                Map<String, Integer> srids = SpatialJdbcRuntimeSupport.resolveGeometryWriteSrids(
+                        new CanvasTableSchema(model.code(), null, model.columns()), projected.columns(), null);
+                validateWriteOptions(runtime, projected, mode.name(), keys, batchWrite, srids);
                 SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeModelWrite(
-                        bindingName, model, mode.name(), projected);
+                        bindingName, model, lineageMode(mode.name(), batchWrite), projected);
                 WriteResult result = trial
                         ? preview(SparkJarTrialPreview.ResourceKind.MODEL, bindingName, model.code(),
                                 mode.name(), runtime, projected)
-                        : write(runtime, table, projected, mode.name(), keys);
+                        : write(runtime, table, projected, mode.name(), keys, batchWrite, srids);
                 lineage.confirm(flow);
                 return result;
             });
@@ -247,6 +252,16 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         private cn.superhuang.datascalpel.sdk.JdbcWriteMode mode = cn.superhuang.datascalpel.sdk.JdbcWriteMode.APPEND;
         private JdbcTableIdentifier table;
         private List<String> keys = List.of();
+        private cn.superhuang.datascalpel.sdk.BatchWriteOptions batchWrite;
+        private final Map<String, Integer> geometrySrids = new LinkedHashMap<>();
+        @Override public JdbcWriteOperation batchWrite(cn.superhuang.datascalpel.sdk.BatchWriteOptions options) {
+            if (streaming) throw new RunnerExecutionException("BATCH_WRITE_NOT_SUPPORTED", "实时任务不支持原子批写", null);
+            batchWrite = Objects.requireNonNull(options); return this;
+        }
+        @Override public JdbcWriteOperation geometrySrid(String column, int epsg) {
+            if (streaming || epsg <= 0) throw new IllegalArgumentException("空间写入仅支持批处理及有效 EPSG");
+            geometrySrids.put(required(column), epsg); return this;
+        }
         private JdbcWriter(String bindingName, RuntimeDataSource runtime, Dataset<Row> source) {
             this.bindingName = bindingName;
             this.runtime = runtime;
@@ -278,18 +293,32 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         table.catalog() == null ? runtime.connection().catalogName() : table.catalog(),
                         table.schema() == null ? runtime.connection().schemaName() : table.schema(),
                         table.table());
+                validateWriteOptions(runtime, projected, mode.name(), keys, batchWrite, geometrySrids);
                 SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeJdbcWrite(
-                        bindingName, runtime.dataSourceId(), resolved, mode.name(), projected);
+                        bindingName, runtime.dataSourceId(), resolved, lineageMode(mode.name(), batchWrite), projected);
                 WriteResult result = trial
                         ? preview(SparkJarTrialPreview.ResourceKind.JDBC, bindingName, jdbcIdentifier(resolved),
                                 mode.name(), runtime, projected)
                         : write(runtime,
                                 new TableIdentifier(resolved.catalog(), resolved.schema(), resolved.table()),
-                                projected, mode.name(), keys);
+                                projected, mode.name(), keys, batchWrite, geometrySrids);
                 lineage.confirm(flow);
                 return result;
             });
         }
+    }
+
+    private static void validateWriteOptions(RuntimeDataSource runtime, Dataset<Row> dataset, String mode,
+                                             List<String> keys, cn.superhuang.datascalpel.sdk.BatchWriteOptions options,
+                                             Map<String, Integer> srids) {
+        SpatialJdbcRuntimeSupport.encodeGeometry(dataset, srids);
+        if (options != null) BatchJdbcWriter.validate(runtime, dataset, mode, keys, srids,
+                SdkWriteConditions.convert(options.overwriteCondition()), options.allowEmptyOverwrite());
+    }
+
+    private static String lineageMode(String mode, cn.superhuang.datascalpel.sdk.BatchWriteOptions options) {
+        return "OVERWRITE".equals(mode) && options != null && options.overwriteCondition() != null
+                ? "CONDITIONAL_OVERWRITE" : mode;
     }
 
     private static String jdbcIdentifier(JdbcTableIdentifier identifier) {
@@ -331,28 +360,33 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     }
 
     private WriteResult write(RuntimeDataSource runtime, TableIdentifier requestedTable, Dataset<Row> dataset,
-                              String mode, List<String> keys) {
+                              String mode, List<String> keys, cn.superhuang.datascalpel.sdk.BatchWriteOptions options,
+                              Map<String, Integer> geometrySrids) {
         TableIdentifier table = new TableIdentifier(
                 requestedTable.catalog() == null ? runtime.connection().catalogName() : requestedTable.catalog(),
                 requestedTable.schema() == null ? runtime.connection().schemaName() : requestedTable.schema(),
                 requestedTable.table());
         requireJdbcWriteSupported(runtime, mode, dataset.schema());
-        Dataset<Row> cached = dataset.persist(StorageLevel.MEMORY_AND_DISK());
-        try {
-            long rows = cached.count();
-            String qualified = DIALECTS.require(runtime.databaseType().name()).qualifiedName(table);
-            if ("OVERWRITE".equals(mode)) CanvasTaskExecutor.truncate(runtime, qualified);
-            if ("UPSERT".equals(mode)) {
-                validateUpsertKeys(cached, keys);
-                writeUpsert(runtime, table, cached, keys);
-            } else {
-                CanvasTaskExecutor.write(runtime, qualified, cached);
-            }
+        SpatialJdbcRuntimeSupport.encodeGeometry(dataset, geometrySrids);
+        if (options != null) {
+            long rows = BatchJdbcWriter.write(runtime, table, dataset, mode, keys, geometrySrids,
+                    SdkWriteConditions.convert(options.overwriteCondition()), options.allowEmptyOverwrite());
             affectedRows.add(rows);
             return WriteResult.known(rows);
+        }
+        Dataset<Row> cached = "UPSERT".equals(mode) ? dataset.persist(StorageLevel.MEMORY_AND_DISK()) : dataset;
+        try (SparkOutputMetricsCollector collector = new SparkOutputMetricsCollector(spark)) {
+            if ("UPSERT".equals(mode)) DirectJdbcWriter.validateUpsertKeys(cached, keys, null);
+            var observed = collector.observe(identity.executionId(), identity.attempt(), "sdk-write", cached);
+            Dataset<Row> writable = observed.dataset();
+            String qualified = DIALECTS.require(runtime.databaseType().name()).qualifiedName(table);
+            DirectJdbcWriter.write(runtime, table, qualified, writable, mode, keys, geometrySrids);
+            Long rows = collector.completeSuccess(observed).rowsWritten();
+            affectedRows.add(rows);
+            return rows == null ? WriteResult.unknown() : WriteResult.known(rows);
         } catch (RunnerExecutionException exception) { throw exception; }
         catch (Exception exception) { throw new RuntimeException(exception); }
-        finally { cached.unpersist(); }
+        finally { if ("UPSERT".equals(mode)) cached.unpersist(); }
     }
 
     private WriteResult preview(
@@ -383,36 +417,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
             String mode,
             org.apache.spark.sql.types.StructType schema
     ) {
-        if ("OVERWRITE".equals(mode)) {
-            CanvasTaskExecutor.requireOverwriteSupported(runtime);
-        }
-        if ("UPSERT".equals(mode)
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.HIGHGO
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.OPENGAUSS
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.KINGBASE
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.DAMENG
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.ORACLE
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.SQL_SERVER) {
-            throw new RunnerExecutionException(
-                    "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "当前目标数据库未开放 UPSERT",
-                    null
-            );
-        }
-        if (hasGeometry(schema)
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.HIGHGO
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.OPENGAUSS
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.KINGBASE
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL) {
-            throw new RunnerExecutionException(
-                    "SPATIAL_JDBC_UNSUPPORTED",
-                    "Geometry JDBC 读写只支持 PostgreSQL 家族的 PostGIS 兼容扩展和 MySQL 8",
-                    null
-            );
-        }
+        DirectJdbcWriter.requireSupported(runtime, mode, hasGeometry(schema), null);
     }
 
     private void requireStreamingWriteAllowed(String mode, boolean geometry) {
@@ -433,47 +438,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         || field.dataType().getClass().getName().toLowerCase(Locale.ROOT).contains("geometry"));
     }
 
-    private static void validateUpsertKeys(Dataset<Row> dataset, List<String> keys) {
-        if (keys.stream().anyMatch(key -> Arrays.stream(dataset.columns()).noneMatch(key::equals)))
-            throw new RunnerExecutionException("UPSERT_KEY_NOT_MAPPED", "UPSERT Key 未完成映射", null);
-        Column nullCondition = keys.stream().map(key -> org.apache.spark.sql.functions.col(key).isNull())
-                .reduce(Column::or).orElseThrow();
-        if (dataset.filter(nullCondition).limit(1).count() > 0)
-            throw new RunnerExecutionException("UPSERT_KEY_NULL", "UPSERT Key 不能包含 NULL", null);
-        Column[] keyColumns = keys.stream().map(org.apache.spark.sql.functions::col).toArray(Column[]::new);
-        if (dataset.groupBy(keyColumns).count().filter(org.apache.spark.sql.functions.col("count").gt(1)).limit(1).count() > 0)
-            throw new RunnerExecutionException("UPSERT_DUPLICATE_KEY", "当前批次存在重复 UPSERT Key", null);
-    }
 
-    private static void writeUpsert(RuntimeDataSource runtime, TableIdentifier table,
-                                    Dataset<Row> dataset, List<String> keys) {
-        if (!"POSTGRESQL".equals(runtime.databaseType().name()) && !"HIGHGO".equals(runtime.databaseType().name())
-                && !"MYSQL".equals(runtime.databaseType().name())
-                && !"OPENGAUSS".equals(runtime.databaseType().name())
-                && !"KINGBASE".equals(runtime.databaseType().name())
-                && !"DAMENG".equals(runtime.databaseType().name())
-                && !"ORACLE".equals(runtime.databaseType().name())
-                && !"SQL_SERVER".equals(runtime.databaseType().name()))
-            throw new RunnerExecutionException(
-                    "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "当前目标数据库未开放 UPSERT",
-                    null);
-        DatabaseDialect dialect = DIALECTS.require(runtime.databaseType().name());
-        List<JdbcUpsertColumn> columns = Arrays.stream(dataset.columns()).map(name -> new JdbcUpsertColumn(name, null)).toList();
-        String sql = dialect.renderRowUpsert(table, columns, keys);
-        RuntimeJdbcConnection connection = runtime.connection();
-        dataset.foreachPartition((ForeachPartitionFunction<Row>) new PartitionWriter(
-                connection.driverClassName(), connection.jdbcUrl(), jdbcProperties(connection), sql,
-                dataset.schema().size()));
-    }
-
-    private static Properties jdbcProperties(RuntimeJdbcConnection connection) {
-        Properties values = new Properties();
-        if (connection.username() != null) values.setProperty("user", connection.username());
-        if (connection.password() != null) values.setProperty("password", connection.password());
-        connection.properties().forEach(values::setProperty);
-        return values;
-    }
 
     private SparkJarExecutionPayload.ResourceBinding binding(String name, SparkJarResourceType type, boolean read) {
         SparkJarExecutionPayload.ResourceBinding binding = bindings.get(required(name));
@@ -614,36 +579,8 @@ final class SparkJarJobContextImpl implements SparkJobContext {
 
     private static final class AffectedRowsAccumulator {
         private final AtomicLong total = new AtomicLong(); private final AtomicBoolean known = new AtomicBoolean(true);
-        void add(long value) { if (known.get()) try { total.set(Math.addExact(total.get(), value)); } catch (ArithmeticException e) { known.set(false); } }
+        void add(Long value) { if (value == null) { known.set(false); return; } if (known.get()) try { total.set(Math.addExact(total.get(), value)); } catch (ArithmeticException e) { known.set(false); } }
         Long value() { return known.get() ? total.get() : null; }
     }
 
-    private static final class PartitionWriter implements ForeachPartitionFunction<Row>, Serializable {
-        @Serial private static final long serialVersionUID = 1L;
-        private final String driver; private final String url; private final Properties properties; private final String sql; private final int columns;
-        private PartitionWriter(String driver, String url, Properties properties, String sql, int columns) {
-            this.driver = driver; this.url = url; this.properties = properties; this.sql = sql; this.columns = columns;
-        }
-        @Override public void call(Iterator<Row> rows) throws Exception {
-            if (!rows.hasNext()) return;
-            Class.forName(driver);
-            try (Connection connection = DriverManager.getConnection(url, properties);
-                 PreparedStatement statement = connection.prepareStatement(sql)) {
-                boolean original = connection.getAutoCommit(); connection.setAutoCommit(false);
-                try {
-                    int batch = 0;
-                    do {
-                        Row row = rows.next();
-                        for (int index = 0; index < columns; index++) statement.setObject(index + 1,
-                                row.isNullAt(index) ? null : row.get(index));
-                        statement.addBatch();
-                        if (++batch == 1000) { statement.executeBatch(); batch = 0; }
-                    } while (rows.hasNext());
-                    if (batch > 0) statement.executeBatch();
-                    connection.commit();
-                } catch (Exception exception) { connection.rollback(); throw exception; }
-                finally { try { connection.setAutoCommit(original); } catch (SQLException ignored) {} }
-            }
-        }
-    }
 }

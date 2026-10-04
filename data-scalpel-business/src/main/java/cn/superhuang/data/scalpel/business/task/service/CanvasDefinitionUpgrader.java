@@ -144,6 +144,14 @@ public class CanvasDefinitionUpgrader {
         for (int nodeIndex = 0; nodeIndex < definition.nodes().size(); nodeIndex++) {
             CanvasNodeDefinition node = definition.nodes().get(nodeIndex);
             requireCoreSpatialMinorVersionFeatures(node, nodeIndex, schemaMinorVersion);
+            if (schemaMinorVersion < 78 && (
+                    node instanceof cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition jdbc
+                            && jdbc.configuration() != null && jdbc.configuration().writes().stream().anyMatch(w -> w != null && w.batchWrite() != null)
+                    || node instanceof cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition model
+                            && model.configuration() != null && model.configuration().writes().stream().anyMatch(w -> w != null && w.batchWrite() != null))) {
+                invalid("BATCH_WRITE_REQUIRE_SCHEMA_VERSION：nodes[" + nodeIndex
+                        + "].configuration.writes.batchWrite 从 Canvas 4.78 开始支持");
+            }
             if (node instanceof TdEngineTmqInputNodeDefinition input
                     && input.configuration() != null
                     && schemaMinorVersion < 5

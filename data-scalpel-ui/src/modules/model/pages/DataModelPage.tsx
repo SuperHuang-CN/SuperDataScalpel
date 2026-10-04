@@ -1,12 +1,18 @@
 import {
   DatabaseOutlined,
+  DownOutlined,
+  ReloadOutlined,
   FileExcelOutlined,
   FileTextOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { Typography, type MenuProps } from 'antd';
+import { Button, ConfigProvider, Dropdown, Tooltip, Typography, type MenuProps } from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { orSearch, searchEquals } from '../../../shared/search';
+import { useDataSources } from '../../datasource';
 import { DirectoryTreePanel } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelDrawer } from '../components/DataModelDrawer';
@@ -17,8 +23,11 @@ import { FileDatasetModelImportDrawer } from '../components/FileDatasetModelImpo
 import { ManagedTableModelImportDrawer } from '../components/ManagedTableModelImportDrawer';
 import { ModelMetadataImportDrawer } from '../components/ModelMetadataImportDrawer';
 import { useDataModelListActions } from '../hooks/useDataModelListActions';
+import { useDataModels } from '../hooks/useDataModels';
 import { useDataModelListState } from '../hooks/useDataModelListState';
 import type { DataModel } from '../model/dataModel';
+import '../../../shared/theme/resource-workspace.css';
+import './model-list.css';
 
 export const DataModelPage = () => {
   const navigate = useNavigate();
@@ -40,6 +49,14 @@ export const DataModelPage = () => {
   const canPublish = permissions.has('model.publish');
   const list = useDataModelListState(canViewDirectories);
   const actions = useDataModelListActions(list);
+  const allModelsQuery = useDataModels({ page: 0, size: 1, sort: 'code' }, canViewDirectories);
+  const storageIds = [...new Set(list.modelsQuery.data?.content.map((model) => model.storageDataSourceId) ?? [])].sort();
+  const storageSourcesQuery = useDataSources({
+    page: 0,
+    size: Math.max(storageIds.length, 1),
+    search: orSearch(...storageIds.map((id) => searchEquals('id', id))),
+  }, canViewDataSources && storageIds.length > 0);
+  const storageTypes = new Map(storageSourcesQuery.data?.content.map((source) => [source.id, source.type]));
 
   const createMenuItems: MenuProps['items'] = [
     {
@@ -102,14 +119,15 @@ export const DataModelPage = () => {
   };
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {actions.messageContext}
       {actions.modalContext}
       {actions.referenceModal}
-      <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
+      <div className={`model-list-page resource-workspace-list ${canViewDirectories ? 'directory-management-layout' : 'page-stack'}`}>
         {canViewDirectories && (
           <DirectoryTreePanel
             scope="MODEL"
+            totalResourceCount={allModelsQuery.data?.totalElements}
             tree={list.directoriesQuery.data ?? []}
             loading={list.directoriesQuery.isFetching}
             selection={list.directorySelection}
@@ -118,16 +136,32 @@ export const DataModelPage = () => {
           />
         )}
         <section className="management-workbench">
-          <DataModelListFilters list={list} />
+          <DataModelListFilters list={list} commands={(
+            <div className="resource-list-commands">
+              <Tooltip title="刷新列表">
+                <Button icon={<ReloadOutlined />} aria-label="刷新模型列表"
+                  onClick={() => { void list.modelsQuery.refetch(); if (canViewDirectories) void allModelsQuery.refetch(); }} />
+              </Tooltip>
+              {canCreate && (
+                <Dropdown menu={{ items: createMenuItems }} trigger={['click']} placement="bottomRight"
+                  classNames={{ root: 'workspace-directory-menu model-create-menu' }}>
+                  <Button type="primary" icon={<PlusOutlined />}>新建模型 <DownOutlined /></Button>
+                </Dropdown>
+              )}
+            </div>
+          )} />
           <div className="management-results-surface">
             <DataModelListToolbar
               list={list}
               actions={actions}
               canPublish={canPublish}
-              canCreate={canCreate}
-              createMenuItems={createMenuItems}
             />
+            {list.modelsQuery.isError && (
+              <InlineFeedback className="model-list-error" tone="error" label="模型列表加载失败"
+                action={<Button type="link" onClick={() => void list.modelsQuery.refetch()}>重试</Button>} />
+            )}
             <DataModelListTable
+              storageTypes={storageTypes}
               list={list}
               actions={actions}
               canUpdate={canUpdate}
@@ -200,6 +234,6 @@ export const DataModelPage = () => {
           }}
         />
       )}
-    </>
+    </ConfigProvider>
   );
 };

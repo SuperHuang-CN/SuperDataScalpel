@@ -62,6 +62,14 @@ import java.util.UUID;
 @RequestMapping("/api/v1/data-services")
 public class DataServiceResource {
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasAuthority('service.view')")
+    @Operation(summary = "查询建设统计", description = "已启用服务类型与部署状态及已发布网关服务去重数量，不验证实时可用性。无查看权限返回403。")
+    public cn.superhuang.data.scalpel.business.service.web.response.DataServiceStatisticsResponse statistics() {
+        return service.statistics();
+    }
+
+
     private final DataServiceManagementService service;
     private final StandardDataServiceModelCandidateService modelCandidateService;
     private final DataServiceRelatedModelService relatedModelService;

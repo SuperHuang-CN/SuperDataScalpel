@@ -111,9 +111,9 @@ export const DataEntryRecordDrawer = ({ open, detail, recordKey, onClose, onUpda
   ) : <Empty description="记录不存在" />;
 
   return (
-    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay"
+    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay resource-workspace-overlay"
       open={open}
-      width={760}
+      size="min(760px, 100vw)"
       title={<OverlayTitle title="记录详情" icon={<FileTextOutlined />} description="查看填报记录的字段值" />}
       onClose={onClose}
       extra={<Space>{canEdit && !editing && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>编辑</Button>}

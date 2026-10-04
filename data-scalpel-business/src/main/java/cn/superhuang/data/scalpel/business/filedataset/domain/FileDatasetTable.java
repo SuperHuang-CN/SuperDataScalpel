@@ -50,6 +50,26 @@ public class FileDatasetTable extends BaseEntity {
     @Column(name = "spatial_crs_code")
     private Integer spatialCrsCode;
 
+    @Column(name="pending_crs_file_id")
+    private UUID pendingCrsFileId;
+    @Column(name="pending_crs_source_key",length=255)
+    private String pendingCrsSourceKey;
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name="pending_crs_wkt")
+    private String pendingCrsWkt;
+
+    public void waitForCrs(UUID jobId,UUID fileId,String sourceKey,String wkt) {
+        requireCurrentLoad(jobId);
+        if(hasData()) throw new IllegalStateException("只有新来源可等待空间参考确认");
+        currentLoadJobId=null;pendingCrsFileId=fileId;pendingCrsSourceKey=sourceKey;pendingCrsWkt=wkt;
+        parseStatus=FileDatasetParseStatus.WAITING_CRS;
+    }
+    public UUID getPendingCrsFileId() { return pendingCrsFileId; }
+    public String getPendingCrsSourceKey() { return pendingCrsSourceKey; }
+    public String getPendingCrsWkt() { return pendingCrsWkt; }
+    public void declarePendingCrs(CrsReference crs) { this.spatialCrsAuthority=crs.authority();this.spatialCrsCode=crs.code(); }
+    public void clearPendingCrs() { pendingCrsFileId=null;pendingCrsSourceKey=null;pendingCrsWkt=null; }
+
     protected FileDatasetTable() {
     }
 

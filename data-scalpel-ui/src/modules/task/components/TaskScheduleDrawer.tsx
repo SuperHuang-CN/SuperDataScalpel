@@ -73,7 +73,7 @@ export const TaskScheduleDrawer = ({
 
   return (
     <Drawer closable={{ placement: 'end' }}
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="data-model-drawer task-schedule-drawer"
       title={<OverlayTitle icon={<CalendarOutlined />} title={schedule ? '修改定时计划' : '新建定时计划'} description="配置触发时间、补偿策略与并发边界" />}
       extra={<Tag className="data-model-drawer-header-tag">{schedule ? taskScheduleStatusLabels[schedule.status] : '新计划'}</Tag>}

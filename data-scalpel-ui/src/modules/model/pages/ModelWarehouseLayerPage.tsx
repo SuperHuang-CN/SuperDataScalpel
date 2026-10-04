@@ -5,18 +5,17 @@ import {
   DeleteOutlined,
   EditOutlined,
   FileTextOutlined,
-  MoreOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import type { MenuProps, TableProps } from 'antd';
-import { Badge, Button, Col, Drawer, Dropdown, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import type { TableProps } from 'antd';
+import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { useCurrentUser } from '../../system';
 import {
@@ -132,7 +131,7 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="data-model-drawer warehouse-layer-drawer"
         title={<OverlayTitle title={layer ? '修改数仓分层' : '新建数仓分层'} icon={<ApartmentOutlined />} description="维护分层身份、模型编码规范与允许的数据流向" />}
         extra={layer?.code ? <Tag className="data-model-drawer-header-tag">{layer.code}</Tag> : undefined}
@@ -371,7 +370,7 @@ export const ModelWarehouseLayerPage = () => {
     modalApi.confirm({
       icon: null,
 
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: <OverlayTitle title="删除数仓分层" icon={<DeleteOutlined />} tone="danger" />,
       content: `确认删除“${layer.name}（${layer.code}）”吗？删除后不会自动恢复。`,
       okText: '删除',
@@ -408,7 +407,7 @@ export const ModelWarehouseLayerPage = () => {
           icon={<ModelWarehouseLayerIcon code={layer.code} color={layer.color} />}
           iconLabel={`数仓分层：${layer.code}`}
           iconTone="slate"
-          primary={value}
+          primary={<ManagementName name={layer.name} code={layer.code} description={layer.description}><span>{value}</span></ManagementName>}
           secondary={<><ManagementCode value={layer.code} /> {layer.description || ''}</>}
         />
       ),
@@ -453,19 +452,14 @@ export const ModelWarehouseLayerPage = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 112,
+      align: 'center' as const,
+      fixed: 'right',
+      width: 120,
       render: (_value, layer) => canUpdate ? (
-        <div className="management-row-actions">
-          <div className="management-row-actions-shortcuts">
-            <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${layer.name}`} onClick={() => { setEditingLayer(layer); setDrawerOpen(true); }} /></Tooltip>
-            <Tooltip title={layer.enabled ? '停用' : '启用'}><Button type="text" icon={layer.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} loading={(layer.enabled ? disableMutation : enableMutation).isPending && (layer.enabled ? disableMutation : enableMutation).variables === layer.id} aria-label={`${layer.enabled ? '停用' : '启用'}${layer.name}`} onClick={() => void toggle(layer)} /></Tooltip>
-          </div>
-          <Dropdown trigger={['click']} menu={{ items: [
-            { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditingLayer(layer); setDrawerOpen(true); } },
-            { key: 'lifecycle', icon: layer.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: layer.enabled ? '停用' : '启用', onClick: () => void toggle(layer) },
-            { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: deleteBlockedReason(layer), danger: true, disabled: !layer.deletable, onClick: () => remove(layer) },
-          ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${layer.name}的更多操作`} /></Tooltip></Dropdown>
+        <div className="modeling-row-actions">
+          <Tooltip title="修改"><Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改${layer.name}`} onClick={() => { setEditingLayer(layer); setDrawerOpen(true); }} /></Tooltip>
+          <Tooltip title={layer.enabled ? '停用' : '启用'}><Button type="text" size="small" icon={layer.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} aria-label={`${layer.enabled ? '停用' : '启用'}${layer.name}`} loading={(layer.enabled ? disableMutation : enableMutation).isPending && (layer.enabled ? disableMutation : enableMutation).variables === layer.id} onClick={() => void toggle(layer)} /></Tooltip>
+          <Tooltip title={layer.deletable ? '删除' : deleteBlockedReason(layer)}><span className="modeling-disabled-action"><Button type="text" size="small" danger icon={<DeleteOutlined />} disabled={!layer.deletable} aria-label={`删除${layer.name}`} onClick={() => remove(layer)} /></span></Tooltip>
         </div>
       ) : '—',
     },
@@ -475,9 +469,11 @@ export const ModelWarehouseLayerPage = () => {
     <>
       {messageContext}
       {modalContext}
-      <section className="management-workbench">
-        <div className="management-filter-strip">
+      <section className="management-workbench modeling-workspace">
+        <div className="management-filter-strip modeling-list-controls">
           <Form<LayerFilters>
+            id="layer-list-filters"
+            name="layer-list-filters"
             autoComplete="off"
             form={filterForm}
             layout="inline"
@@ -497,13 +493,8 @@ export const ModelWarehouseLayerPage = () => {
               />
             </Form.Item>
           </Form>
-          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={layersQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-          <div className="management-result-title">数仓分层 <span className="management-result-count">共 {layersQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
-            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数仓分层" onClick={() => void layersQuery.refetch()} /></Tooltip>
+          <div className="modeling-page-actions management-filter-actions"><ManagementFilterActions formId="layer-list-filters" form={filterForm} appliedFilters={filters} loading={layersQuery.isFetching} onReset={reset} /><div className="modeling-page-commands">
+            <Tooltip title="刷新列表"><Button icon={<ReloadOutlined />} aria-label="刷新数仓分层" onClick={() => void layersQuery.refetch()} /></Tooltip>
             {canUpdate && (
               <Button
                 type="primary"
@@ -513,7 +504,12 @@ export const ModelWarehouseLayerPage = () => {
                 新建
               </Button>
             )}
-          </Space>
+          </div></div>
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title"><ApartmentOutlined aria-hidden />数仓分层 <span className="management-result-count">共 {layersQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {layersQuery.isError && (
             <Alert

@@ -84,7 +84,7 @@ export const ApiConsumerDrawer = ({ open, consumer, onClose }: ApiConsumerDrawer
     <>
       {messageContext}
       <Drawer closable={{ placement: 'end' }}
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer api-consumer-drawer"
         title={<OverlayTitle title={editing ? '修改 API 消费者' : '新建 API 消费者'} icon={<UsergroupAddOutlined />} description="维护调用方身份及其跨网关稳定标识" />}
         extra={consumer ? <Tag className="data-model-drawer-header-tag">v{consumer.revision}</Tag> : undefined}

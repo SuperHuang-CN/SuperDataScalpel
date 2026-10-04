@@ -107,7 +107,7 @@ export const StandardDictionaryDrawer = ({ open, dictionary, onClose }: Props) =
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-drawer"
         title={<OverlayTitle icon={<StandardDictionaryValueTypeIcon valueType={selectedValueType} />} title={dictionary ? '修改码表' : '新建码表'} description="定义稳定的取值域，并在创建后维护树形节点" />}
         extra={<Tag className="standard-dictionary-drawer-header-tag">{standardDictionaryValueTypeLabels[selectedValueType]}</Tag>}

@@ -245,7 +245,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
     }
     modalApi.confirm({
       icon: null,
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
       title: <OverlayTitle title="应用计算引擎配置" icon={<ControlOutlined />} />,
       content: `将暂停“${engine.name}”的任务调度，确认无任务和待清理资源后应用配置并重新启用。如仍有任务，将保留当前配置；运行中任务可继续，排队任务需恢复调度后完成或手动取消，再次应用配置。`,
       okText: '应用并重新注册',
@@ -308,7 +308,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
   return <>
     {messageContext}{modalContext}
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="compute-engine-drawer"
       title={<OverlayTitle title={engine ? (editingAllowed ? '修改计算引擎' : '查看计算引擎') : '新建计算引擎'} icon={<ThunderboltOutlined />} description="配置 Dispatcher、消息通道、准入容量与 Spark 运行资源" />}
       extra={<span className="compute-engine-drawer-header-status">{headerStatus}</span>}

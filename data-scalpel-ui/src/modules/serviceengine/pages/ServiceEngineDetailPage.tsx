@@ -90,7 +90,7 @@ export const ServiceEngineDetailPage = () => {
   const remove = () => {
     if (!engine) return;
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
       title: <OverlayTitle icon={<DeleteOutlined />} title="删除 Service Engine" tone="danger" />, icon: null,
       content: `确认删除“${engine.name}”吗？`,
       okText: '删除',

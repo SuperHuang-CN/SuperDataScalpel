@@ -1,0 +1,65 @@
+/* The editor shares workspace tokens; parsing fields and locked states stay type-specific. */
+.workspace-resource-overlay .file-dataset-editor,
+.file-dataset-editor-type-popup { font-family: var(--ds-ui-font); color: #263d4c; }
+.workspace-resource-overlay.business-drawer-overlay .file-dataset-editor .ant-drawer-header {
+  min-height: 72px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #dce8ee;
+}
+.file-dataset-editor-title { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.file-dataset-editor-title > .file-dataset-type-icon,
+.file-dataset-editor-title > .file-dataset-type-icon svg { width: 30px; height: 30px; flex: none; }
+.file-dataset-editor-title > div { display: flex; flex-direction: column; gap: 2px; }
+.file-dataset-editor-title > div > span { font-size: 18px; line-height: 26px; font-weight: 600; }
+.file-dataset-editor-title small { font-size: 12px; line-height: 18px; font-weight: 400; color: #5b7180; }
+.workspace-resource-overlay.business-drawer-overlay .file-dataset-editor .ant-drawer-body {
+  padding: 20px 24px;
+  background: #fff;
+  overflow-y: auto;
+  scrollbar-color: #afc7d3 transparent;
+  scrollbar-width: thin;
+  container-type: inline-size;
+}
+.file-dataset-editor-form { display: flex; flex-direction: column; gap: 24px; }
+.file-dataset-editor-section + .file-dataset-editor-section { border-top: 1px solid #e1ebf0; padding-top: 20px; }
+.file-dataset-editor-section-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 16px; }
+.file-dataset-editor-section-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: #263d4c; font-size: 15px; line-height: 22px; font-weight: 600; }
+.file-dataset-editor-section-heading h3 .anticon { color: #287f9e; font-size: 16px; }
+.file-dataset-editor-section-description { margin: -8px 0 16px; color: #5b7180; font-size: 12px; line-height: 20px; }
+.file-dataset-editor .ant-form-item { margin-bottom: 16px; min-width: 0; }
+.file-dataset-editor-section > .ant-form-item:last-child,
+.file-dataset-editor-section > .ant-row:last-child > .ant-col:last-child > .ant-form-item { margin-bottom: 0; }
+.file-dataset-editor .ant-form-item-label { padding-bottom: 6px; }
+.file-dataset-editor .ant-form-item-label > label { font-size: 14px; font-weight: 400; line-height: 22px; color: #263d4c; }
+.file-dataset-editor :is(.ant-input, .ant-select, .ant-input-number, .ant-btn, .ant-form-item-explain) { font-family: inherit; font-size: 14px; }
+.workspace-resource-overlay.business-overlay .file-dataset-editor :is(input.ant-input, .ant-input-affix-wrapper, .ant-input-number, .ant-select-single) { height: 36px; min-height: 36px; }
+.workspace-resource-overlay.business-overlay .file-dataset-editor .ant-input-number-input { height: 34px; min-height: 0; font-size: 14px; }
+.workspace-resource-overlay.business-overlay .file-dataset-editor .ant-input-affix-wrapper > input.ant-input { height: auto; min-height: 0; }
+.workspace-resource-overlay.business-overlay .file-dataset-editor textarea.ant-input { height: auto; padding: 8px 11px; font-size: 14px; line-height: 22px; resize: none; }
+.file-dataset-editor .ant-input-textarea-show-count { margin-bottom: 20px; }
+.file-dataset-editor :is(.ant-input-data-count, .ant-form-item-extra) { color: #5b7180; font-size: 12px; line-height: 20px; }
+.file-dataset-editor .ant-form-item-extra { padding-top: 4px; }
+.file-dataset-editor-optional { margin-left: 6px; color: #5b7180; font-size: 12px; }
+.file-dataset-editor-type-option { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; font-size: 14px; line-height: 22px; }
+.file-dataset-editor-type-option > .file-dataset-type-icon { flex: none; }
+.file-dataset-editor-type-popup .ant-select-item-option-content { white-space: normal; }
+.file-dataset-editor .file-dataset-native-parsing { min-height: 0; align-items: flex-start; margin: 0; padding: 0; background: none; border: 0; border-radius: 0; color: #287f9e; }
+.file-dataset-editor .file-dataset-native-parsing > .anticon { margin-top: 2px; font-size: 16px; }
+.file-dataset-editor .file-dataset-native-parsing strong { color: #263d4c; font-size: 14px; font-weight: 400; line-height: 22px; }
+.file-dataset-editor .file-dataset-native-parsing .ant-typography { color: #5b7180; font-size: 12px; line-height: 20px; }
+.workspace-resource-overlay.business-drawer-overlay .file-dataset-editor .ant-drawer-footer { padding: 12px 24px; background: #fff; border-top: 1px solid #dce8ee; backdrop-filter: none; }
+.file-dataset-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.file-dataset-editor-footer-hint { color: #5b7180; font-size: 12px; line-height: 20px; }
+.file-dataset-editor-footer > .ant-space { flex: none; }
+.workspace-resource-overlay .file-dataset-editor-footer .ant-btn { height: 36px; min-width: 80px; padding-inline: 16px; border-radius: var(--ds-radius-control); box-shadow: none; }
+.file-dataset-editor-footer .ant-btn-primary { transform: none; }
+.file-dataset-editor ::selection { background: #cdeaf5; color: #163e50; }
+@container (max-width: 480px) {
+  .file-dataset-editor-form .ant-row > :is(.ant-col-6, .ant-col-12) { flex: 0 0 100%; max-width: 100%; }
+}
+@media (max-width: 600px) {
+  .workspace-resource-overlay.business-drawer-overlay .file-dataset-editor :is(.ant-drawer-header, .ant-drawer-body, .ant-drawer-footer) { padding-inline: 16px; }
+  .file-dataset-editor-footer { flex-wrap: wrap; }
+  .file-dataset-editor-footer > .ant-space { margin-left: auto; }
+}

@@ -1,3 +1,5 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
+import { ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CloudSyncOutlined,
@@ -14,7 +16,7 @@ import {
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
 import type { MenuProps, TableProps } from 'antd';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { directoryTreeSelectData, findDirectoryDescendantIds, useDirectoryTree, type DirectoryTreeNode } from '../../directory';
@@ -62,11 +64,7 @@ const buildSearch = (filters: AssetFilters, directories: DirectoryTreeNode[] | u
   return conditions.length ? conditions.join(' AND ') : undefined;
 };
 
-const formatDateTime = (value: string | null): string => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(value))
-  : '—';
+const formatDateTime = formatManagementDateTime;
 
 const statusColor: Record<AssetStatus, string> = { DRAFT: 'default', PUBLISHED: 'success', OFFLINE: 'warning' };
 const syncColor: Record<AssetSyncStatus, string> = {
@@ -91,7 +89,12 @@ export const AssetManagementPage = () => {
   const [form] = Form.useForm<AssetFilters>();
   const [messageApi, messageContext] = message.useMessage();
   const [modal, modalContext] = Modal.useModal();
-  const [filters, setFilters] = useState<AssetFilters>({});
+  const [params] = useSearchParams();
+  const [initialFilters] = useState<AssetFilters>(() => ({
+    status: Object.keys(assetStatusLabels).find(value => value === params.get('status')) as AssetStatus | undefined,
+    syncStatus: Object.keys(assetSyncStatusLabels).find(value => value === params.get('syncStatus')) as AssetSyncStatus | undefined,
+  }));
+  const [filters, setFilters] = useState<AssetFilters>(initialFilters);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [registrationOpen, setRegistrationOpen] = useState(false);
@@ -134,7 +137,7 @@ export const AssetManagementPage = () => {
 
   const remove = (asset: Asset) => modal.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle title="删除资产记录" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${asset.effectiveName}”吗？该操作不会删除原资源。`,
     okText: '删除',
@@ -153,7 +156,7 @@ export const AssetManagementPage = () => {
 
   const runBatch = (command: 'check-all' | 'sync-all') => modal.confirm({
     icon: null,
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: <OverlayTitle title={command === 'check-all' ? '全量检查资产' : '全量同步资产'} icon={command === 'check-all' ? <SafetyCertificateOutlined /> : <CloudSyncOutlined />} />,
     content: command === 'check-all'
       ? '将逐项检查所有已登记资产，不修改已保存的来源快照。'
@@ -178,10 +181,8 @@ export const AssetManagementPage = () => {
       title: '资产',
       width: 280,
       render: (_, asset) => (
-        <div className="asset-primary-cell">
-          <Button type="link" onClick={() => setEditingAsset(asset)}>{asset.effectiveName}</Button>
-          <Typography.Text type="secondary" ellipsis={{ tooltip: asset.sourceCode ?? asset.resourceId }}>{asset.sourceCode ?? '无来源编码'}</Typography.Text>
-        </div>
+        <ManagementListCell primary={<ManagementName name={asset.effectiveName} code={asset.sourceCode ?? undefined} description={asset.effectiveSummary}><Tooltip title={asset.effectiveName}><Button type="link" onClick={() => setEditingAsset(asset)}>{asset.effectiveName}</Button></Tooltip></ManagementName>}
+          secondary={<Typography.Text type="secondary" ellipsis={{ tooltip: asset.sourceCode ?? asset.resourceId }}>{asset.sourceCode ?? '无来源编码'}</Typography.Text>} />
       ),
     },
     { title: '类型', dataIndex: 'assetType', width: 120, render: (value: AssetType) => assetTypeLabels[value] },
@@ -230,7 +231,7 @@ export const AssetManagementPage = () => {
   ];
 
   const applyFilters = (values: AssetFilters) => { setFilters(values); setPage(1); };
-  const reset = () => { form.resetFields(); setFilters({}); setPage(1); };
+  const reset = () => { form.setFieldsValue({ keyword: undefined, assetType: undefined, status: undefined, syncStatus: undefined, directoryId: undefined }); setFilters({}); setPage(1); };
 
   return (
     <div className="management-page asset-management-page">
@@ -238,26 +239,26 @@ export const AssetManagementPage = () => {
       {modalContext}
       <section className="management-workbench">
         <div className="management-filter-strip">
-          <Form<AssetFilters> autoComplete="off" form={form} layout="inline" className="management-filter-form" onFinish={applyFilters}>
+          <Form<AssetFilters> initialValues={initialFilters} autoComplete="off" form={form} layout="inline" className="management-filter-form" onFinish={applyFilters} id="asset-management-page-filters-0">
             <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索名称或编码" /></Form.Item>
             <Form.Item name="assetType"><Select allowClear placeholder="全部类型" options={(Object.entries(assetTypeLabels) as Array<[AssetType, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             <Form.Item name="status"><Select allowClear placeholder="发布状态" options={(Object.entries(assetStatusLabels) as Array<[AssetStatus, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             <Form.Item name="syncStatus"><Select allowClear placeholder="同步状态" options={(Object.entries(assetSyncStatusLabels) as Array<[AssetSyncStatus, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             {canViewDirectories && <Form.Item name="directoryId"><TreeSelect allowClear treeDefaultExpandAll placeholder="业务领域" treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} /></Form.Item>}
           </Form>
-          <ManagementFilterActions form={form} appliedFilters={filters} loading={assetsQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-            <div className="management-result-title">资产管理 <span className="management-result-count">共 {assetsQuery.data?.totalElements ?? 0} 项</span></div>
-            <Space size={4} className="management-result-actions">
+          <ManagementFilterActions form={form} appliedFilters={filters} loading={assetsQuery.isFetching} onReset={reset} commands={<Space size={4} className="management-result-actions">
               <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新资产列表" onClick={() => void assetsQuery.refetch()} /></Tooltip>
               {canManage && <>
                 <Button icon={<SafetyCertificateOutlined />} loading={batchMutation.isPending} onClick={() => void runBatch('check-all')}>全量检查</Button>
                 <Button icon={<CloudSyncOutlined />} loading={batchMutation.isPending} onClick={() => void runBatch('sync-all')}>全量同步</Button>
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setRegistrationOpen(true)}>登记资产</Button>
               </>}
-            </Space>
+            </Space>} formId="asset-management-page-filters-0" />
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+            <div className="management-result-title">资产管理 <span className="management-result-count">共 {assetsQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {assetsQuery.isError && <Alert type="error" showIcon message="资产加载失败" description={assetsQuery.error instanceof Error ? assetsQuery.error.message : undefined} />}
           <Table<Asset>
@@ -267,7 +268,7 @@ export const AssetManagementPage = () => {
             columns={columns}
             dataSource={assetsQuery.data?.content ?? []}
             loading={assetsQuery.isFetching}
-            scroll={{ y: '100%' }}
+            scroll={{ x: 1178, y: '100%' }}
             pagination={{ current: page, pageSize, total: assetsQuery.data?.totalElements ?? 0, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 项`, placement: ['bottomEnd'] }}
             onChange={(pagination) => { setPage(pagination.current ?? 1); setPageSize(pagination.pageSize ?? 20); }}
           />

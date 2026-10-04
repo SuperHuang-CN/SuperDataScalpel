@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ApartmentOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Select, Tag, TreeSelect } from 'antd';
 import type { TableProps } from 'antd';
@@ -13,7 +14,7 @@ import { taskRunStatusColors, taskRunStatusLabels, taskTypeLabels, taskRunTrigge
 import { useRuntimeRuns } from '../hooks/useOperations';
 import { buildRuntimeRunSearch } from '../model/operationsSearch';
 import type { RuntimeRun, RuntimeRunFilters } from '../model/operations';
-import { OperationsTable } from './OperationsTable';
+import { OperationsTable, OperationsTableActions } from './OperationsTable';
 import { durationLabel } from '../model/runtimePresentation';
 import { RuntimeRunDrawer } from './RuntimeRunDrawer';
 
@@ -39,13 +40,13 @@ export const RuntimeRunsPanel = ({ initial = {} }: { initial?: RuntimeRunFilters
       secondary={r.qualityConclusion ? <Tag color={r.qualityConclusion === 'FAILED' ? 'warning' : 'success'}>{r.qualityConclusion === 'FAILED' ? `质检不通过 · ${r.qualityFailedRules ?? '—'} 项` : '质检通过'}</Tag> : null} /> },
     { title: '来源 / 引擎', width: 180, render: (_, r) => <ManagementListCell primary={`${taskRunTriggerTypeLabels[r.triggerType]} · ${taskRunExecutionModeLabels[r.executionMode]}`} secondary={r.engineName ?? (r.computeEngineId ? '已删除引擎' : r.taskType === 'LOCAL_SQL' ? '本地 SQL' : r.taskType === 'WORKFLOW' ? '依赖工作流' : '—')} /> },
     { title: '提交时间', dataIndex: 'queuedAt', width: 150, render: value => <ManagementDateTime value={value} /> },
-    { title: '开始 / 结束', width: 190, render: (_, r) => <ManagementListCell primary={r.startedAt ? new Date(r.startedAt).toLocaleString() : '尚未开始'} secondary={r.endedAt ? new Date(r.endedAt).toLocaleString() : '尚未结束'} /> },
+    { title: '开始 / 结束', width: 190, render: (_, r) => <ManagementListCell primary={r.startedAt ? formatManagementDateTime(r.startedAt) : '尚未开始'} secondary={r.endedAt ? formatManagementDateTime(r.endedAt) : '尚未结束'} /> },
     { title: '排队 / 执行耗时', width: 150, align: 'right', render: (_, r) => <ManagementListCell primary={durationLabel(r.queuedAt, r.startedAt ?? r.endedAt)} secondary={durationLabel(r.startedAt, r.endedAt)} /> },
   ];
   const reset = () => { const next = { activeOnly: false, mode: 'REAL' as const }; form.resetFields(); form.setFieldsValue({ ...next, taskName: undefined, status: undefined, taskType: undefined }); advancedForm.setFieldsValue(emptyAdvanced); setAdvanced(emptyAdvanced); setAdvancedOpen(false); setFilters(next); setPage(0); };
   return <section className="management-workbench">
     <div className="management-filter-strip">
-      <Form<RunForm> form={form} initialValues={{ taskName: defaults.taskName, activeOnly: defaults.activeOnly, status: defaults.status, taskType: defaults.taskType }} autoComplete="off" layout="inline" className="management-filter-form" onFinish={values => { const a = advancedOpen ? advanced : advancedForm.getFieldsValue(true); setAdvanced(a); setFilters({ ...a, ...values }); setPage(0); }}>
+      <Form<RunForm> form={form} initialValues={{ taskName: defaults.taskName, activeOnly: defaults.activeOnly, status: defaults.status, taskType: defaults.taskType }} autoComplete="off" layout="inline" className="management-filter-form" onFinish={values => { const a = advancedOpen ? advanced : advancedForm.getFieldsValue(true); setAdvanced(a); setFilters({ ...a, ...values }); setPage(0); }} id="runtime-runs-panel-filters-0">
         <Form.Item name="taskName"><ManagementSearchInput placeholder="搜索任务名称" allowClear /></Form.Item>
         <Form.Item name="activeOnly" getValueProps={(value: boolean) => ({ value: value ? 'active' : 'history' })} normalize={(value: string) => value === 'active'}><Select style={{ width: 125 }} options={[{ value: 'history', label: '历史运行' }, { value: 'active', label: '全部活动实例' }]} /></Form.Item>
         <Form.Item name="status"><Select style={{ width: 125 }} placeholder="全部状态" allowClear options={[{ value: 'FAILED_OR_TIMED_OUT', label: '失败及超时' }, ...Object.entries(taskRunStatusLabels).map(([value, label]) => ({ value, label }))]} /></Form.Item>
@@ -65,10 +66,10 @@ export const RuntimeRunsPanel = ({ initial = {} }: { initial?: RuntimeRunFilters
           <Form.Item name="toLocal" label="结束时间"><Input type="datetime-local" aria-label="运行查询结束时间" style={{ width: 190 }} /></Form.Item>
         </Form>
       </ManagementAdaptiveMoreFilters>
-      <ManagementFilterActions form={form} appliedFilters={filters} additionalActive={advancedCount > 0} loading={query.isFetching} onReset={reset} />
+      <ManagementFilterActions form={form} appliedFilters={filters} additionalActive={advancedCount > 0} loading={query.isFetching} onReset={reset} commands={<OperationsTableActions title={filters.activeOnly ? '活动运行实例' : '运行历史'} query={query} extra={<ContextHelp ariaLabel="运行列表时间范围" content="活动实例包含所有尚未结束的运行，不受历史时间范围限制。历史查询默认最近 24 小时，单次最多 90 天。" />} />} formId="runtime-runs-panel-filters-0" />
     </div>
     <OperationsTable title={filters.activeOnly ? '活动运行实例' : '运行历史'} query={query} columns={columns} page={page} size={size}
-      onPage={(p, s) => { setPage(p); setSize(s); }} extra={<ContextHelp ariaLabel="运行列表时间范围" content="活动实例包含所有尚未结束的运行，不受历史时间范围限制。历史查询默认最近 24 小时，单次最多 90 天。" />} />
+      onPage={(p, s) => { setPage(p); setSize(s); }}  showActions={false} />
     <RuntimeRunDrawer runId={runId} onClose={() => setRunId(null)} />
   </section>;
 };

@@ -70,7 +70,7 @@ public record SuperApiGatewayProperties(
     public record AccessLog(Boolean enabled, String topic, Integer queueCapacity) {
         public AccessLog {
             enabled = enabled == null || enabled;
-            topic = text(topic, "super-api-gateway.access-log.v1");
+            topic = text(topic, "datascalpel.gateway.access.v1");
             queueCapacity = positive(queueCapacity, 10_000);
         }
     }

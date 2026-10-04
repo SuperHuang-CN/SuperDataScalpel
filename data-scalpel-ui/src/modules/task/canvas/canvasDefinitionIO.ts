@@ -206,6 +206,11 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
           && node.configuration.maskCombination != null) {
         errors.push('SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION：空间裁剪多 Mask 组合方式从 Canvas 4.77 开始支持');
       }
+      if (sourceSchemaMinorVersion < 78
+          && (node.type === CanvasNodeType.JdbcOutput || node.type === CanvasNodeType.ModelOutput)
+          && node.configuration.writes?.some(write => write.batchWrite != null)) {
+        errors.push('BATCH_WRITE_REQUIRE_SCHEMA_VERSION：原子批写从 Canvas 4.78 开始支持');
+      }
       if (sourceSchemaMinorVersion < 29 && (
         node.type === CanvasNodeType.GeometryDerive && node.configuration.derivations.some(item => item.geometryPolicy != null)
         || node.type === CanvasNodeType.GeometrySimplify && node.configuration.geometryPolicy != null

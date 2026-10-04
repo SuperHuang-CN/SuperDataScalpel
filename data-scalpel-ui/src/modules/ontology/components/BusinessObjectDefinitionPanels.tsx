@@ -512,11 +512,11 @@ export const PropertiesPanel = ({ definition, canManage, onChange }: {
         />
       </BusinessDetailSection>
 
-      <Modal open={Boolean(groupDraft)} rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title={newGroup ? '新建属性组' : '编辑属性组'} />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !groupDraft?.name.trim() }} onCancel={() => setGroupDraft(null)} onOk={saveGroup}>
+      <Modal open={Boolean(groupDraft)} rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title={newGroup ? '新建属性组' : '编辑属性组'} />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !groupDraft?.name.trim() }} onCancel={() => setGroupDraft(null)} onOk={saveGroup}>
         <OntologyField label="分组名称"><Input autoComplete="off" autoFocus value={groupDraft?.name ?? ''} maxLength={100} onChange={(event) => groupDraft && setGroupDraft({ ...groupDraft, name: event.target.value })} /></OntologyField>
       </Modal>
 
-      <Modal open={Boolean(propertyDraft)} rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title="编辑业务属性" />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !propertyDraft?.name.trim() || !propertyDraft?.code.trim() }} onCancel={() => setPropertyDraft(null)} onOk={() => {
+      <Modal open={Boolean(propertyDraft)} rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title="编辑业务属性" />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !propertyDraft?.name.trim() || !propertyDraft?.code.trim() }} onCancel={() => setPropertyDraft(null)} onOk={() => {
         if (!propertyDraft) return;
         onChange({ ...definition, properties: definition.properties.map((property) => property.id === propertyDraft.id ? { ...propertyDraft, name: propertyDraft.name.trim(), code: simpleCode(propertyDraft.code) } : property) });
         setPropertyDraft(null);

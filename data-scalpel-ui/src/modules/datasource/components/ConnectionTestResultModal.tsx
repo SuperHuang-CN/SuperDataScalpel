@@ -60,7 +60,7 @@ export const ConnectionTestResultModal = ({
     <>
       {messageContext}
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay workspace-resource-overlay"
         open={open}
         title={<OverlayTitle title="连接测试失败" icon={<ApiOutlined />} tone="danger" />}
         width={760}

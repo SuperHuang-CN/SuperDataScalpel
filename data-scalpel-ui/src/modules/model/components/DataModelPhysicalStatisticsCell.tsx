@@ -1,4 +1,4 @@
-import { WarningOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { Space, Tooltip, Typography } from 'antd';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import type {
@@ -78,13 +78,17 @@ const statusText = (statistics: DataModelPhysicalStatistics) => {
 
 export interface DataModelPhysicalStatisticsCellProps {
   statistics: DataModelPhysicalStatistics | null | undefined;
+  compact?: boolean;
 }
 
 export const DataModelPhysicalStatisticsCell = ({
   statistics,
+  compact = false,
 }: DataModelPhysicalStatisticsCellProps) => {
   if (!statistics) {
-    return <Typography.Text type="secondary">尚未统计</Typography.Text>;
+    return compact
+      ? <span className="model-statistics-empty"><span>—</span><Typography.Text type="secondary">尚未统计</Typography.Text></span>
+      : <Typography.Text type="secondary">尚未统计</Typography.Text>;
   }
 
   const rowText = metricText(
@@ -94,10 +98,12 @@ export const DataModelPhysicalStatisticsCell = ({
     '占用', statistics.storageBytes, statistics.storageQuality, formatStorage,
   );
   const failed = statistics.lastRefreshStatus === 'FAILED';
+  const partial = statistics.lastRefreshStatus === 'PARTIAL';
   const unavailable = statistics.lastRefreshStatus === 'NOT_FOUND'
     || statistics.lastRefreshStatus === 'UNSUPPORTED';
   const detail = (
     <Space direction="vertical" size={2}>
+      <span>统计状态：{statusText(statistics)}</span>
       <span>行数：{statistics.rowCount === null ? '不可获取' : fullNumberFormatter.format(statistics.rowCount)}（{qualityLabels[statistics.rowCountQuality]}）</span>
       <span>占用空间：{statistics.storageBytes === null ? '不可获取' : `${fullNumberFormatter.format(statistics.storageBytes)} 字节`}（{qualityLabels[statistics.storageQuality]}）</span>
       <span>最近成功采集：{formatManagementDateTime(statistics.collectedAt)}</span>
@@ -106,15 +112,32 @@ export const DataModelPhysicalStatisticsCell = ({
     </Space>
   );
 
+  if (compact) {
+    return (
+      <Tooltip title={detail} placement="topRight" trigger={['hover', 'focus', 'click']}>
+        <span className="model-statistics-compact" tabIndex={0}>
+          <span className="model-statistics-primary">
+            {failed && <WarningOutlined className="model-statistics-status-icon is-warning" aria-label="最近刷新失败" />}
+            {partial && <InfoCircleOutlined className="model-statistics-status-icon" aria-label="仅获取到部分统计" />}
+            <span className="model-statistics-value">{unavailable ? '—' : rowText}</span>
+          </span>
+          <Typography.Text type={unavailable ? 'warning' : 'secondary'}>
+            {unavailable ? (statistics.lastRefreshStatus === 'NOT_FOUND' ? '表不存在' : '不支持统计') : storageText}
+          </Typography.Text>
+        </span>
+      </Tooltip>
+    );
+  }
+
   return (
-    <Tooltip title={detail} placement="topRight">
-      <Space direction="vertical" size={0} style={{ lineHeight: 1.45, cursor: 'help', alignItems: 'flex-end' }}>
+    <Tooltip title={detail} placement="topRight" trigger={['hover', 'focus', 'click']}>
+      <Space tabIndex={0} direction="vertical" size={0} style={{ lineHeight: 1.45, cursor: 'help', alignItems: 'flex-end' }}>
         {!unavailable && <Typography.Text>{rowText}</Typography.Text>}
         {!unavailable && <Typography.Text type="secondary">{storageText}</Typography.Text>}
-        <Typography.Text type={failed || unavailable ? 'warning' : 'secondary'}>
-          {failed && <WarningOutlined style={{ marginRight: 4 }} />}
-          {statusText(statistics)}
-        </Typography.Text>
+          <Typography.Text type={failed || unavailable ? 'warning' : 'secondary'}>
+            {failed && <WarningOutlined style={{ marginRight: 4 }} />}
+            {statusText(statistics)}
+          </Typography.Text>
       </Space>
     </Tooltip>
   );

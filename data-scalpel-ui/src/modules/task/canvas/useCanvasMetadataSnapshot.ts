@@ -485,7 +485,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         code: table.code,
         name: table.name,
         datasetType: table.datasetType,
-        parseStatus: table.parseStatus,
+        parseStatus: table.parseStatus === 'WAITING_CRS' ? 'QUEUED' : table.parseStatus,
         fileStatus: table.fileStatus,
         columns: [...table.fields]
           .sort((left, right) => left.sortOrder - right.sortOrder)

@@ -13,7 +13,7 @@ import {
   SendOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, ConfigProvider, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useBlocker,
@@ -23,6 +23,8 @@ import {
   useSearchParams,
   type BlockerFunction,
 } from 'react-router-dom';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import './model-detail.css';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
@@ -98,6 +100,7 @@ export const DataModelDetailPage = () => {
   const canPublish = permissions.has('model.publish');
   const canViewTasks = permissions.has('task.view');
   const canViewServices = permissions.has('service.view');
+  const canViewMetrics = permissions.has('metric.view');
   const permissionsLoaded = Boolean(currentUserQuery.data);
   const directoriesQuery = useDirectoryTree('MODEL', canViewDirectories);
   const deleteMutation = useDeleteDataModel();
@@ -108,8 +111,9 @@ export const DataModelDetailPage = () => {
   const requestedTab = normalizeModelDetailTab(searchParams.get('tab'));
   const unauthorizedProtectedTab = requestedTab === 'tasks'
     ? !canViewTasks
-    : requestedTab === 'lineage' && (!canViewTasks || !canViewServices);
-  const protectedTabLoading = !permissionsLoaded && (requestedTab === 'tasks' || requestedTab === 'lineage');
+    : requestedTab === 'metrics' ? !canViewMetrics
+      : requestedTab === 'lineage' && (!canViewTasks || !canViewServices);
+  const protectedTabLoading = !permissionsLoaded && (requestedTab === 'tasks' || requestedTab === 'lineage' || requestedTab === 'metrics');
   const activeTab = (protectedTabLoading || unauthorizedProtectedTab)
     ? 'basic'
     : requestedTab;
@@ -175,7 +179,7 @@ export const DataModelDetailPage = () => {
       modalApi.confirm({
         icon: null,
 
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
         title: <OverlayTitle title="发布模型" icon={<TableOutlined />} />,
         content: (
           <DataModelPublishConfirmationContent
@@ -229,7 +233,7 @@ export const DataModelDetailPage = () => {
     modalApi.confirm({
       icon: null,
 
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
       title: <OverlayTitle title="放弃未保存的字段修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '刷新模型详情会重新加载最后保存的字段定义，当前修改会丢失。',
       okText: '放弃修改并刷新',
@@ -268,7 +272,6 @@ export const DataModelDetailPage = () => {
 
   const commandLoading = publishMutation.isPending || disableMutation.isPending;
   const tabItems = [
-    ...(permissions.has('metric.view') ? [{ key: 'metrics', label: '关联指标', children: <MetricRelationsPanel modelId={model.id} /> }] : []),
     {
       key: 'basic',
       label: '基本信息',
@@ -311,6 +314,7 @@ export const DataModelDetailPage = () => {
     },
     { key: 'changes', label: '物理变更', children: <DataModelPhysicalChangePanel model={model} canUpdate={canUpdate} /> },
     { key: 'data', label: '数据预览', children: <DataModelPreviewPanel key={model.id} model={model} fields={detailQuery.data.fields} /> },
+    ...(canViewMetrics ? [{ key: 'metrics', label: '关联指标', children: <MetricRelationsPanel modelId={model.id} /> }] : []),
     ...(canViewTasks
       ? [
           { key: 'tasks', label: '关联任务', children: <DataModelTasksPanel modelId={model.id} /> },
@@ -324,16 +328,17 @@ export const DataModelDetailPage = () => {
   ];
 
   return (
-    <div className="model-detail-page business-detail-page">
+    <ConfigProvider theme={workspaceResourceTheme}>
+    <div className="model-detail-page business-detail-page model-detail-resource">
       {messageContext}
       {modalContext}
       <div className="model-detail-header business-detail-header">
         <div className="model-detail-identity">
           <div className="model-detail-title-row">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={backToList}>{locationState?.returnLabel ?? '返回列表'}</Button>
-            <span className="business-detail-resource-icon business-detail-resource-icon-purple"><TableOutlined /></span>
+            <span className="business-detail-resource-icon"><TableOutlined /></span>
             <span className="model-detail-title">{model.name}</span>
-            <code>{model.code}</code>
+            {model.code !== model.name && <code>{model.code}</code>}
             <Tag color={statusColor[model.status]}>{dataModelStatusLabels[model.status]}</Tag>
             <Tag>{physicalTableModeLabels[model.physicalTableMode]}</Tag>
           </div>
@@ -343,7 +348,7 @@ export const DataModelDetailPage = () => {
             <code>{model.physicalTableName}</code>
           </div>
         </div>
-        <Space size={4}>
+        <Space size={6} wrap className="model-detail-actions">
           {model.physicalTableMode === 'MANAGED' && (
             <Button icon={<DownloadOutlined />} loading={exportMutation.isPending} onClick={() => void exportMetadata(model)}>
               导出 Excel
@@ -394,7 +399,7 @@ export const DataModelDetailPage = () => {
         onSaved={() => setEditing(false)}
       />
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay"
         open={referenceModalOpen}
         title={<OverlayTitle title={`删除模型：${model.name}`} icon={<DeleteOutlined />} tone="danger" />}
         width={760}
@@ -429,7 +434,7 @@ export const DataModelDetailPage = () => {
         {referencesQuery.data && <DataModelReferenceModalContent references={referencesQuery.data} />}
       </Modal>
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay"
         open={blocker.state === 'blocked'}
         title={<OverlayTitle title="离开未保存的字段定义？" icon={<TableOutlined />} />}
         okText="放弃并离开"
@@ -446,5 +451,6 @@ export const DataModelDetailPage = () => {
         当前字段定义尚未保存，离开后这些修改会丢失。
       </Modal>
     </div>
+    </ConfigProvider>
   );
 };

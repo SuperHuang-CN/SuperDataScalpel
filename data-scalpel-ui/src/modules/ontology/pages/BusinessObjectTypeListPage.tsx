@@ -1,12 +1,11 @@
 import {
   ApartmentOutlined,
   EditOutlined,
-  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Form, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Form, Segmented, Select, Table, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -14,8 +13,8 @@ import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type 
 import { useCurrentUser } from '../../system';
 import { andSearch, orSearch, searchContains, searchEquals } from '../../../shared/search';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
-import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
-import { ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { BusinessOntologyGraphWorkspace } from '../components/BusinessOntologyGraphWorkspace';
 import { BusinessObjectTypeBasicsDrawer } from '../components/BusinessObjectTypeBasicsDrawer';
 import { useBusinessObjectTypeGraph, useBusinessObjectTypes } from '../hooks/useBusinessObjectTypes';
@@ -105,12 +104,15 @@ export const BusinessObjectTypeListPage = () => {
     navigate(`/business-object-types/${id}?${detailParams.toString()}`);
   };
   const columns: ColumnsType<BusinessObjectType> = [
-    { title: '对象类型 / 编码', key: 'identity', width: 270, render: (_, item) => <ManagementListCell primary={<Button type="link" size="small" onClick={() => navigate(`/business-object-types/${item.id}`)}>{item.name}</Button>} secondary={<ManagementCode value={item.code} />} /> },
+    { title: '对象类型 / 编码', key: 'identity', width: 270, render: (_, item) => <ManagementListCell icon={<ApartmentOutlined />} primary={<ManagementName name={item.name} code={item.code} description={item.summary}><Button type="link" size="small" onClick={() => navigate(`/business-object-types/${item.id}`)}>{item.name}</Button></ManagementName>} secondary={item.code !== item.name ? <ManagementCode value={item.code} /> : undefined} /> },
     { title: '主来源', key: 'source', width: 200, render: (_, item) => item.mainSourceModelName ?? '尚未配置' },
     { title: '属性 / 关系', key: 'counts', width: 125, render: (_, item) => <ManagementListCell primary={`${item.propertyCount} 个属性`} secondary={`${item.relationCount} 条可访问关系`} /> },
     { title: '状态', key: 'enabled', width: 110, render: (_, item) => <Tag color={item.enabled ? 'success' : 'default'}>{item.enabled ? '启用' : '停用'}</Tag> },
     { title: '更新时间', dataIndex: 'updatedAt', width: 170, render: value => <ManagementDateTime value={value} /> },
-    { title: '操作', key: 'actions', width: 70, render: (_, item) => canManage ? <div className="management-row-actions"><div className="management-row-actions-shortcuts"><Tooltip title="修改资料"><Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改${item.name}资料`} onClick={() => setEditing(item)} /></Tooltip></div><Dropdown trigger={['click']} menu={{ items: [{ key: 'open', label: '打开建模' }, { key: 'edit', label: '修改资料' }], onClick: ({ key }) => key === 'open' ? navigate(`/business-object-types/${item.id}`) : setEditing(item) }}><Button type="text" size="small" icon={<MoreOutlined />} aria-label={`${item.name}更多操作`} /></Dropdown></div> : null },
+    { title: '操作', key: 'actions', align: 'center', fixed: 'right', width: 88, render: (_, item) => canManage ? <div className="modeling-row-actions">
+      <Tooltip title="打开建模"><Button type="text" size="small" icon={<ApartmentOutlined />} aria-label={`打开${item.name}建模`} onClick={() => navigate(`/business-object-types/${item.id}`)} /></Tooltip>
+      <Tooltip title="修改资料"><Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改${item.name}资料`} onClick={() => setEditing(item)} /></Tooltip>
+    </div> : null },
   ];
   const objectNavigation = (
     <div className="ontology-object-navigation">
@@ -139,7 +141,7 @@ export const BusinessObjectTypeListPage = () => {
       : '没有符合当前筛选条件的对象类型';
 
   return <>
-    <div className={canViewDirectories ? 'directory-management-layout ontology-management-layout' : 'page-stack ontology-management-layout'}>
+    <div className={canViewDirectories ? 'directory-management-layout ontology-management-layout modeling-workspace' : 'page-stack ontology-management-layout modeling-workspace'}>
       {canViewDirectories && <DirectoryTreePanel
         scope="BUSINESS_OBJECT"
         label="业务建模目录"
@@ -151,11 +153,14 @@ export const BusinessObjectTypeListPage = () => {
         navigationTabs={view === 'graph' ? { activeKey: navigationTab, resourceLabel: '对象', resourceContent: objectNavigation, onChange: setNavigationTab } : undefined}
       />}
       <section className="management-workbench">
-        <div className="management-filter-strip"><Form form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={(value) => { updateParams({ keyword: value.keyword?.trim() || undefined, enabled: value.enabled, focusId: undefined }); setPage(0); }}>
+        <div className="management-filter-strip modeling-list-controls"><Form id="ontology-list-filters" name="ontology-list-filters" form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={(value) => { updateParams({ keyword: value.keyword?.trim() || undefined, enabled: value.enabled, focusId: undefined }); setPage(0); }}>
           <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索对象类型名称或编码" /></Form.Item>
           <Form.Item name="enabled"><Select allowClear placeholder="全部状态" options={[{ value: 'true', label: '启用' }, { value: 'false', label: '停用' }]} /></Form.Item>
-          <Space><Button type="primary" htmlType="submit">查询</Button><Button type="text" onClick={() => { form.resetFields(); const next = new URLSearchParams(); if (view === 'graph') next.set('view', 'graph'); setParams(next); setPage(0); }}>重置</Button></Space>
-        </Form></div>
+
+        </Form><div className="modeling-page-actions"><ManagementFilterActions form={form} formId="ontology-list-filters" appliedFilters={filters} additionalActive={directory !== undefined || focusId !== undefined} loading={view === 'list' ? query.isFetching : graphQuery.isFetching} onReset={() => { form.resetFields(); const next = new URLSearchParams(); if (view === 'graph') next.set('view', 'graph'); setParams(next); setPage(0); }} /><div className="modeling-page-commands">
+              {view === 'list' && <Tooltip title="刷新对象类型列表"><Button icon={<ReloadOutlined />} aria-label="刷新业务对象类型列表" onClick={() => void query.refetch()} /></Tooltip>}
+              {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>新建对象类型</Button>}
+            </div></div></div>
         <div className={`management-results-surface${view === 'graph' ? ' ontology-graph-results' : ''}`}>
           <div className="management-result-toolbar">
             <div className="ontology-result-heading">
@@ -169,10 +174,7 @@ export const BusinessObjectTypeListPage = () => {
               />
               <span className="management-result-count">{view === 'list' ? `共 ${query.data?.totalElements ?? 0} 项` : `筛选范围 ${graphScopeNodes.length} 个对象类型`}</span>
             </div>
-            <Space>
-              {view === 'list' && <Tooltip title="刷新对象类型列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新业务对象类型列表" onClick={() => void query.refetch()} /></Tooltip>}
-              {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>新建对象类型</Button>}
-            </Space>
+
           </div>
           {view === 'list' ? <>
             {query.isError && <InlineFeedback tone="error" label={query.error.message} action={<Button onClick={() => void query.refetch()}>重试</Button>} />}

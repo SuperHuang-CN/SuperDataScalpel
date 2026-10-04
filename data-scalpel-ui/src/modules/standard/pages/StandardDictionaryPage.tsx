@@ -1,7 +1,9 @@
 import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
+  BookOutlined,
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
   ExportOutlined,
   ImportOutlined,
@@ -12,10 +14,10 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { Button, Dropdown, Form, Input, Modal, Select, Table, Tooltip, message } from 'antd';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
@@ -69,7 +71,8 @@ export const StandardDictionaryPage = () => {
   const [form] = Form.useForm<Filters>();
   const [advancedForm] = Form.useForm<Filters>();
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState<Filters>({});
+  const advancedSnapshot = useRef<Filters>({});
+  const advancedDraft = Form.useWatch((values: Filters) => values, { form: advancedForm, preserve: true });
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -87,7 +90,7 @@ export const StandardDictionaryPage = () => {
     sort: '-updatedAt,code',
   }), [filters, page, pageSize]);
   const dictionariesQuery = useStandardDictionaries(queryRequest);
-  const advancedFilterCount = Number(advancedFilters.valueType !== undefined) + Number(advancedFilters.enabled !== undefined);
+  const advancedFilterCount = Number(advancedDraft?.valueType !== undefined) + Number(advancedDraft?.enabled !== undefined);
   const commandMutation = useStandardDictionaryCommand();
   const exportMutation = useExportStandardDictionaryMetadata();
 
@@ -126,8 +129,8 @@ export const StandardDictionaryPage = () => {
           icon={<StandardDictionaryValueTypeIcon valueType={row.valueType} />}
           iconLabel={`取值类型：${standardDictionaryValueTypeLabels[row.valueType]}`}
           iconTone={valueTypeIconTones[row.valueType]}
-          primary={<Link to={`/standard/dictionaries/${row.id}`}>{value}</Link>}
-          secondary={<Link to={`/standard/dictionaries/${row.id}`}><ManagementCode value={row.code} /></Link>}
+          primary={<ManagementName name={row.name} code={row.code} description={row.description}><Link to={`/standard/dictionaries/${row.id}`}>{value}</Link></ManagementName>}
+          secondary={row.code !== row.name ? <Link to={`/standard/dictionaries/${row.id}`}><ManagementCode value={row.code} /></Link> : undefined}
         />
       ),
     },
@@ -159,7 +162,9 @@ export const StandardDictionaryPage = () => {
     ...(canManage ? [{
       title: '操作',
       key: 'actions',
-      width: 112,
+      align: 'center' as const,
+      fixed: 'right' as const,
+      width: 120,
       render: (_value: unknown, row: StandardDictionary) => (
         <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
@@ -170,33 +175,31 @@ export const StandardDictionaryPage = () => {
             { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditing(row); setDrawerOpen(true); } },
             { key: 'lifecycle', icon: row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: row.enabled ? '停用' : '启用', onClick: () => void executeCommand(row, row.enabled ? 'disable' : 'enable') },
             { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除码表" tone="danger" />, icon: null, content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
+            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除码表" tone="danger" />, icon: null, content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${row.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),
     }] : []),
   ];
   const applyDirect = (values: Filters) => {
-    const advancedValues = advancedForm.getFieldsValue();
+    const advancedValues = advancedForm.getFieldsValue(true);
     const nextAdvancedFilters = { valueType: advancedValues.valueType, enabled: advancedValues.enabled };
-    setAdvancedFilters(nextAdvancedFilters);
     setFilters({ code: values.code, name: values.name, ...nextAdvancedFilters });
     setPage(1);
   };
-  const confirmAdvanced = () => {
-    const values = advancedForm.getFieldsValue();
-    setAdvancedFilters({ valueType: values.valueType, enabled: values.enabled });
-    setAdvancedOpen(false);
-  };
+  const confirmAdvanced = () => setAdvancedOpen(false);
+  const cancelAdvanced = () => { if (advancedOpen) advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined, ...advancedSnapshot.current }); setAdvancedOpen(false); };
   const clearAdvanced = () => advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined });
-  const reset = () => { form.resetFields(); advancedForm.resetFields(); advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined }); setAdvancedFilters({}); setAdvancedOpen(false); setFilters({}); setPage(1); };
+  const reset = () => { form.resetFields(); advancedForm.resetFields(); advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined }); setAdvancedOpen(false); setFilters({}); setPage(1); };
 
   return (
-    <div className="management-page">
+    <div className="management-page modeling-workspace">
       {contextHolder}
       <section className="management-workbench">
-        <div className="management-filter-strip">
+        <div className="management-filter-strip modeling-list-controls">
           <Form<Filters>
+            id="dictionary-list-filters"
+            name="dictionary-list-filters"
             autoComplete="off"
             form={form}
             layout="inline"
@@ -208,43 +211,26 @@ export const StandardDictionaryPage = () => {
             <ManagementAdaptiveMoreFilters
               count={advancedFilterCount}
               open={advancedOpen}
-              onOpenChange={(open) => {
-                setAdvancedOpen(open);
-                if (open) {
-                  advancedForm.resetFields();
-                  advancedForm.setFieldsValue({ valueType: advancedFilters.valueType, enabled: advancedFilters.enabled });
-                }
-              }}
+              onOpenChange={open => { if (open) { advancedSnapshot.current = advancedForm.getFieldsValue(true); setAdvancedOpen(true); } else cancelAdvanced(); }}
               onClear={clearAdvanced}
-              onCancel={() => {
-                advancedForm.setFieldsValue({ valueType: advancedFilters.valueType, enabled: advancedFilters.enabled });
-                setAdvancedOpen(false);
-              }}
+              onCancel={cancelAdvanced}
               onConfirm={confirmAdvanced}
             >
-              <Form<Filters> form={advancedForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
+              <Form<Filters> form={advancedForm} layout="vertical" className="modeling-advanced-filters" autoComplete="off" onFinish={() => { setAdvancedOpen(false); form.submit(); }}>
                 <Form.Item name="valueType" label="类型"><Select allowClear placeholder="全部类型" options={valueTypeOptions} className="advanced-filter-select" /></Form.Item>
                 <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item>
               </Form>
             </ManagementAdaptiveMoreFilters>
-          <ManagementFilterActions form={form} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={dictionariesQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-          <div className="management-result-title">码表管理 <span className="management-result-count">共 {dictionariesQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
-            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新码表列表" onClick={() => void dictionariesQuery.refetch()} /></Tooltip>
-            <Button
-              icon={<ExportOutlined />}
-              disabled={!selectedIds.length}
-              loading={exportMutation.isPending}
-              onClick={() => void exportSelected()}
-            >
-              导出
-            </Button>
+          <div className="modeling-page-actions management-filter-actions"><ManagementFilterActions formId="dictionary-list-filters" form={form} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={dictionariesQuery.isFetching} onReset={reset} /><div className="modeling-page-commands">
+            <Dropdown trigger={['click']} classNames={{ root: 'workspace-resource-menu' }} menu={{ items: [
+              ...(canManage ? [{ key: 'import', icon: <ImportOutlined />, label: '导入码表' }] : []),
+              { key: 'export', icon: <ExportOutlined />, label: selectedIds.length ? `导出勾选码表（${selectedIds.length}）` : '导出码表（请先勾选）', disabled: !selectedIds.length || exportMutation.isPending },
+            ], onClick: ({ key }) => { if (key === 'import') setImportOpen(true); else void exportSelected(); } }}>
+              <Button loading={exportMutation.isPending}>{canManage ? '导入/导出' : '导出'} <DownOutlined /></Button>
+            </Dropdown>
+            <Tooltip title="刷新列表"><Button icon={<ReloadOutlined />} aria-label="刷新码表列表" onClick={() => void dictionariesQuery.refetch()} /></Tooltip>
             {canManage && (
               <>
-                <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
@@ -254,7 +240,12 @@ export const StandardDictionaryPage = () => {
                 </Button>
               </>
             )}
-          </Space>
+          </div></div>
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title"><BookOutlined aria-hidden />码表管理 <span className="management-result-count">共 {dictionariesQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {dictionariesQuery.error && (
             <Alert
