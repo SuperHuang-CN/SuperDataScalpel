@@ -124,7 +124,7 @@ export const KafkaTopicPanel = ({ dataSource, active }: KafkaTopicPanelProps) =>
           showIcon
           type="error"
           message="Topic 加载失败"
-          description={topicsQuery.error instanceof ApiError ? topicsQuery.error.message : '请稍后重试。'}
+         description={topicsQuery.error instanceof ApiError ? topicsQuery.error.message : '请稍后重试。'}
           action={<Button size="small" onClick={() => void topicsQuery.refetch()}>重试</Button>}
         />
       )}

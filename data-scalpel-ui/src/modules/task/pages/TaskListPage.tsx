@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   ApartmentOutlined,
   DownOutlined,
@@ -141,7 +143,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
 
   const remove = (task: DataTask) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除任务',
+    title: <OverlayTitle icon={<DeleteOutlined />} title="删除任务" tone="danger" />, icon: null,
     content: `确认删除“${task.name}”吗？已有运行记录的任务不能删除。`,
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
     onOk: async () => {
@@ -159,7 +161,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
     if (task.status === 'DRAFT') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '发布任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="发布任务" />, icon: null,
         content: task.type === 'WORKFLOW' ? '发布会校验依赖图和引用任务的发布状态。' : task.type === 'SPARK_MODEL_QUALITY'
           ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
           : task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR'

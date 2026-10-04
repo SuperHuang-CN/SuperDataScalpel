@@ -1,6 +1,7 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Popconfirm, Select, Space, Switch, Table, Typography } from 'antd';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import type { CanvasColumnSchema, TrackFieldWindowBinding, TrackSplitExpression } from '../../canvasTypes';
 import { spatialColumnOptions } from '../spatialInspectorOptions';
 
@@ -41,7 +42,7 @@ export const TrackSplitEditor = ({ value, columns, onChange }: {
           value={row.offset} onChange={offset => update(row.index, { offset })} /> },
         { title: '状态', width: 70, render: (_, row) => error(row, row.index).length > 0
           ? <ContextHelp ariaLabel={`绑定 ${row.index + 1} 配置问题`} content={error(row, row.index).join('；')} /> : '—' },
-        { title: '', width: 36, render: (_, row) => <Popconfirm title={`删除绑定 ${row.name || row.index + 1}？`} description="表达式中的引用不会自动替换。"
+        { title: '', width: 36, render: (_, row) => <Popconfirm title={<OverlayTitle variant="popover" title={`删除绑定 ${row.name || row.index + 1}？`} />} description="表达式中的引用不会自动替换。"
           onConfirm={() => onChange({ ...value, bindings: value.bindings.filter((_, i) => i !== row.index) })}>
           <Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除绑定 ${row.index + 1}`} /></Popconfirm> },
       ]} />

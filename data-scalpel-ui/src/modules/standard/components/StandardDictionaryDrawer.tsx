@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ProfileOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, Row, Select, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
@@ -108,17 +109,7 @@ export const StandardDictionaryDrawer = ({ open, dictionary, onClose }: Props) =
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="standard-dictionary-drawer"
-        title={(
-          <div className="standard-dictionary-drawer-title">
-            <span className="standard-dictionary-drawer-title-icon" aria-hidden="true">
-              <StandardDictionaryValueTypeIcon valueType={selectedValueType} />
-            </span>
-            <span className="standard-dictionary-drawer-title-copy">
-              <span>{dictionary ? '修改码表' : '新建码表'}</span>
-              <Typography.Text type="secondary">定义稳定的取值域，并在创建后维护树形节点</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<StandardDictionaryValueTypeIcon valueType={selectedValueType} />} title={dictionary ? '修改码表' : '新建码表'} description="定义稳定的取值域，并在创建后维护树形节点" />}
         extra={<Tag className="standard-dictionary-drawer-header-tag">{standardDictionaryValueTypeLabels[selectedValueType]}</Tag>}
         open={open}
         size="min(640px, 100vw)"

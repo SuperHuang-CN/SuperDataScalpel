@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../shared/browser/createUuid';
 import { CameraOutlined, UploadOutlined } from '@ant-design/icons';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
@@ -48,8 +49,8 @@ export const PanoramaUploadDrawer = ({ onClose, defaultDirectoryId, target }: { 
     catch (e) { messageApi.error(e instanceof ApiError ? e.message : '重试失败'); }
     finally { setRetrying(undefined); }
   };
-  return <Drawer rootClassName="business-overlay business-drawer-overlay" open size={680} onClose={onClose} closable={!busy} maskClosable={!busy} keyboard={!busy}
-    title={<Space><CameraOutlined />{target ? `替换“${target.name}”` : '上传全景成品'}</Space>}
+  return <Drawer rootClassName="business-overlay business-drawer-overlay" open size={680} onClose={onClose} closable={busy ? false : { placement: 'end' }} maskClosable={!busy} keyboard={!busy}
+    title={<OverlayTitle icon={<CameraOutlined />} title={target ? `替换“${target.name}”` : '上传全景成品'} description="上传原图并维护全景影像信息" />}
     footer={<div className="panorama-drawer-footer"><span>{busy ? '正在上传，请保持页面打开' : `${items.length} 个成品`}</span><Space><Button disabled={busy} onClick={onClose}>关闭</Button><Button type="primary" loading={busy} disabled={!items.some(i => i.status === 'waiting')} onClick={() => void run(items.filter(i => i.status === 'waiting'))}>开始上传</Button></Space></div>}>
     {context}<Form layout="vertical" autoComplete="off">
       {!target && user.data?.permissions.includes('directory.view') && <Form.Item label="保存目录"><TreeSelect allowClear value={directoryId} onChange={setDirectoryId} treeData={directoryTreeSelectData(directories.data ?? [])} placeholder="未分类" /></Form.Item>}

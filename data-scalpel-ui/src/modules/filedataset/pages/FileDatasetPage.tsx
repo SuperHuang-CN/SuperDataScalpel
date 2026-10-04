@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DashboardOutlined,
@@ -89,8 +90,10 @@ export const FileDatasetPage = () => {
 
   const confirmDelete = (fileDataset: FileDataset) => {
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '删除文件数据集',
+      title: <OverlayTitle title="删除文件数据集" icon={<DeleteOutlined />} tone="danger" />,
       content: `确认删除“${fileDataset.name}”及其 ${fileDataset.fileCount} 个文件、${fileDataset.tableCount} 张表吗？`,
       okText: '删除',
       cancelText: '取消',

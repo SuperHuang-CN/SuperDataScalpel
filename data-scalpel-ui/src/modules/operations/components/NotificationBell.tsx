@@ -1,5 +1,6 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
-import { Badge, Button, Drawer, Empty, Pagination, Space, Spin, Tooltip, message } from 'antd';
+import { Badge, Button, Drawer, Empty, Pagination, Spin, Tooltip, message } from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
@@ -21,7 +22,7 @@ export const NotificationBell = () => {
   };
   return <>{context}<Tooltip title={unread.error ? '通知未读数暂不可用' : '站内通知'}>
     <Badge count={unread.data?.unreadCount} overflowCount={99} dot={Boolean(unread.error)}><Button type="text" icon={<BellOutlined />} aria-label="打开站内通知" onClick={() => setOpen(true)} /></Badge>
-  </Tooltip><Drawer rootClassName="business-overlay business-drawer-overlay" title={<Space><BellOutlined />站内通知</Space>} open={open} onClose={() => setOpen(false)} width={500}
+  </Tooltip><Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" title={<OverlayTitle icon={<BellOutlined />} title="站内通知" description="查看并处理最近的系统通知" />} open={open} onClose={() => setOpen(false)} width={500}
     footer={<Pagination current={page + 1} pageSize={10} total={query.data?.totalElements ?? 0} size="small" showSizeChanger={false} onChange={p => setPage(p - 1)} />}>
     {query.isPending && <Spin />}{query.error && <InlineFeedback tone="error" label="通知加载失败" detail={query.error.message} action={<Button type="link" onClick={() => void query.refetch()}>重试</Button>} />}
     <div className="ops-notification-list">{query.data?.content.map(n => <div className="ops-notification-row" key={n.id}>

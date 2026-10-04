@@ -102,7 +102,7 @@ export const DataSourceBasicPanel = ({ dataSource, directoryName }: DataSourceBa
   <div className="data-source-detail-tab-panel data-source-basic-panel">
     <BusinessDetailSection
       title="管理信息"
-      description="数据源的基础属性与归属信息"
+     description="数据源的基础属性与归属信息"
       icon={<ProfileOutlined />}
     >
       <BusinessDetailDescriptions
@@ -122,7 +122,7 @@ export const DataSourceBasicPanel = ({ dataSource, directoryName }: DataSourceBa
     </BusinessDetailSection>
     <BusinessDetailSection
       title="连接配置"
-      description="访问外部资源所需的连接参数"
+     description="访问外部资源所需的连接参数"
       icon={<DatabaseOutlined />}
     >
       <BusinessDetailDescriptions

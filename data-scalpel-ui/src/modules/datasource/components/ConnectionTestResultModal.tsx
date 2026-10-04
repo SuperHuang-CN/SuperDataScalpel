@@ -1,6 +1,7 @@
 import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CopyOutlined } from '@ant-design/icons';
+import { ApiOutlined, CopyOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Input, Modal, Space, message } from 'antd';
 import type { ConnectionTestResult } from '../model/dataSource';
 
@@ -61,7 +62,7 @@ export const ConnectionTestResultModal = ({
       <Modal
         rootClassName="business-overlay business-modal-overlay"
         open={open}
-        title="连接测试失败"
+        title={<OverlayTitle title="连接测试失败" icon={<ApiOutlined />} tone="danger" />}
         width={760}
         onCancel={onClose}
         destroyOnHidden
@@ -76,7 +77,7 @@ export const ConnectionTestResultModal = ({
           showIcon
           type="error"
           title={result.message}
-          description={`错误码 ${result.code} · 耗时 ${result.elapsedMs} ms`}
+         description={`错误码 ${result.code} · 耗时 ${result.elapsedMs} ms`}
         />
         <Descriptions size="small" bordered column={1} style={{ marginTop: 12 }}>
           {targetLabel && <Descriptions.Item label="连接目标">{targetLabel}</Descriptions.Item>}

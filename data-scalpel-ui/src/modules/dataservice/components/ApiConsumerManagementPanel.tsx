@@ -35,6 +35,7 @@ import { buildApiConsumerSearch } from '../model/apiConsumerSearch';
 import { ApiConsumerDrawer } from './ApiConsumerDrawer';
 import { ApiConsumerAccessDrawer } from './ApiConsumerAccessDrawer';
 import { GatewayReconciliationTag } from './GatewayReconciliationTag';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -147,8 +148,9 @@ export const ApiConsumerManagementPanel = ({
 
   const confirmRemove = (consumer: ApiConsumer) => {
     modal.confirm({
+      icon: null,
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '删除 API 消费者',
+      title: <OverlayTitle title="删除 API 消费者" icon={<DeleteOutlined />} tone="danger" />,
       content: `确认从网关和 DataScalpel 删除“${consumer.name}”吗？`,
       okText: '删除',
       cancelText: '取消',

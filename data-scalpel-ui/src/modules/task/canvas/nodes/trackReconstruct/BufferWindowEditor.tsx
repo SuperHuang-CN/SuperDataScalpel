@@ -1,6 +1,7 @@
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Popconfirm, Select, Space, Table, Typography } from 'antd';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import type { CanvasColumnSchema, TrackBufferWindowBinding } from '../../canvasTypes';
 import { spatialColumnOptions } from '../spatialInspectorOptions';
 import { numericBufferField } from './areaGeometry';
@@ -44,7 +45,7 @@ export function BufferWindowEditor({ value, columns, validationAvailable, onChan
         {title:'',width:124,render:(_,row) => <Space size={0}>
           <Button size="small" type="text" aria-label={`上移缓冲窗口 ${row.index+1}`} icon={<ArrowUpOutlined />} disabled={row.index===0} onClick={() => move(row.index,-1)} />
           <Button size="small" type="text" aria-label={`下移缓冲窗口 ${row.index+1}`} icon={<ArrowDownOutlined />} disabled={row.index===value.length-1} onClick={() => move(row.index,1)} />
-          <Popconfirm title={`删除窗口 ${row.name || row.index+1}？`} description="表达式中的引用不会自动修改。"
+          <Popconfirm title={<OverlayTitle variant="popover" title={`删除窗口 ${row.name || row.index+1}？`} />} description="表达式中的引用不会自动修改。"
             okText="删除窗口" cancelText="取消" onConfirm={() => onChange(value.filter((_,i) => i!==row.index))}>
             <Button size="small" type="text" danger aria-label={`删除缓冲窗口 ${row.index+1}`} icon={<DeleteOutlined />} />
           </Popconfirm>

@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { DeleteOutlined, EditOutlined, EllipsisOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Form, Input, Modal, Segmented, Select, Table, Tooltip, message, type TableProps } from 'antd';
 import { lazy, Suspense, useMemo, useState } from 'react';
@@ -33,7 +34,7 @@ export const PanoramaPage = () => {
   const query = usePanoramas(request); const command = usePanoramaCommand();
   const apply = (values: Filters) => { setFilters({ ...values, ...advanced }); setPage(0); };
   const reset = () => { form.resetFields(); setFilters({}); setAdvanced({}); setAdvancedDraft({}); setSelection(undefined); setPage(0); };
-  const remove = (p: Panorama) => modal.confirm({ title: '删除全景影像', content: `确认删除“${p.name}”及其原图和预览文件吗？`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+  const remove = (p: Panorama) => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除全景影像" tone="danger" />, icon: null, content: `确认删除“${p.name}”及其原图和预览文件吗？`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
     onOk: async () => { try { await command.mutateAsync({ id: p.id, action: 'delete' }); messageApi.success('全景已删除'); } catch (e) { messageApi.error(e instanceof ApiError ? e.message : '删除失败'); throw e; } } });
   const columns: TableProps<Panorama>['columns'] = [
     { title: '全景影像', width: 280, render: (_: unknown, p) => <div className="panorama-name-cell">{p.currentContent ? <PanoramaImage id={p.id} version={p.contentVersion} /> : <span className="panorama-no-preview">待处理</span>}<Button type="link" onClick={() => navigate(`/panorama/${p.id}`)} title={p.name}>{p.name}</Button></div> },

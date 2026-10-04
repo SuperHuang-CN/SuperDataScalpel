@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { EyeOutlined, InfoCircleOutlined, ReloadOutlined, SlidersOutlined, TableOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { DatabaseOutlined, EyeOutlined, InfoCircleOutlined, ReloadOutlined, SlidersOutlined, TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Checkbox, Drawer, Empty, Input, Select, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
@@ -269,7 +270,7 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
                     type="info"
                     showIcon
                     message={`主键：${metadataQuery.data.primaryKey.name ?? '未命名'}`}
-                    description={metadataQuery.data.primaryKey.columns.join('、')}
+                   description={metadataQuery.data.primaryKey.columns.join('、')}
                   />
                 )}
                 <Table<IndexMetadata>
@@ -417,14 +418,15 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
 export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSourceMetadataDrawerProps) => (
   <Drawer
     rootClassName="business-overlay business-drawer-overlay"
-    title={dataSource
+    title={<OverlayTitle title={dataSource
       ? `${dataSource.name} · ${dataSource.type.startsWith('TDENGINE_') ? '超级表结构' : '表结构'}`
-      : '表结构'}
+      : '表结构'} icon={<DatabaseOutlined />} description="浏览已连接数据源的表结构与字段信息" />}
     open={open}
     width="86vw"
     className="data-source-metadata-drawer"
     onClose={onClose}
     destroyOnHidden
+    closable={{ placement: 'end' }}
   >
     {dataSource && <DataSourceMetadataPanel key={dataSource.id} dataSource={dataSource} active={open} />}
   </Drawer>

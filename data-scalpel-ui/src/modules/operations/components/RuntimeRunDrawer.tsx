@@ -1,3 +1,5 @@
+import { StopOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Modal, message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import { TaskRunDetailDrawer, useCancelTaskRun, useForceTerminateTaskRun, useStopTaskRun, type TaskRun } from '../../task';
@@ -9,7 +11,7 @@ export const RuntimeRunDrawer = ({ runId, onClose }: { runId: string | null; onC
   const command = (run: TaskRun, force: boolean) => {
     const streaming = run.taskType === 'SPARK_STREAMING_CANVAS' || run.taskType === 'SPARK_STREAMING_JAR';
     const label = force ? '强制终止' : streaming ? '正常停止' : '取消运行';
-    modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: label,
+    modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<StopOutlined />} title={label} tone="danger" />, icon: null,
       content: `确认${label}运行“${run.id}”吗？${force ? '已写入的数据可能无法回滚。' : ''}`,
       okText: label, cancelText: '返回', okButtonProps: { danger: true },
       onOk: async () => {

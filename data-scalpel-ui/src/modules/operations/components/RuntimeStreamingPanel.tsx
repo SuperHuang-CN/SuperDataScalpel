@@ -1,3 +1,5 @@
+import { StopOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { MoreOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Form, Modal, Select, Table, Tag, Tooltip, message } from 'antd';
 import type { TableProps } from 'antd';
@@ -25,7 +27,7 @@ export const RuntimeStreamingPanel = () => {
   const stop = useStopTaskRun(); const terminate = useForceTerminateTaskRun(); const user = useCurrentUser(); const client = useQueryClient();
   const [modal, modalContext] = Modal.useModal(); const [notice, noticeContext] = message.useMessage();
   const command = (row: RuntimeStreaming, force: boolean) => modal.confirm({
-    rootClassName: 'business-overlay business-modal-overlay', title: force ? '强制终止实时运行' : '正常停止实时运行',
+    rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<StopOutlined />} title={force ? '强制终止实时运行' : '正常停止实时运行'} tone="danger" />, icon: null,
     content: `确认${force ? '强制终止' : '停止'}“${row.taskName}”当前运行吗？${force ? '当前批次可能尚未提交完成。' : ''}`,
     okText: force ? '强制终止' : '停止', cancelText: '返回', okButtonProps: { danger: true },
     onOk: async () => {

@@ -34,6 +34,7 @@ import {
   spatialJoinDistanceOutputSummary,
   spatialJoinNearSummary,
 } from './spatialNear';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 interface SpatialJoinFormValues {
   leftTableName: string;
@@ -565,7 +566,7 @@ const SpatialJoinInspector = ({
         <Modal
           open={projectionOpen}
           width={860}
-          title="设置空间连接输出字段"
+          title={<OverlayTitle variant="workspace" title="设置空间连接输出字段" />}
           okText="完成"
           cancelText="关闭"
           onOk={() => setProjectionOpen(false)}

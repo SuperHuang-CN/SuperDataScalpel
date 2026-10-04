@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { resolveTaskView } from '../model/taskViews';
 import { MetricRelationsPanel } from '../../metric';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
@@ -202,7 +204,7 @@ export const TaskDetailPage = () => {
     if (target.status === 'DRAFT') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '发布任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="发布任务" />, icon: null,
         content: target.type === 'WORKFLOW' ? '发布会校验依赖图和引用任务的发布状态。' : target.type === 'SPARK_MODEL_QUALITY'
           ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
           : isJarTask(target)
@@ -255,7 +257,7 @@ export const TaskDetailPage = () => {
       let checkpointMode: StreamingCheckpointMode = deployment ? 'CONTINUE' : 'FRESH';
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: deployment ? '启动 Spark 实时 JAR 任务' : '首次启动 Spark 实时 JAR 任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title={deployment ? '启动 Spark 实时 JAR 任务' : '首次启动 Spark 实时 JAR 任务'} />, icon: null,
         width: 560,
         content: (
           <CheckpointStartChoice
@@ -273,9 +275,7 @@ export const TaskDetailPage = () => {
     }
     modalApi.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
-      title: streamingState === 'FAILED' || streamingState === 'STOPPED'
-        ? '恢复 Spark 实时任务'
-        : '启动 Spark 实时任务',
+      title: <OverlayTitle icon={<ExclamationCircleOutlined />} title={streamingState === 'FAILED' || streamingState === 'STOPPED' ? '恢复 Spark 实时任务' : '启动 Spark 实时任务'} />, icon: null,
       content: '任务将持续消费 Kafka 数据。Kafka 与 JDBC Sink 均按至少一次处理，多输出使用独立 Checkpoint。',
       okText: '确认启动',
       cancelText: '取消',
@@ -285,7 +285,7 @@ export const TaskDetailPage = () => {
 
   const stopStreaming = (target: DataTask) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '正常停止 Spark 实时任务',
+    title: <OverlayTitle icon={<StopOutlined />} title="正常停止 Spark 实时任务" tone="danger" />, icon: null,
     content: '系统会通知 Runner 停止全部 StreamingQuery 并保留 Checkpoint，后续可从原位置恢复。',
     okText: '停止',
     okButtonProps: { danger: true },
@@ -313,7 +313,7 @@ export const TaskDetailPage = () => {
     if (target.type === 'SPARK_CANVAS') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '运行 Spark Canvas 任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="运行 Spark Canvas 任务" />, icon: null,
         content: '本次运行会真实访问输入数据源并写入 JDBC_OUTPUT 目标表。APPEND 会追加数据，OVERWRITE 会清空目标表后写入；多个输出之间不提供跨表事务回滚。',
         okText: '确认运行',
         cancelText: '取消',
@@ -324,7 +324,7 @@ export const TaskDetailPage = () => {
     if (target.type === 'SPARK_MODEL_QUALITY') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '运行 Spark 模型质检任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="运行 Spark 模型质检任务" />, icon: null,
         content: '本次运行会完整扫描目标模型，并使用当前启用且有效的质量规则。质量不通过不会改变数据，也不会影响其他任务状态。',
         okText: '确认运行',
         cancelText: '取消',
@@ -335,7 +335,7 @@ export const TaskDetailPage = () => {
     if (target.type === 'SPARK_JAR') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '运行 Spark JAR 任务',
+        title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="运行 Spark JAR 任务" />, icon: null,
         content: '本次运行会加载已上传的用户作业并真实访问声明绑定的资源。多个 SDK 写操作之间不提供跨目标事务回滚。',
         okText: '确认运行',
         cancelText: '取消',
@@ -348,7 +348,7 @@ export const TaskDetailPage = () => {
 
   const remove = (target: DataTask) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除任务',
+    title: <OverlayTitle icon={<DeleteOutlined />} title="删除任务" tone="danger" />, icon: null,
     content: `确认删除“${target.name}”吗？已有运行记录的任务不能删除。`,
     okText: '删除',
     okButtonProps: { danger: true },

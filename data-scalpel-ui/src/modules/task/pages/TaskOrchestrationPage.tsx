@@ -1,4 +1,5 @@
 import { Modal } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useCallback, useEffect, useState } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { CanvasDesigner } from '../canvas/CanvasDesigner';
@@ -33,7 +34,7 @@ export const TaskOrchestrationPage = () => {
       </div>
       <Modal
         open={blocker.state === 'blocked'}
-        title="节点配置尚未应用"
+        title={<OverlayTitle variant="workspace" title="节点配置尚未应用" />}
         okText="放弃并离开"
         okButtonProps={{ danger: true }}
         cancelText="继续编辑"

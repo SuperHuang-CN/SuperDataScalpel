@@ -1,3 +1,5 @@
+import { WarningOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { DownloadOutlined } from '@ant-design/icons';
 import { Button, Drawer, Empty, Space, Spin, Table, Tag, Typography, message } from 'antd';
@@ -64,12 +66,12 @@ export const QualityFailureSampleDrawer = ({
   };
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay"
       open={open}
       size="large"
       destroyOnHidden
-      title={ruleName ? `失败样本：${ruleName}` : '失败样本'}
+      title={<OverlayTitle icon={<WarningOutlined />} title={ruleName ? `失败样本：${ruleName}` : '失败样本'} description="查看并下载质检失败的样本数据" />}
       onClose={onClose}
       extra={(
         <Button

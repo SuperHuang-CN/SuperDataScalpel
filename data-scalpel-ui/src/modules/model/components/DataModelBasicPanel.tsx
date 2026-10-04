@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CheckCircleOutlined, CodeOutlined, DatabaseOutlined, FileTextOutlined, ProfileOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { CheckCircleOutlined, CodeOutlined, DatabaseOutlined, FileTextOutlined, ProfileOutlined, ReloadOutlined, SafetyCertificateOutlined, TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Descriptions, Modal, Space, Table, Tag, Typography, message } from 'antd';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
@@ -79,12 +80,14 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </div>
       );
       if (!forCreate) {
-        modalApi.info({ rootClassName: 'business-overlay business-modal-overlay', title: '建表 SQL', content, width: 820, okText: '关闭' });
+        modalApi.info({ icon: null, rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title="建表 SQL" icon={<CodeOutlined />} />, content, width: 820, okText: '关闭' });
         return;
       }
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '创建物理表',
+        title: <OverlayTitle title="创建物理表" icon={<TableOutlined />} />,
         content,
         width: 820,
         okText: '确认创建',
@@ -143,7 +146,7 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
           showIcon
           type="error"
           title="物理表检查失败"
-          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查 JDBC 数据源连接后重试。'}
+         description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查 JDBC 数据源连接后重试。'}
           action={<Button size="small" onClick={() => void inspectionQuery.refetch()}>重试</Button>}
         />
       )}

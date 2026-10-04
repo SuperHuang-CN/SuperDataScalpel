@@ -1,7 +1,5 @@
 .cartography-workbench { display:flex; flex-direction:column; height:100%; min-height:0; padding:14px; gap:10px; }
-.cartography-heading,.cartography-meta,.cartography-compact-row,.cartography-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.cartography-heading > div { display:flex; flex-direction:column; }
-.cartography-meta { color:#7a849f; font-size:12px; }
+.cartography-compact-row,.cartography-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .cartography-scroll { flex:1; min-height:0; overflow:auto; padding-right:2px; }
 .cartography-renderer-editor,.cartography-label-editor,.cartography-symbol-editor,.cartography-style-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .cartography-renderer-editor > .cartography-field-wide,.cartography-renderer-editor > .cartography-compact-row,.cartography-renderer-editor > .cartography-rule-list,.cartography-renderer-editor > .cartography-toggle-list,.cartography-renderer-editor > .cartography-breaks,.cartography-renderer-editor > .cartography-range-row,.cartography-renderer-editor > .ant-typography,.cartography-label-editor > .cartography-toggle,.cartography-label-editor > .cartography-style-grid { grid-column:1/-1; }
@@ -40,5 +38,7 @@
 .cartography-sld-source { margin-top:12px; min-width:0; }
 .cartography-sld-content { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .cartography-sld-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-.cartography-actions { flex:none; padding-top:10px; border-top:1px solid rgb(77 96 166 / 12%); }
+.cartography-actions { flex:none; flex-direction:column; align-items:stretch; }
+.cartography-action-buttons { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:6px; width:100%; }
+.cartography-action-buttons > .ant-btn { width:100%; min-width:0; }
 @media (max-width: 520px) { .cartography-renderer-editor,.cartography-label-editor,.cartography-symbol-editor,.cartography-style-grid { grid-template-columns:1fr; } .cartography-compact-row { align-items:stretch; flex-direction:column; } }

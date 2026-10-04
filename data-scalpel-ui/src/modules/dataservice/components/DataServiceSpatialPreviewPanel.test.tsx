@@ -72,6 +72,18 @@ describe('spatial preview source selection', () => {
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
 
+  it('renders the current view automatically after applying the style', async () => {
+    render(<DataServiceSpatialPreviewPanel {...props} />);
+    await waitFor(() => expect(renderButton()).toBeEnabled());
+    expect(mocks.draft).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /在线配图/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '重新应用' }));
+    await waitFor(() => expect(mocks.mutation).toHaveBeenCalledWith('service-a'));
+    await waitFor(() => expect(mocks.draft).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByText(/当前图片：在线制图草稿/)).toBeInTheDocument());
+    expect(mocks.live).not.toHaveBeenCalled();
+  });
+
   it('ignores an older request when switching preview sources', async () => {
     let finishDraft: (blob: Blob) => void = () => undefined;
     mocks.draft.mockImplementationOnce(() => new Promise<Blob>(resolve => { finishDraft = resolve; }));

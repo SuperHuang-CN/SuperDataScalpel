@@ -1,5 +1,5 @@
 import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
-import { DownOutlined, UpOutlined } from '@ant-design/icons';
+import { DownOutlined, UpOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { Button, Form, Modal, Select, Splitter, Tag, Typography } from 'antd';
 import { useRef, useState } from 'react';
 import { MonacoSqlEditor } from '../../../../shared/components/MonacoSqlEditor';
@@ -11,6 +11,7 @@ import type { DataServiceFormValues } from '../../model/dataServiceEditor';
 import { SqlModelSelection } from './SqlModelSelection';
 import { SqlParameterEditor } from './SqlParameterEditor';
 import { SqlTestPanel } from './SqlTestPanel';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 
 interface SqlServiceEditorProps {
   form: ReturnType<typeof Form.useForm<DataServiceFormValues>>[0];
@@ -115,7 +116,9 @@ export const SqlServiceEditor = ({
       return;
     }
     modal.confirm({
-      title: '切换 SQL 数据源？',
+      rootClassName: 'business-overlay business-modal-overlay',
+      icon: null,
+      title: <OverlayTitle title="切换 SQL 数据源？" icon={<ExclamationCircleOutlined />} />,
       content: `切换数据源将清空当前关联的 ${selectedModelIds.length} 个模型和 SQL 测试结果。`,
       okText: '切换并清空',
       cancelText: '取消',

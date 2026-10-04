@@ -3,6 +3,7 @@ import { Button, Checkbox, Input, Modal, Space, Table, Tooltip, Typography } fro
 import { useState } from 'react';
 import type { CanvasColumnSchema, SpatialCenterFeatureColumn } from '../../canvasTypes';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 function suggestCenterFeatureColumns(columns: CanvasColumnSchema[], geometry: string): SpatialCenterFeatureColumn[] {
   return columns.filter(c => c.name !== geometry).map(c => ({ sourceColumnName: c.name, outputColumnName: c.name, included: true }));
@@ -25,12 +26,12 @@ export default function FeatureColumnsModal({ value, columns, geometry, outputGe
   const invalidName = (field: SpatialCenterFeatureColumn) => field.included && (!field.outputColumnName.trim()
     || field.outputColumnName.toLowerCase() === outputGeometry.toLowerCase()
     || draft.filter(c => c.included && c.outputColumnName.toLowerCase() === field.outputColumnName.toLowerCase()).length > 1);
-  return <Modal open width={760} title="中央要素 · 原始字段" okText="保存字段草稿" cancelText="取消" onCancel={onCancel} onOk={() => onSave(draft)}>
+  return <Modal open width={760} title={<OverlayTitle variant="workspace" title="中央要素 · 原始字段" />} okText="保存字段草稿" cancelText="取消" onCancel={onCancel} onOk={() => onSave(draft)}>
     <Space orientation="vertical" style={{ width: '100%' }}>
       <Space wrap>
         <Typography.Text>保留 {draft.filter(c => c.included).length} 个原始字段</Typography.Text>
         <ContextHelp ariaLabel="中央要素字段说明" presentation="popover" content="字段均来自同一条选中的原始记录。分组和 ID 也可以排除或改名；结果 Geometry 始终单独输出。保留来源事件时间字段时同步改名元数据，排除时清除；不产生 Watermark。切换分析类型或旧宽表模式保留但不使用此配置。" />
-        <Button size="small" disabled={!columns.length} onClick={() => Modal.confirm({ title: '按当前来源重建字段建议？',
+        <Button size="small" disabled={!columns.length} onClick={() => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'按当前来源重建字段建议？'} />,
           content: '将替换当前排除、改名和顺序设置；结果 Geometry 不重复添加。', okText: '重建建议', cancelText: '取消',
           onOk: () => setDraft(suggestCenterFeatureColumns(columns, geometry)) })}>重建建议</Button>
       </Space>

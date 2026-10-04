@@ -52,6 +52,7 @@ import { createWithinGroupResult } from './groupResult';
 import { createWithinRegions, withinGridHelp } from './regions';
 import { RegionsModal } from './RegionsModal';
 import { spatialDistanceUnitOptions as lengthUnits, spatialAreaUnitOptions as areaUnits, spatialUnitHelp } from '../spatialUnits';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 const fingerprint = (value: SpatialSummarizeWithinConfiguration) => JSON.stringify(value);
 
 const SpatialSummarizeWithinInspector = ({
@@ -310,7 +311,7 @@ const SpatialSummarizeWithinInspector = ({
           <Input placeholder="例如 district_summary" />
         </Form.Item>
 
-        <Modal open={areaFieldsOpen} width={760} title="设置区域输出字段" okText="完成"
+        <Modal open={areaFieldsOpen} width={760} title={<OverlayTitle variant="workspace" title="设置区域输出字段" />} okText="完成"
           onOk={() => setAreaFieldsOpen(false)} onCancel={() => setAreaFieldsOpen(false)}>
           <Space orientation="vertical" size={6} style={{ width: '100%' }}>
             {areaOutputColumns.map((column, index) => (
@@ -341,7 +342,7 @@ const SpatialSummarizeWithinInspector = ({
           </Space>
         </Modal>
 
-        <Modal open={statisticsOpen} destroyOnHidden width={860} title="设置区域统计项" okText="完成" cancelText="取消"
+        <Modal open={statisticsOpen} destroyOnHidden width={860} title={<OverlayTitle variant="workspace" title="设置区域统计项" />} okText="完成" cancelText="取消"
           onOk={() => {
             form.setFieldValue('statistics', statisticsDraft);
             markDirty({ ...form.getFieldsValue(true), statistics: statisticsDraft });
@@ -367,7 +368,7 @@ const SpatialSummarizeWithinInspector = ({
             onChange={setStatisticsDraft} />
         </Modal>
 
-        <Modal open={groupOpen} width={680} title="设置分组汇总" okText="保存草稿"
+        <Modal open={groupOpen} width={680} title={<OverlayTitle variant="workspace" title="设置分组汇总" />} okText="保存草稿"
           onOk={() => {
             const nextResult = { ...groupResultDraft, mode: linkedDraft ? 'LINKED_TABLES' as const : 'LEGACY_FLAT' as const };
             form.setFieldValue('groupSummary', groupDraft);
@@ -381,7 +382,7 @@ const SpatialSummarizeWithinInspector = ({
           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Select aria-label="分组结果模式" style={{ width: '100%' }} value={linkedDraft ? 'LINKED' : 'LEGACY'}
             options={[{ value: 'LINKED', label: '主表 + 关联组表（推荐）' }, { value: 'LEGACY', label: '旧版扁平分组表' }]}
-            onChange={mode => Modal.confirm({ title: '切换分组结果模式？',
+            onChange={mode => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换分组结果模式？'} />,
               content: '将改变结果表数量、行粒度及少数/多数语义。已有配置保留，请检查下游使用的表和字段。',
               okText: '确认切换', onOk: () => setLinkedDraft(mode === 'LINKED'),
             })} />
@@ -397,7 +398,7 @@ const SpatialSummarizeWithinInspector = ({
           </Space>
         </Modal>
 
-        <Modal open={temporalOpen} width={620} title="设置时间切片" okText="保存草稿"
+        <Modal open={temporalOpen} width={620} title={<OverlayTitle variant="workspace" title="设置时间切片" />} okText="保存草稿"
           onOk={() => {
             form.setFieldValue('temporalSlicing', temporalDraft);
             markDirty({ ...form.getFieldsValue(true), temporalSlicing: temporalDraft });
@@ -420,7 +421,7 @@ const SpatialSummarizeWithinInspector = ({
           markDirty();
           setRegionsOpen(false);
         }} />}
-      <Modal open={pendingRegionsMode !== null} title="切换汇总区域来源？" okText="确认切换区域" cancelText="取消"
+      <Modal open={pendingRegionsMode !== null} title={<OverlayTitle variant="workspace" title="切换汇总区域来源？" />} okText="确认切换区域" cancelText="取消"
         onCancel={() => setPendingRegionsMode(null)} onOk={() => {
           if (pendingRegionsMode) {
             form.setFieldValue('regions', { ...createWithinRegions(), ...regions, mode: pendingRegionsMode });

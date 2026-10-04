@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ApartmentOutlined, CloudServerOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Radio, Row, Select, Space, Tag, TreeSelect, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
@@ -96,18 +97,10 @@ export const TaskDrawer = ({
   };
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay"
       className="data-model-drawer task-basic-drawer"
-      title={(
-        <div className="data-model-drawer-title">
-          <span className="data-model-drawer-title-icon" aria-hidden="true"><ApartmentOutlined /></span>
-          <span className="data-model-drawer-title-copy">
-            <span>{task ? '修改任务基本信息' : `新建${view === 'all' ? '任务' : viewConfig.label}`}</span>
-            <Typography.Text type="secondary">维护任务身份、所属目录与默认执行资源</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle icon={<ApartmentOutlined />} title={task ? '修改任务基本信息' : `新建${view === 'all' ? '任务' : viewConfig.label}`} description="维护任务身份、所属目录与默认执行资源" />}
       extra={<Tag className="data-model-drawer-header-tag">{taskType ? taskTypeLabels[taskType] : '待选择类型'}</Tag>}
       open={open}
       width={720}

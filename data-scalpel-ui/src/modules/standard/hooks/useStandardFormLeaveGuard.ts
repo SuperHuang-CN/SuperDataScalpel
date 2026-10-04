@@ -1,5 +1,7 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Modal } from 'antd';
-import { useCallback, useEffect } from 'react';
+import { createElement, useCallback, useEffect } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 
 interface StandardFormLeaveGuardOptions {
@@ -35,7 +37,8 @@ export const useStandardFormLeaveGuard = ({
     if (blocker.state !== 'blocked') return;
     const confirmation = Modal.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '放弃未保存修改？',
+      title: createElement(OverlayTitle, { icon: createElement(ExclamationCircleOutlined), title: '放弃未保存修改？', tone: 'danger' }),
+      icon: null,
       content,
       okText: '放弃修改',
       cancelText: '继续编辑',
@@ -55,7 +58,8 @@ export const useStandardFormLeaveGuard = ({
     }
     Modal.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '放弃未保存修改？',
+      title: createElement(OverlayTitle, { icon: createElement(ExclamationCircleOutlined), title: '放弃未保存修改？', tone: 'danger' }),
+      icon: null,
       content,
       okText: '放弃修改',
       cancelText: '继续编辑',

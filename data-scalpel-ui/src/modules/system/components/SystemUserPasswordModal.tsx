@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { KeyOutlined, LockOutlined } from '@ant-design/icons';
 import { Button, Form, Modal, Space, Tag, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
@@ -48,15 +49,7 @@ export const SystemUserPasswordModal = ({ user, onClose }: SystemUserPasswordMod
       {messageContext}
       <Modal
         rootClassName="business-overlay business-modal-overlay system-user-password-modal"
-        title={(
-          <div className="system-user-password-title">
-            <span className="system-user-password-title-icon" aria-hidden="true"><KeyOutlined /></span>
-            <span className="system-user-password-title-copy">
-              <span>重置用户密码</span>
-              <Typography.Text type="secondary">为指定账号设置新的登录凭据</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<KeyOutlined />} title="重置用户密码" description="为指定账号设置新的登录凭据" />}
         open={Boolean(user)}
         onCancel={close}
         closable={!resetMutation.isPending}

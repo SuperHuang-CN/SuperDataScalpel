@@ -1,4 +1,5 @@
 import { DatabaseOutlined, IdcardOutlined, TableOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import type { TableProps } from 'antd';
 import { Badge, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
@@ -19,7 +20,6 @@ import {
 import {
   dataModelFieldTypeLabels,
   dataModelStatusLabels,
-  physicalTableModeLabels,
   type CreateDataModelRequest,
   type DataModel,
   type ExternalTableImportColumn,
@@ -395,20 +395,7 @@ export const DataModelDrawer = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="data-model-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><TableOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{editing ? '修改模型' : '新建模型'}</span>
-              <Typography.Text type="secondary">定义模型标识、业务归属与物理存储位置</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={(
-          <Tag className="data-model-drawer-header-tag">
-            {editing ? dataModelStatusLabels[model?.status ?? 'DRAFT'] : physicalTableModeLabels[effectivePhysicalMode]}
-          </Tag>
-        )}
+        title={<OverlayTitle title={editing ? '修改模型' : '新建模型'} icon={<TableOutlined />} description="定义模型标识、业务归属与物理存储位置" />}
         open={open}
         size="min(960px, 100vw)"
         closable={pending ? false : { placement: 'end' }}
@@ -443,7 +430,7 @@ export const DataModelDrawer = ({
         >
           <DataModelFormSection
             title="模型信息"
-            description="用于识别模型并建立目录与数仓分层归属"
+           description="用于识别模型并建立目录与数仓分层归属"
             icon={<IdcardOutlined />}
           >
             <Row gutter={14}>
@@ -516,7 +503,7 @@ export const DataModelDrawer = ({
 
           <DataModelFormSection
             title="存储与物理表"
-            description="选择物理表的管理方式、存储数据源和实际表位置"
+           description="选择物理表的管理方式、存储数据源和实际表位置"
             icon={<DatabaseOutlined />}
             help={externalTableMode
               ? '选择已有表后会读取并导入字段；发布前仍会实时校验，系统不会修改该表。'

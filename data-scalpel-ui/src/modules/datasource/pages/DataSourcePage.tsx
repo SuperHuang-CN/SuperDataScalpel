@@ -10,6 +10,7 @@ import {
   ShareAltOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -204,8 +205,10 @@ export const DataSourcePage = () => {
     }
   };
   const confirmRemove = (dataSource: DataSource) => Modal.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除数据源', content: `确认删除“${dataSource.name}”吗？`, okText: '删除', cancelText: '取消',
+    title: <OverlayTitle title="删除数据源" icon={<DeleteOutlined />} tone="danger" />, content: `确认删除“${dataSource.name}”吗？`, okText: '删除', cancelText: '取消',
     okButtonProps: { danger: true }, onOk: () => remove(dataSource),
   });
 

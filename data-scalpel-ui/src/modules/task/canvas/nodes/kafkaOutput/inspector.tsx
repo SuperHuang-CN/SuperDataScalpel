@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
@@ -114,7 +115,7 @@ const KafkaOutputCanvasNodeInspector = ({
   };
   const removeWrite = (write: KafkaOutputWrite) => {
     Modal.confirm({
-      title: '删除这条 Kafka 写入？',
+      title: <OverlayTitle variant="workspace" title="删除这条 Kafka 写入？" tone="danger" />,
       content: write.topic
         ? `Topic ${write.topic} 的 Value 格式、字段选择和 Key 会一并删除。`
         : '未完成的写入配置会一并删除。',
@@ -183,7 +184,7 @@ const KafkaOutputCanvasNodeInspector = ({
       </Typography.Text>
     </Space>
     <Modal className="canvas-output-write-modal" open={Boolean(editingWrite)} width={1080} destroyOnHidden styles={{ body: { overflow: 'hidden' } }}
-      title={editingWrite ? `设置 Kafka 写入 · ${editingWrite.sourceTableName || '未选择来源流表'}` : '设置 Kafka 写入'}
+      title={<OverlayTitle variant="workspace" title={editingWrite ? `设置 Kafka 写入 · ${editingWrite.sourceTableName || '未选择来源流表'}` : '设置 Kafka 写入'} />}
       onCancel={() => setEditingWriteId(null)}
       onOk={async () => { const applied = await settingsRef.current?.apply(); if (applied) setEditingWriteId(null); }}
       okText="保存此项" cancelText="取消">

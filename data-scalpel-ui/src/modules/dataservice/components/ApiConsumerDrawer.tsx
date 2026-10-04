@@ -10,6 +10,7 @@ import type {
   GatewayConsumerBinding,
   UpdateApiConsumerRequest,
 } from '../model/apiConsumer';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface ApiConsumerDrawerProps {
   open: boolean;
@@ -82,19 +83,11 @@ export const ApiConsumerDrawer = ({ open, consumer, onClose }: ApiConsumerDrawer
   return (
     <>
       {messageContext}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay"
         className="data-model-drawer api-consumer-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><UsergroupAddOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{editing ? '修改 API 消费者' : '新建 API 消费者'}</span>
-              <Typography.Text type="secondary">维护调用方身份及其跨网关稳定标识</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={<Tag className="data-model-drawer-header-tag">{consumer ? `v${consumer.revision}` : '新消费者'}</Tag>}
+        title={<OverlayTitle title={editing ? '修改 API 消费者' : '新建 API 消费者'} icon={<UsergroupAddOutlined />} description="维护调用方身份及其跨网关稳定标识" />}
+        extra={consumer ? <Tag className="data-model-drawer-header-tag">v{consumer.revision}</Tag> : undefined}
         open={open}
         size={720}
         onClose={close}

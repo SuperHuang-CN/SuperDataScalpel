@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { EnvironmentOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, InputNumber, Space, message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,7 +12,7 @@ export const PanoramaMapSettingsDrawer = ({ configuration, onClose }: { configur
     try { await mutation.mutateAsync({ id: configuration.id, request: { configValue: JSON.stringify({ url: values.url?.trim() ?? '', attribution: values.attribution?.trim() ?? '', maxZoom: values.maxZoom }) } }); await client.invalidateQueries({ queryKey: ['panorama-map-config'] }); messageApi.success('全景地图设置已保存'); onClose(); }
     catch (e) { messageApi.error(e instanceof ApiError ? e.message : '保存失败'); }
   };
-  return <Drawer open size={680} rootClassName="business-overlay business-drawer-overlay" onClose={onClose} title={<Space><EnvironmentOutlined />全景地图设置</Space>}
+  return <Drawer closable={{ placement: 'end' }} open size={680} rootClassName="business-overlay business-drawer-overlay" onClose={onClose} title={<OverlayTitle icon={<EnvironmentOutlined />} title="全景地图设置" description="设置全景地图的默认展示参数" />}
     footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}><Button onClick={onClose}>取消</Button><Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}>
     {context}<Form form={form} autoComplete="off" layout="vertical" initialValues={parsePanoramaMapSettings(configuration.configValue)} onFinish={values => void submit(values)}>
       <Form.Item name="url" label="XYZ 瓦片 URL" extra="标准 Web Mercator XYZ 地址，包含 {z}、{x}、{y}；留空关闭底图。" rules={[{ max: 3000 }, { validator: async (_, value: string | undefined) => {

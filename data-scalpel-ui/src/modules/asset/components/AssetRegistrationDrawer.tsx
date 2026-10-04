@@ -6,6 +6,7 @@ import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { useAssetCandidates, useRegisterAssets } from '../hooks/useAssets';
 import { assetTypeLabels, type AssetCandidate, type AssetType } from '../model/asset';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface AssetRegistrationDrawerProps {
   open: boolean;
@@ -74,18 +75,10 @@ export const AssetRegistrationDrawer = ({ open, onClose }: AssetRegistrationDraw
   return (
     <>
       {contextHolder}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay"
         className="data-model-drawer asset-registration-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><AppstoreAddOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>登记数据资产</span>
-              <Typography.Text type="secondary">从现有资源中选择对象并创建资产门户草稿</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="登记数据资产" icon={<AppstoreAddOutlined />} description="从现有资源中选择对象并创建资产门户草稿" />}
         extra={<Tag className="data-model-drawer-header-tag">{assetTypeLabels[assetType]}</Tag>}
         open={open}
         width={920}

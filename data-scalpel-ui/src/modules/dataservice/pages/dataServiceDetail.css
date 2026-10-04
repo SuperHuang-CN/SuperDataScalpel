@@ -292,7 +292,6 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
   min-width: 0;
 }
 
@@ -306,26 +305,47 @@
 }
 
 .data-service-spatial-preview-toolbar {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 64px;
+  left: 12px;
   display: flex;
-  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.data-service-spatial-preview-controls,
+.data-service-spatial-preview-indicators {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 38px;
-  padding: 4px 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(560px, 100%);
+  padding: 6px 8px;
   color: #4d5875;
-  background: rgb(246 248 255 / 88%);
-  border: 1px solid rgb(77 96 166 / 13%);
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid rgb(77 96 166 / 14%);
   border-radius: 10px;
+  box-shadow: 0 6px 18px rgb(56 68 112 / 12%);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
 }
 
-.data-service-spatial-preview-toolbar .ant-tag {
-  margin-inline-end: 0;
+.data-service-spatial-preview-controls > .ant-space {
+  max-width: 100%;
 }
 
-.data-service-spatial-preview-toolbar code {
-  color: #2d3b66;
+.data-service-spatial-preview-indicators {
   font-size: 12px;
+}
+
+.data-service-spatial-preview-indicators .ant-tag {
+  margin-inline-end: 0;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .data-service-spatial-preview-crs {
@@ -360,41 +380,17 @@
 }
 
 .data-service-spatial-preview-loading {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 2;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  color: #4b5675;
-  font-size: 12px;
-  background: rgb(255 255 255 / 92%);
-  border: 1px solid rgb(77 96 166 / 14%);
-  border-radius: 999px;
-  box-shadow: 0 6px 18px rgb(56 68 112 / 12%);
-  transform: translateX(-50%);
-  backdrop-filter: blur(8px);
+  gap: 6px;
 }
 
 .data-service-spatial-preview-manual-hint {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 2;
-  max-width: calc(100% - 128px);
-  padding: 6px 10px;
   color: #5b6682;
-  font-size: 12px;
-  text-align: center;
-  background: rgb(255 255 255 / 90%);
-  border: 1px solid rgb(77 96 166 / 14%);
-  border-radius: 999px;
-  box-shadow: 0 6px 18px rgb(56 68 112 / 10%);
-  transform: translateX(-50%);
-  pointer-events: none;
-  backdrop-filter: blur(8px);
+}
+
+.data-service-spatial-preview-map-wrap .workspace-floating-feedback-bottom-left {
+  bottom: 44px;
 }
 
 .data-service-spatial-preview-legend {
@@ -591,11 +587,6 @@
 }
 
 @media (max-width: 720px) {
-  .data-service-spatial-preview-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .data-service-spatial-preview-map-wrap {
     min-height: 360px;
   }

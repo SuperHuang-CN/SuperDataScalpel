@@ -13,6 +13,7 @@ import {
   StopOutlined,
   TeamOutlined,
   UploadOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
@@ -60,6 +61,7 @@ import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
 import { normalizeDataServiceDetailTab, type DataServiceDetailTabKey } from '../model/dataServiceDetail';
 import { gatewayOperationError, publishedGatewayBinding } from '../model/dataServiceGateway';
 import './dataServiceDetail.css';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface DataServiceDetailLocationState {
   fromDataServiceList?: boolean;
@@ -162,7 +164,9 @@ export const DataServiceDetailPage = () => {
     if (styleBlocker.state !== 'blocked' || styleBlockerPromptOpenRef.current) return;
     styleBlockerPromptOpenRef.current = true;
     modalApi.confirm({
-      title: '放弃未保存的样式修改？',
+      rootClassName: 'business-overlay business-modal-overlay',
+      icon: null,
+      title: <OverlayTitle title="放弃未保存的样式修改？" icon={<ExclamationCircleOutlined />} />,
       content: '当前在线配图还没有保存，离开页面后修改会丢失。',
       okText: '放弃并离开',
       okButtonProps: { danger: true },
@@ -202,7 +206,9 @@ export const DataServiceDetailPage = () => {
   const backToList = () => {
     if (spatialStyleDirty) {
       modalApi.confirm({
-        title: '放弃未保存的样式修改？',
+        rootClassName: 'business-overlay business-modal-overlay',
+        icon: null,
+        title: <OverlayTitle title="放弃未保存的样式修改？" icon={<ExclamationCircleOutlined />} />,
         content: '当前在线配图还没有保存，离开页面后修改会丢失。',
         okText: '放弃并离开',
         okButtonProps: { danger: true },
@@ -246,8 +252,9 @@ export const DataServiceDetailPage = () => {
   };
 
   const disable = (target: DataServiceDetail) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '停用数据服务？',
+    title: <OverlayTitle title="停用数据服务？" icon={<StopOutlined />} tone="danger" />,
     content: target.type === 'SPATIAL_SERVICE'
       ? `将从 GeoServer 删除“${target.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。`
       : `将先从所有网关撤回“${target.name}”，再从 Service Engine 移除；停用成功后才能修改定义。`,
@@ -284,8 +291,9 @@ export const DataServiceDetailPage = () => {
   };
 
   const unpublish = (target: DataServiceDetail) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '取消发布到网关？',
+    title: <OverlayTitle title="取消发布到网关？" icon={<RollbackOutlined />} tone="danger" />,
     content: `取消后“${target.name}”将无法通过网关访问，Service Engine 保持运行。`,
     okText: '取消发布',
     cancelText: '返回',
@@ -349,8 +357,9 @@ export const DataServiceDetailPage = () => {
   };
 
   const remove = (target: DataServiceDetail) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除数据服务',
+    title: <OverlayTitle title="删除数据服务" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${target.name}”吗？`,
     okText: '删除',
     cancelText: '取消',
@@ -577,7 +586,9 @@ export const DataServiceDetailPage = () => {
           );
           if (activeTab === 'cartography' && key !== 'cartography' && spatialStyleDirty) {
             modalApi.confirm({
-              title: '放弃未保存的样式修改？',
+              rootClassName: 'business-overlay business-modal-overlay',
+              icon: null,
+              title: <OverlayTitle title="放弃未保存的样式修改？" icon={<ExclamationCircleOutlined />} />,
               content: '切换页签后，当前在线配图修改会丢失。',
               okText: '放弃并切换',
               okButtonProps: { danger: true },

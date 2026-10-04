@@ -24,7 +24,7 @@ public record UpdateDataEntryLookupsRequest(
             @NotNull UUID targetFieldId,
             @Schema(description = "提供选项的已发布来源模型 UUID；必须具有唯一的单字段业务主键")
             @NotNull UUID sourceModelId,
-            @Schema(description = "来源模型中作为显示标签的非空 STRING 字段 UUID；实际保存值固定取来源业务主键")
+            @Schema(description = "来源模型中作为显示标签的 STRING 字段 UUID；字段允许可空，记录标签为 null 或空白时显示业务主键；实际保存值固定取来源业务主键")
             @NotNull UUID sourceLabelFieldId
     ) {
     }

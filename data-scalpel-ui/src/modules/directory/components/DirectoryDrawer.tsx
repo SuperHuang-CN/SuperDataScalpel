@@ -1,4 +1,5 @@
 import { ApartmentOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Badge, Button, Drawer, Form, Input, InputNumber, Space, Tag, TreeSelect, Typography, message } from 'antd';
 import { useEffect } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -74,15 +75,7 @@ export const DirectoryDrawer = ({ scope, label = '目录', open, directory, init
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="directory-editor-drawer"
-        title={(
-          <div className="directory-editor-drawer-title">
-            <span className="directory-editor-drawer-title-icon" aria-hidden="true"><FolderOpenOutlined /></span>
-            <span className="directory-editor-drawer-title-copy">
-              <span>{editing ? `修改${label}` : `新建${label}`}</span>
-              <Typography.Text type="secondary">组织资源层级、显示顺序与目录说明</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={editing ? `修改${label}` : `新建${label}`} icon={<FolderOpenOutlined />} description="组织资源层级、显示顺序与目录说明" />}
         extra={<Tag className="directory-editor-drawer-header-tag">{editing ? directory?.name : label}</Tag>}
         open={open}
         size="min(600px, 100vw)"

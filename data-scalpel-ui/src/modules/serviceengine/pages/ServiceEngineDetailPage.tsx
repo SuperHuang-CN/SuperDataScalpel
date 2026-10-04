@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   ApiOutlined,
   ArrowLeftOutlined,
@@ -90,7 +91,7 @@ export const ServiceEngineDetailPage = () => {
     if (!engine) return;
     modalApi.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '删除 Service Engine',
+      title: <OverlayTitle icon={<DeleteOutlined />} title="删除 Service Engine" tone="danger" />, icon: null,
       content: `确认删除“${engine.name}”吗？`,
       okText: '删除',
       cancelText: '取消',

@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -154,7 +155,7 @@ export const TdEngineTmqInputInspector = ({ node, validation, validationUnavaila
       </Form.Item> : null}
       <Alert type="info" showIcon message="首次启动位置仅在没有 Spark Checkpoint 时生效；Offset 跨度不等于行数。" />
     </Form>
-    <Modal rootClassName="business-overlay business-modal-overlay" title={`超级表字段 · ${detailQuery.data?.supertableName ?? ''}`} open={fieldModal} footer={null} width={760} onCancel={() => setFieldModal(false)}>
+    <Modal rootClassName="canvas-overlay" title={<OverlayTitle variant="workspace" title={`超级表字段 · ${detailQuery.data?.supertableName ?? ''}`} />} open={fieldModal} footer={null} width={760} onCancel={() => setFieldModal(false)}>
       <Table size="small" pagination={false} rowKey="name" dataSource={detailQuery.data?.columns ?? []} columns={[{ title: '字段', dataIndex: 'name', render: (value: string) => <code>{value}</code> }, { title: '角色', dataIndex: 'role' }, { title: 'TDengine 类型', dataIndex: 'nativeType' }, { title: '平台类型', render: (_, column) => column.platformTypeDefinition?.type ?? '—' }]} />
     </Modal>
   </Space>;

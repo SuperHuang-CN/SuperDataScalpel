@@ -1,4 +1,5 @@
 import { DeleteOutlined, DownloadOutlined, FolderOpenOutlined, InboxOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Modal, Space, Tag, Typography, Upload, message } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -65,15 +66,7 @@ export const DirectoryImportModal = ({ scope, label, open, onClose }: DirectoryI
       {messageContext}
       <Modal
         rootClassName="business-overlay business-modal-overlay directory-import-modal"
-        title={(
-          <div className="directory-import-title">
-            <span className="directory-import-title-icon" aria-hidden="true"><FolderOpenOutlined /></span>
-            <span className="directory-import-title-copy">
-              <span>导入{label}</span>
-              <Typography.Text type="secondary">从固定模板批量建立或更新目录层级</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={`导入${label}`} icon={<FolderOpenOutlined />} description="从固定模板批量建立或更新目录层级" />}
         open={open}
         destroyOnHidden
         closable={!importMutation.isPending}

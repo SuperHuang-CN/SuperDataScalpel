@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
@@ -107,7 +108,7 @@ const JdbcOutputCanvasNodeInspector = ({
   };
   const removeWrite = (write: JdbcOutputWrite) => {
     Modal.confirm({
-      title: '删除这条 JDBC 写入？',
+      title: <OverlayTitle variant="workspace" title="删除这条 JDBC 写入？" tone="danger" />,
       content: write.targetTableName
         ? `目标表 ${write.targetTableName} 的字段映射和写入设置会一并删除。`
         : '未完成的写入配置会一并删除。',
@@ -171,7 +172,7 @@ const JdbcOutputCanvasNodeInspector = ({
       </Typography.Text>
     </Space>
     <Modal className="canvas-output-write-modal" open={Boolean(editingWrite)} width={1080} destroyOnHidden styles={{ body: { overflow: 'hidden' } }}
-      title={editingWrite ? `设置 JDBC 写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置 JDBC 写入'}
+      title={<OverlayTitle variant="workspace" title={editingWrite ? `设置 JDBC 写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置 JDBC 写入'} />}
       onCancel={() => setEditingWriteId(null)}
       onOk={async () => { const applied = await settingsRef.current?.apply(); if (applied) setEditingWriteId(null); }}
       okText="保存此项" cancelText="取消">

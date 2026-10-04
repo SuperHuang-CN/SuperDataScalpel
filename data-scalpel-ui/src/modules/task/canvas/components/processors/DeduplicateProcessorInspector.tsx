@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -114,7 +115,7 @@ export const DeduplicateProcessorInspector = ({
   const selectKeepStrategy = (next: DeduplicateKeepStrategy) => {
     if (next === 'ANY' && orderBy.length > 0) {
       Modal.confirm({
-        title: '切换为“任意一条”？',
+        title: <OverlayTitle variant="workspace" title="切换为“任意一条”？" />,
         content: `当前 ${orderBy.length} 条排序规则将被清空。`,
         okText: '清空并切换',
         cancelText: '保留当前策略',

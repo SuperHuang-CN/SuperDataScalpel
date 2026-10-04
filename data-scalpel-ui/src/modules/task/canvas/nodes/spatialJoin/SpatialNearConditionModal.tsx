@@ -8,6 +8,7 @@ import type {
 import { spatialColumnOptions } from '../spatialInspectorOptions';
 import { spatialDistanceUnitOptions, spatialUnitHelp } from '../spatialUnits';
 import { createSpatialJoinSpatialNear } from './spatialNear';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 interface Props {
   open: boolean;
@@ -56,7 +57,7 @@ export const SpatialNearConditionModal = ({
     <Modal
       open={open}
       width={680}
-      title="空间 Near"
+      title={<OverlayTitle variant="workspace" title="空间 Near" />}
       onCancel={onCancel}
       footer={[
         value ? <Button key="remove" danger onClick={onRemove}>移除空间 Near</Button> : null,

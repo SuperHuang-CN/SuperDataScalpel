@@ -1,10 +1,11 @@
 import { writeClipboardText } from '../../shared/browser/writeClipboardText';
-import { CopyOutlined, ExpandOutlined, SearchOutlined } from '@ant-design/icons';
+import { CopyOutlined, ExpandOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Button, Collapse, Modal, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { InlineFeedback } from '../../shared/components/ContextualFeedback';
 import { MonacoSqlEditor, type MonacoSqlEditorHandle } from '../../shared/components/MonacoSqlEditor';
 import type { SpatialGeometryFamily, SpatialStyleDocument, SpatialStyleMode } from './model';
+import { OverlayTitle } from '../../shared/components/OverlayTitle';
 
 interface SpatialSldSourcePanelProps {
   mode: SpatialStyleMode;
@@ -104,7 +105,7 @@ export const SpatialSldSourcePanel = (props: SpatialSldSourcePanelProps) => {
     <Collapse size="small" activeKey={expanded ? ['source'] : []}
       onChange={keys => { setExpanded(keys.includes('source')); if (!keys.includes('source')) setEnlarged(false); }}
       items={[{ key: 'source', label: 'SLD 源码（只读）', children: content(false) }]} />
-    <Modal title="SLD 源码（当前草稿，只读）" open={enlarged} onCancel={() => setEnlarged(false)}
+    <Modal rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle title="SLD 源码（当前草稿，只读）" icon={<FileTextOutlined />} description="查看当前样式草稿的 SLD 源码" />} open={enlarged} onCancel={() => setEnlarged(false)}
       footer={null} width="min(1100px, calc(100vw - 32px))" className="business-modal cartography-sld-modal" destroyOnHidden>
       {content(true)}
     </Modal>

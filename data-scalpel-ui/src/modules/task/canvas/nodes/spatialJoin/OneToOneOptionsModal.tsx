@@ -15,6 +15,7 @@ import type {
   SpatialJoinSummaryStatisticKind,
 } from '../../canvasTypes';
 import { createSpatialJoinOneToOneOptions } from './oneToOneOptions';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 type CanvasTable = CanvasNodeValidationResult['inputTables'][number];
 
@@ -100,7 +101,7 @@ export const OneToOneOptionsModal = ({
     <Modal
       open={open}
       width={760}
-      title="一对一空间连接"
+      title={<OverlayTitle variant="workspace" title="一对一空间连接" />}
       okText="保存配置"
       cancelText="取消"
       onCancel={onCancel}

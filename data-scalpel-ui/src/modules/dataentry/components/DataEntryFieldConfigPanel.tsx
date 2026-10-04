@@ -1,8 +1,8 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { Button, Select, Table, Tag, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { fetchDataModel, useDataModels, type DataModelDetail } from '../../model';
+import { DataModelPickerModal, fetchDataModel, type DataModelDetail } from '../../model';
 import { useCurrentUser } from '../../system';
 import { useUpdateDataEntryLookups } from '../hooks/useDataEntry';
 import type { DataEntryFormDetail, DataEntryLookupInput } from '../model/dataEntry';
@@ -21,35 +21,38 @@ export const DataEntryFieldConfigPanel = ({ detail }: { detail: DataEntryFormDet
     }]),
   ));
   const [messageApi, contextHolder] = message.useMessage();
+  const [pickingFieldId, setPickingFieldId] = useState<string>();
   const mutation = useUpdateDataEntryLookups();
   const currentUser = useCurrentUser();
   const canManage = new Set(currentUser.data?.permissions ?? []).has('dataentry.manage');
-  const modelsQuery = useDataModels({ search: 'status==PUBLISHED', page: 0, size: 500, sort: 'name,code' });
 
   useEffect(() => {
     void Promise.all(detail.lookups.map(async (lookup) => {
       try {
         const sourceDetail = await fetchDataModel(lookup.sourceModelId);
-        setDrafts((current) => ({ ...current, [lookup.targetFieldId]: { ...current[lookup.targetFieldId], sourceDetail } }));
+        setDrafts((current) => current[lookup.targetFieldId]?.sourceModelId === lookup.sourceModelId
+          ? { ...current, [lookup.targetFieldId]: { ...current[lookup.targetFieldId], sourceDetail } }
+          : current);
       } catch {
         // Keep orphaned configuration visible until the user saves its removal.
       }
     }));
   }, [detail.lookups]);
 
-  const modelOptions = useMemo(() => (modelsQuery.data?.content ?? []).map((model) => ({
-    value: model.id, label: `${model.name}（${model.code}）`,
-  })), [modelsQuery.data]);
-
   const selectSource = async (fieldId: string, sourceModelId?: string) => {
     if (!sourceModelId) {
       setDrafts((current) => ({ ...current, [fieldId]: {} }));
       return;
     }
-    setDrafts((current) => ({ ...current, [fieldId]: { sourceModelId } }));
+    setDrafts((current) => ({
+      ...current,
+      [fieldId]: current[fieldId]?.sourceModelId === sourceModelId ? current[fieldId] : { sourceModelId },
+    }));
     try {
       const sourceDetail = await fetchDataModel(sourceModelId);
-      setDrafts((current) => ({ ...current, [fieldId]: { sourceModelId, sourceDetail } }));
+      setDrafts((current) => current[fieldId]?.sourceModelId === sourceModelId
+        ? { ...current, [fieldId]: { ...current[fieldId], sourceDetail } }
+        : current);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '读取来源模型字段失败');
     }
@@ -94,23 +97,32 @@ export const DataEntryFieldConfigPanel = ({ detail }: { detail: DataEntryFormDet
           { title: '控件来源', key: 'source', width: 150, render: (_, field) => field.standardDictionary ? <Tag color="blue">码表：{field.standardDictionary.name}</Tag> : field.lookup ? <Tag color="purple">关联模型</Tag> : <Tag>默认控件</Tag> },
           {
             title: '关联来源模型', key: 'sourceModel', width: 300,
-            render: (_, field) => field.standardDictionary ? '码表字段不可配置' : (
-              <Select
-                allowClear showSearch optionFilterProp="label" disabled={!configurable}
-                value={drafts[field.id]?.sourceModelId}
-                options={modelOptions}
-                placeholder="不配置则使用默认控件"
-                style={{ width: '100%' }}
-                onChange={(value) => void selectSource(field.id, value)}
-              />
-            ),
+            render: (_, field) => {
+              if (field.standardDictionary) return '码表字段不可配置';
+              const draft = drafts[field.id];
+              const savedLookup = detail.lookups.find((lookup) => lookup.targetFieldId === field.id);
+              const savedSource = savedLookup?.sourceModelId === draft?.sourceModelId ? savedLookup : undefined;
+              const sourceName = draft?.sourceDetail?.model.name ?? savedSource?.sourceModelName;
+              const sourceCode = draft?.sourceDetail?.model.code ?? savedSource?.sourceModelCode;
+              const sourceLabel = sourceName && sourceCode && sourceName !== sourceCode
+                ? `${sourceName}（${sourceCode}）`
+                : sourceName ?? sourceCode ?? draft?.sourceModelId ?? '选择关联来源模型';
+              return (
+                <div className="data-entry-model-picker-cell">
+                  <Button disabled={!configurable} onClick={() => setPickingFieldId(field.id)} aria-label={`${field.name}：${draft?.sourceModelId ? '更换' : '选择'}关联来源模型`} title={sourceLabel}>
+                    <span className="data-entry-model-picker-label">{sourceLabel}</span>
+                  </Button>
+                  {draft?.sourceModelId && configurable && <Button type="text" size="small" onClick={() => void selectSource(field.id)} aria-label={`清除${field.name}的关联来源模型`}>清除</Button>}
+                </div>
+              );
+            },
           },
           {
-            title: '标签字段（非空 STRING）', key: 'label', width: 260,
+            title: '标签字段（STRING）', key: 'label', width: 260,
             render: (_, field) => {
               if (field.standardDictionary) return '—';
               const draft = drafts[field.id];
-              const options = draft?.sourceDetail?.fields.filter((sourceField) => sourceField.fieldType === 'STRING' && !sourceField.nullable)
+              const options = draft?.sourceDetail?.fields.filter((sourceField) => sourceField.fieldType === 'STRING')
                 .map((sourceField) => ({ value: sourceField.id, label: `${sourceField.name}（${sourceField.code}）` })) ?? [];
               return <Select disabled={!configurable || !draft?.sourceModelId} value={draft?.sourceLabelFieldId} options={options} style={{ width: '100%' }} placeholder="选择标签字段" onChange={(value) => setDrafts((current) => ({ ...current, [field.id]: { ...current[field.id], sourceLabelFieldId: value } }))} />;
             },
@@ -118,6 +130,18 @@ export const DataEntryFieldConfigPanel = ({ detail }: { detail: DataEntryFormDet
         ]}
         scroll={{ x: 1060, y: '100%' }}
       />
+      {pickingFieldId && <DataModelPickerModal
+        open
+        value={drafts[pickingFieldId]?.sourceModelId ? [drafts[pickingFieldId].sourceModelId] : []}
+        title={`选择“${detail.fields.find((field) => field.id === pickingFieldId)?.name ?? ''}”的关联来源模型`}
+        onCancel={() => setPickingFieldId(undefined)}
+        onConfirm={(modelIds) => {
+          const modelId = modelIds[0];
+          const fieldId = pickingFieldId;
+          setPickingFieldId(undefined);
+          if (modelId && (modelId !== drafts[fieldId]?.sourceModelId || !drafts[fieldId]?.sourceDetail)) void selectSource(fieldId, modelId);
+        }}
+      />}
     </div>
   );
 };

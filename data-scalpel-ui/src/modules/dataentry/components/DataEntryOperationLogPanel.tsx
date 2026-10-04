@@ -1,3 +1,4 @@
+import { AuditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { Button, Descriptions, Drawer, Table, Tag } from 'antd';
 import { useMemo, useState } from 'react';
@@ -5,6 +6,7 @@ import { DetailTableToolbar } from '../../../shared/components/DetailTableToolba
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { useDataEntryOperationLog, useDataEntryOperationLogs, useDataEntryOperationRecordChanges, useDataEntryRecordChanges } from '../hooks/useDataEntry';
 import { dataEntryOperationStatusLabels, type DataEntryOperationLog, type DataEntryRecordChange } from '../model/dataEntry';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 const statusColor = { PROCESSING: 'processing', SUCCEEDED: 'success', PARTIALLY_SUCCEEDED: 'warning', FAILED: 'error' } as const;
 const operationLabels: Record<DataEntryOperationLog['operationType'], string> = {
@@ -55,7 +57,7 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
         ]}
         pagination={false}
       />
-      <Drawer rootClassName="business-overlay business-drawer-overlay" width={760} title="数据操作日志详情" open={Boolean(selectedId)} onClose={() => { setSelectedId(undefined); setChangePage(0); }}>
+      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" width={760} title={<OverlayTitle title="数据操作日志详情" icon={<AuditOutlined />} description="查看填报数据操作的执行结果与明细" />} open={Boolean(selectedId)} onClose={() => { setSelectedId(undefined); setChangePage(0); }}>
         {selected?.manualVerificationRequired && <Alert type="warning" showIcon title="操作结果待人工核对" description="目标数据库可能已完成部分或全部操作；请根据日志和目标数据核对，系统不会自动重放。" />}
         {selected && <Descriptions column={1} bordered size="small" items={[
           { key: 'operation', label: '操作', children: operationLabels[selected.operationType] },
@@ -87,7 +89,7 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
           />
         </>}
       </Drawer>
-      <Drawer rootClassName="business-overlay business-drawer-overlay" width={760} title="记录变更历史"
+      <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" width={760} title={<OverlayTitle title="记录变更历史" icon={<HistoryOutlined />} description="查看记录的历史变更与操作结果" />}
         open={Boolean(recordKey)} onClose={() => { setRecordKey(undefined); setRecordPage(0); }}>
         <Table<DataEntryRecordChange>
           size="small" rowKey="id" loading={recordChangesQuery.isLoading}

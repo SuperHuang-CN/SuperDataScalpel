@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
@@ -845,7 +846,7 @@ const FileOutputWriteEditor = ({
             </span>
             <Space size={4}>
               <Popconfirm
-                title="重建 DBF 映射？"
+                title={<OverlayTitle variant="popover" title="重建 DBF 映射？" />}
                 description="将覆盖当前字段名、顺序和 STRING 字节宽度。"
                 okText="重建"
                 cancelText="取消"
@@ -1038,7 +1039,7 @@ const FileOutputWriteEditor = ({
       </Space>
       <Modal
         open={pathPreviewOpen && Boolean(artifactPreview)}
-        title="文件输出物理路径"
+        title={<OverlayTitle variant="workspace" title="文件输出物理路径" />}
         width={620}
         destroyOnHidden
         onCancel={() => setPathPreviewOpen(false)}
@@ -1051,7 +1052,7 @@ const FileOutputWriteEditor = ({
       </Modal>
       <Modal
         open={formatHelpOpen}
-        title={formatHelp.title}
+        title={<OverlayTitle variant="workspace" title={formatHelp.title} />}
         width={620}
         destroyOnHidden
         onCancel={() => setFormatHelpOpen(false)}
@@ -1172,7 +1173,7 @@ const FileOutputInspector = ({
   };
   const removeWrite = (write: FileOutputWrite) => {
     Modal.confirm({
-      title: '删除这条文件写入？',
+      title: <OverlayTitle variant="workspace" title="删除这条文件写入？" tone="danger" />,
       content: write.targetPath
         ? `目标目录 ${write.targetPath} 的格式和空间字段设置会一并删除。`
         : '未完成的写入配置会一并删除。',
@@ -1233,7 +1234,7 @@ const FileOutputInspector = ({
     </Space>
     <Modal open={Boolean(editingWrite)} width={800} destroyOnHidden
       styles={{ body: { maxHeight: '68vh', overflowY: 'auto' } }}
-      title={editingWrite ? `设置文件写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置文件写入'}
+      title={<OverlayTitle variant="workspace" title={editingWrite ? `设置文件写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置文件写入'} />}
       onCancel={() => setEditingWriteId(null)}
       onOk={async () => { const applied = await settingsRef.current?.apply(); if (applied) setEditingWriteId(null); }}
       okText="保存此项" cancelText="取消">

@@ -1,4 +1,5 @@
 import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Dropdown, Modal, Segmented, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
@@ -127,7 +128,9 @@ export const DirectoryTreePanel = ({
 
   const confirmRemove = (directory: DirectoryTreeNode) => {
     modal.confirm({
-      title: `删除${label}`,
+      icon: null,
+
+      rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title={`删除${label}`} icon={<DeleteOutlined />} tone="danger" />,
       content: `确认删除${label}“${directory.name}”吗？`,
       okText: '删除',
       cancelText: '取消',

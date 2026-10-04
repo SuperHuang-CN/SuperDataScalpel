@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CopyOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { AppstoreOutlined, CopyOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
@@ -204,7 +205,7 @@ export const ModelFieldTemplatePickerModal = ({
   return (
     <Modal
       rootClassName="business-overlay business-modal-overlay"
-      title="从常用字段模板添加"
+      title={<OverlayTitle title="从常用字段模板添加" icon={<AppstoreOutlined />} />}
       open={open}
       width={900}
       destroyOnHidden
@@ -232,7 +233,7 @@ export const ModelFieldTemplatePickerModal = ({
           showIcon
           type="error"
           title="无法确认目标数据存储支持的字段类型"
-          description="为避免带入不支持的结构，当前不能复制，请检查数据存储连接后重试。"
+         description="为避免带入不支持的结构，当前不能复制，请检查数据存储连接后重试。"
           style={{ marginBottom: 8 }}
         />
       )}
@@ -261,7 +262,7 @@ export const ModelFieldTemplatePickerModal = ({
           showIcon
           type="warning"
           title={`有 ${copyResult.skippedIssues.length} 项不能原样带入`}
-          description={(
+         description={(
             <Space direction="vertical" size={0}>
               {copyResult.skippedIssues.slice(0, 6).map((issue) => <span key={issue}>{issue}</span>)}
               {copyResult.skippedIssues.length > 6 && <span>另有 {copyResult.skippedIssues.length - 6} 项</span>}

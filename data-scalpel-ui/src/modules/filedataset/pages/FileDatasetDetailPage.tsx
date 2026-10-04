@@ -6,6 +6,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -115,8 +116,10 @@ export const FileDatasetDetailPage = () => {
   };
 
   const remove = (target: FileDataset) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除文件数据集',
+    title: <OverlayTitle title="删除文件数据集" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${target.name}”及其 ${target.fileCount} 个文件、${target.tableCount} 张表吗？`,
     okText: '删除',
     cancelText: '取消',

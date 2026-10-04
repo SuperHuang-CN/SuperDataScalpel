@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -169,7 +170,7 @@ export const StandardDictionaryPage = () => {
             { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditing(row); setDrawerOpen(true); } },
             { key: 'lifecycle', icon: row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: row.enabled ? '停用' : '启用', onClick: () => void executeCommand(row, row.enabled ? 'disable' : 'enable') },
             { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除码表', content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
+            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除码表" tone="danger" />, icon: null, content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${row.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),

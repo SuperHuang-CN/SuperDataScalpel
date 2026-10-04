@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { AuditOutlined, DownloadOutlined, ImportOutlined, InboxOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { Button, Drawer, Space, Steps, Table, Tag, Typography, Upload, message } from 'antd';
@@ -118,19 +119,11 @@ export const StandardDictionaryImportDrawer = ({ open, onClose }: Props) => {
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="standard-dictionary-import-drawer"
-        title={(
-          <div className="standard-dictionary-import-title">
-            <span className="standard-dictionary-import-title-icon" aria-hidden="true"><ImportOutlined /></span>
-            <span className="standard-dictionary-import-title-copy">
-              <span>导入树形码表</span>
-              <Typography.Text type="secondary">校验码表身份、节点层级与现有数据变更</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<ImportOutlined />} title="导入树形码表" description="校验码表身份、节点层级与现有数据变更" />}
         extra={<Tag className="standard-dictionary-import-header-tag">Excel 模板</Tag>}
         open={open}
         width={760}
-        closable={!importMutation.isPending}
+        closable={importMutation.isPending ? false : { placement: 'end' }}
         maskClosable={!importMutation.isPending}
         destroyOnHidden
         onClose={requestClose}

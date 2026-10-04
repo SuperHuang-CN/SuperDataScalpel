@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useMutation } from '@tanstack/react-query';
 import { Button, Modal, Radio, Space, Typography } from 'antd';
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
 import { exportMetrics } from '../api/metricExcelApi';
 import type { MetricExportMode } from '../model/metricExcel';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
@@ -26,7 +27,7 @@ export const MetricExcelActions = ({ search, selectedIds, onImported }: { search
     {canManage && <Button icon={<UploadOutlined />} onClick={() => setImporting(true)}>导入</Button>}
     <Button icon={<DownloadOutlined />} onClick={() => { exportFile.reset(); setMode(canExportDraft ? 'DRAFT' : 'PUBLISHED'); }}>导出{selectedIds.length ? `（${selectedIds.length}）` : ''}</Button>
     {importing && <MetricImportDrawer onClose={() => setImporting(false)} onImported={onImported} />}
-    <Modal open={mode !== null} title="导出指标" rootClassName="business-overlay business-modal-overlay"
+    <Modal open={mode !== null} title={<OverlayTitle title="导出指标" icon={<FileExcelOutlined />} />} rootClassName="business-overlay business-modal-overlay"
       okText="导出 Excel" onCancel={() => !exportFile.isPending && setMode(null)} confirmLoading={exportFile.isPending}
       onOk={() => mode && exportFile.mutate(mode)}>
       <Space orientation="vertical" className="metric-full-width">

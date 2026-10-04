@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Form, Input, Modal, Select, Space, Table, Typography } from 'antd';
 import type { CanvasColumnSchema, TrackMotionStatisticGroup, TrackMotionWindowOptions } from '../../canvasTypes';
@@ -14,7 +15,7 @@ export default function MotionWindowEditor({ value, columns, onChange }: {
   const set = <K extends keyof TrackMotionWindowOptions>(key: K, next: TrackMotionWindowOptions[K]) => onChange({ ...value, [key]: next });
   const toggle = (group: TrackMotionStatisticGroup, enabled: boolean) => {
     if (enabled) set('statistics', [...value.statistics, ...createMotionGroup(group)]);
-    else Modal.confirm({ title: `移除${motionGroupLabels[group]}指标组？`,
+    else Modal.confirm({ title: <OverlayTitle variant="workspace" title={`移除${motionGroupLabels[group]}指标组？`} tone="danger" />,
       content: '该组输出字段配置将删除，单位和其他组配置保留。', okText: '移除指标组', cancelText: '取消',
       onOk: () => set('statistics', value.statistics.filter(s => !(motionStatisticGroups[group] as readonly string[]).includes(s.kind))) });
   };

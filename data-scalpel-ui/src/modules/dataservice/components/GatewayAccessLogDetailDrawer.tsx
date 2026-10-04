@@ -1,3 +1,4 @@
+import { FileSearchOutlined } from '@ant-design/icons';
 import { Descriptions, Drawer, Space, Tag, Typography } from 'antd';
 import type { DescriptionsProps } from 'antd';
 import type { GatewayAccessLog } from '../model/gatewayAccess';
@@ -5,6 +6,7 @@ import {
   gatewayAccessIdentityStatusLabels,
 } from '../model/gatewayAccess';
 import { gatewayProviderLabels } from '../model/apiConsumer';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface GatewayAccessLogDetailDrawerProps {
   log: GatewayAccessLog | null;
@@ -164,9 +166,9 @@ export const GatewayAccessLogDetailDrawer = ({
   ] : [];
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay"
-      title="网关调用详情"
+      title={<OverlayTitle title="网关调用详情" icon={<FileSearchOutlined />} description="查看网关请求与响应明细" />}
       width={720}
       open={open}
       onClose={onClose}

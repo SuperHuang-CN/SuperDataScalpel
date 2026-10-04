@@ -6,6 +6,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -201,8 +202,10 @@ export const DataSourceDetailPage = () => {
   };
 
   const remove = (target: DataSource) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除数据源',
+    title: <OverlayTitle title="删除数据源" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${target.name}”吗？被任务直接引用的数据源不能删除。`,
     okText: '删除',
     okButtonProps: { danger: true },

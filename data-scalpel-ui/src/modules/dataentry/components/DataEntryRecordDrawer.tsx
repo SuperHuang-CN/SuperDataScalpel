@@ -1,4 +1,4 @@
-import { EditOutlined } from '@ant-design/icons';
+import { EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Drawer, Empty, Form, Space, Spin, Table, Tabs, Tag, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -7,6 +7,7 @@ import { useCurrentUser } from '../../system';
 import { useDataEntryRecordChanges, useDataEntryRecordDetail, useUpdateDataEntryRecord } from '../hooks/useDataEntry';
 import type { DataEntryFormDetail, DataEntryRecordChange } from '../model/dataEntry';
 import { DataEntryInputField } from './DataEntryInputField';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 const parseObject = (value: string | null): Record<string, unknown> => {
   if (!value) return {};
@@ -110,10 +111,10 @@ export const DataEntryRecordDrawer = ({ open, detail, recordKey, onClose, onUpda
   ) : <Empty description="记录不存在" />;
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay"
       open={open}
       width={760}
-      title="记录详情"
+      title={<OverlayTitle title="记录详情" icon={<FileTextOutlined />} description="查看填报记录的字段值" />}
       onClose={onClose}
       extra={<Space>{canEdit && !editing && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>编辑</Button>}
         {editing && <><Button onClick={() => { form.resetFields(); form.setFieldsValue(initialValues(detail, recordQuery.data?.values ?? {})); setEditing(false); }}>取消</Button>

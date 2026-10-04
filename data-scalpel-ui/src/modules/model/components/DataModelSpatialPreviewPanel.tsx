@@ -211,7 +211,7 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
         type="info"
         showIcon
         title="当前模型暂不能空间预览"
-        description={mapError ?? metadata?.message ?? fieldMessage ?? '没有可预览的 Geometry 字段'}
+       description={mapError ?? metadata?.message ?? fieldMessage ?? '没有可预览的 Geometry 字段'}
         action={(
           <Space size={6}>
             {statisticsRefreshRequired && (
@@ -281,7 +281,7 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
           <FloatingFeedback
             type="warning"
             title="地图预览加载失败"
-            description={mapError}
+           description={mapError}
             action={<Button size="small" onClick={() => void requestImage()}>重试</Button>}
             closable
             onClose={() => setMapError(undefined)}

@@ -367,13 +367,13 @@ public class DataEntryImportService {
                 DataModelField field = context.fieldsById().get(lookup.getTargetFieldId());
                 Object value = field == null ? null : values.get(field.getCode());
                 if (field == null || value == null || invalidFields.contains(field.getCode())) continue;
-                String label = lookupLabels.getOrDefault(field.getId(), Map.of()).get(
+                String displayLabel = lookupLabels.getOrDefault(field.getId(), Map.of()).get(
                         DataEntryValueCanonicalizer.canonical(value, field)
                 );
-                if (label == null) {
+                if (displayLabel == null) {
                     issue(issues, "IMPORT_LOOKUP_VALUE_MISSING", raw.rowNumber(), field, "关联来源模型中不存在该业务主键值");
                 } else {
-                    displayValues.put(field.getCode(), label + "（" + value + "）");
+                    displayValues.put(field.getCode(), displayLabel);
                 }
             }
             List<DataModelField> keys = context.primaryKeys();
@@ -438,7 +438,13 @@ public class DataEntryImportService {
                         Collectors.toList()
                 ));
                 rowsByValue.forEach((value, matches) -> {
-                    if (matches.size() == 1) labels.put(value, String.valueOf(matches.getFirst().get("label")));
+                    if (matches.size() == 1) {
+                        Map<String, Object> row = matches.getFirst();
+                        Object rawLabel = row.get("label");
+                        String label = rawLabel == null ? null : String.valueOf(rawLabel);
+                        labels.put(value, label == null || label.isBlank()
+                                ? String.valueOf(row.get("value")) : label + "（" + row.get("value") + "）");
+                    }
                 });
             }
             result.put(lookup.getTargetFieldId(), Collections.unmodifiableMap(labels));

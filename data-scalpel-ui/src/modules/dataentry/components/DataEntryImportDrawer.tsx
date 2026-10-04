@@ -1,14 +1,17 @@
 import {
   AuditOutlined,
+  DownloadOutlined,
   FileExcelOutlined,
   InboxOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import type { TableColumnsType, UploadProps } from 'antd';
-import { Button, Drawer, Space, Steps, Table, Tag, Typography, Upload, message } from 'antd';
+import type { MenuProps, TableColumnsType, UploadProps } from 'antd';
+import { Button, Drawer, Dropdown, Space, Steps, Table, Tag, Typography, Upload, message } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { downloadDataEntryImportTemplate } from '../api/dataEntryApi';
 import { useImportDataEntryFile, usePreviewDataEntryImport } from '../hooks/useDataEntry';
 import type {
   DataEntryFormDetail,
@@ -16,6 +19,8 @@ import type {
   DataEntryImportPreviewRow,
   DataEntryMutationResponse,
 } from '../model/dataEntry';
+import { dataEntrySubmitBlockedReason } from './dataEntrySubmitAvailability';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface Props {
   open: boolean;
@@ -33,10 +38,26 @@ const formatFileSize = (sizeBytes: number): string => {
 export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Props) => {
   const [file, setFile] = useState<File | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
   const previewMutation = usePreviewDataEntryImport();
   const importMutation = useImportDataEntryFile();
   const preview = previewMutation.data;
+  const blockedReason = dataEntrySubmitBlockedReason(detail);
+
+  const downloadTemplate: NonNullable<MenuProps['onClick']> = async ({ key }) => {
+    const format = key === 'CSV' ? 'CSV' : 'XLSX';
+    setDownloading(true);
+    try {
+      const blob = await downloadDataEntryImportTemplate(detail.form.id, format);
+      const extension = format === 'CSV' ? 'csv' : 'xlsx';
+      downloadBlob(blob, `DataScalpel-${detail.form.modelCode ?? 'model'}-填报模板.${extension}`);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '下载导入模板失败');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const resetAndClose = useCallback(() => {
     setFile(null);
@@ -49,8 +70,9 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
   const uploadProps: UploadProps = {
     accept: '.xlsx,.csv',
     maxCount: 1,
-    disabled: previewMutation.isPending || importMutation.isPending,
+    disabled: Boolean(blockedReason) || previewMutation.isPending || importMutation.isPending,
     beforeUpload: (selected) => {
+      if (blockedReason) return Upload.LIST_IGNORE;
       setFile(selected);
       setOperationError(null);
       previewMutation.reset();
@@ -83,7 +105,7 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
   ], [preview]);
 
   const submit = async () => {
-    if (!file || !preview?.importable) return;
+    if (!file || !preview?.importable || blockedReason) return;
     setOperationError(null);
     try {
       const result = await importMutation.mutateAsync({
@@ -103,6 +125,8 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
   const currentStage = preview ? 2 : file ? 1 : 0;
   const footerStatus = operationError ? (
     <InlineFeedback tone="error" label="导入处理失败" detail={operationError} ariaLabel="查看批量导入失败详情" />
+  ) : blockedReason ? (
+    <InlineFeedback tone="warning" label="当前不能导入数据" detail={blockedReason} />
   ) : previewMutation.isPending ? (
     <InlineFeedback tone="info" label="正在完整解析并校验文件…" />
   ) : preview?.importable ? (
@@ -119,23 +143,13 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="data-entry-import-drawer"
-        title={(
-          <div className="data-entry-import-drawer-title">
-            <span className="data-entry-import-drawer-title-icon" aria-hidden="true"><FileExcelOutlined /></span>
-            <span className="data-entry-import-drawer-title-copy">
-              <span>批量导入填报数据</span>
-              <Typography.Text type="secondary">
-                {detail.form.modelName ?? detail.form.modelCode ?? '数据填报'} · 先校验预览，再确认写入
-              </Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="批量导入填报数据" icon={<FileExcelOutlined />} description={`${detail.form.modelName ?? detail.form.modelCode ?? '数据填报'} · 先校验预览，再确认写入`} />}
         extra={<Tag className="data-entry-import-header-tag">XLSX / CSV</Tag>}
         open={open}
         width="min(1200px, 92vw)"
         destroyOnHidden
         maskClosable={!importMutation.isPending}
-        closable={!importMutation.isPending}
+        closable={importMutation.isPending ? false : { placement: 'end' }}
         onClose={resetAndClose}
         footer={(
           <div className="data-entry-import-footer">
@@ -144,7 +158,7 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
               <Button disabled={importMutation.isPending} onClick={resetAndClose}>取消</Button>
               <Button
                 type="primary"
-                disabled={!file || !preview?.importable}
+                disabled={!file || !preview?.importable || Boolean(blockedReason)}
                 loading={importMutation.isPending}
                 onClick={() => void submit()}
               >
@@ -184,8 +198,15 @@ export const DataEntryImportDrawer = ({ open, detail, onClose, onImported }: Pro
                 <Typography.Text type="secondary">上传 .xlsx 或 UTF-8 .csv，选择后立即执行全量校验</Typography.Text>
               </span>
               {file && <span className="data-entry-import-selected-file-size">{formatFileSize(file.size)}</span>}
+              <Dropdown menu={{ items: [
+                { key: 'XLSX', label: '下载 Excel 模板' },
+                { key: 'CSV', label: '下载 CSV 模板' },
+              ], onClick: (info) => void downloadTemplate(info) }}>
+                <Button icon={<DownloadOutlined />} loading={downloading} disabled={importMutation.isPending}>下载模板</Button>
+              </Dropdown>
             </header>
             <div className="data-entry-import-section-body">
+              {blockedReason && <InlineFeedback className="data-entry-import-progress-feedback" tone="warning" label="上传暂不可用" detail={blockedReason} />}
               <Upload.Dragger className="data-entry-import-uploader" {...uploadProps}>
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p className="data-entry-import-upload-title">点击或拖入 Excel / CSV 文件</p>

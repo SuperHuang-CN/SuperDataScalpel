@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ApiOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
@@ -76,7 +77,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   };
   const confirmRemove = (engine: ServiceEngine) => Modal.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除 Service Engine',
+    title: <OverlayTitle icon={<DeleteOutlined />} title="删除 Service Engine" tone="danger" />, icon: null,
     content: `确认删除“${engine.name}”吗？`,
     okText: '删除',
     cancelText: '取消',

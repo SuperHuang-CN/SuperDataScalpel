@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { DashboardOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Drawer, Empty, Space, Spin, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
@@ -122,12 +123,7 @@ export const ServiceEnginePoolMonitorDrawer = ({ registration, onClose }: {
     rootClassName="business-overlay business-drawer-overlay"
     className="jdbc-monitor-drawer"
     open size="min(1080px, 100vw)" onClose={onClose} destroyOnHidden closable={{ placement: 'end' }}
-    title={<div className="service-engine-drawer-title">
-      <span className="service-engine-drawer-title-icon" aria-hidden><DashboardOutlined /></span>
-      <span className="service-engine-drawer-title-copy"><span>JDBC 监控</span>
-        <Typography.Text type="secondary">{registration.dataSourceName} · {registration.dataSourceCode}</Typography.Text>
-      </span>
-    </div>}
+    title={<OverlayTitle icon={<DashboardOutlined />} title="JDBC 监控" description={`${registration.dataSourceName} · ${registration.dataSourceCode}`} />}
     extra={<Tag>{registration.databaseType ?? 'JDBC'}</Tag>}
     footer={<div className="jdbc-monitor-footer"><Typography.Text type="secondary">{registration.engineName} · 只读诊断</Typography.Text><Button onClick={onClose}>关闭</Button></div>}
   >

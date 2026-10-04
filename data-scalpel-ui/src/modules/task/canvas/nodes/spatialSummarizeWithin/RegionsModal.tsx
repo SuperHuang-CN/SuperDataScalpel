@@ -4,6 +4,7 @@ import { ContextHelp } from '../../../../../shared/components/ContextualFeedback
 import type { SpatialPlanarGridOptions, SpatialWithinRegions } from '../../canvasTypes';
 import { spatialDistanceUnitOptions } from '../spatialUnits';
 import { withinGridHelp } from './regions';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 /** Mounted only when opened: Cancel never mutates the Inspector form. */
 export const RegionsModal = ({ initial, onSave, onCancel }: { initial: SpatialWithinRegions;
@@ -17,7 +18,7 @@ export const RegionsModal = ({ initial, onSave, onCancel }: { initial: SpatialWi
       status={extent[key] == null || (key.endsWith('X') ? (extent.minX ?? 0) >= (extent.maxX ?? 0) : (extent.minY ?? 0) >= (extent.maxY ?? 0)) ? 'error' : undefined}
       onChange={value => setGrid({ ...grid, extent: { ...extent, [key]: value } })} />
   </Form.Item>;
-  return <Modal open width={680} title={<Space>汇总格网配置<ContextHelp ariaLabel="汇总格网说明" content={withinGridHelp} /></Space>}
+  return <Modal open width={680} title={<OverlayTitle variant="workspace" title={<span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>汇总格网配置<ContextHelp ariaLabel="汇总格网说明" content={withinGridHelp} /></span>} />}
     okText="保存格网草稿" cancelText="取消" onCancel={onCancel} onOk={() => onSave(draft)}>
     <Form layout="vertical" autoComplete="off" size="small">
       <div className="canvas-spatial-pair-grid">

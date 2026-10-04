@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { EyeOutlined, ReloadOutlined, SearchOutlined, StopOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
@@ -63,7 +64,7 @@ export const TaskRunsPanel = ({
 
   const cancel = (run: TaskRun) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '取消任务运行',
+    title: <OverlayTitle icon={<StopOutlined />} title="取消任务运行" tone="danger" />, icon: null,
     content: `确认取消运行“${run.id}”吗？${run.taskType === 'WORKFLOW' ? '将停止本次工作流的活动子任务，并取消后续节点。' : '将停止本次执行。'}`,
     okText: '取消运行',
     okButtonProps: { danger: true },
@@ -84,7 +85,7 @@ export const TaskRunsPanel = ({
 
   const forceTerminate = (run: TaskRun) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '强制终止任务运行',
+    title: <OverlayTitle icon={<StopOutlined />} title="强制终止任务运行" tone="danger" />, icon: null,
     content: '确认立即强制终止该 Spark Application 吗？可能产生部分写入、重复数据，实时任务还可能重放当前微批。',
     okText: '强制终止',
     okButtonProps: { danger: true },

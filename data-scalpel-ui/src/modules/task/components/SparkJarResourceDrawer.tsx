@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { DatabaseOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Radio, Select, Space, Table, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
@@ -95,8 +96,8 @@ export const SparkJarResourceDrawer = ({ initial, initialTable, bindingNames, st
       topicName: resourceType === 'KAFKA_TOPIC' ? binding.topicName : null }, table: needsTable ? table : null });
   };
   return <Drawer open placement="right" size={780} rootClassName="business-overlay business-drawer-overlay"
-    className="spark-jar-resource-drawer" title={<div className="spark-jar-drawer-title"><span className="spark-jar-drawer-icon"><DatabaseOutlined /></span><div>{initial ? '编辑任务资源' : '添加任务资源'}<small>选择用途与资源，建立代码引用</small></div></div>}
-    closable={!saving} maskClosable={!saving} keyboard={!saving} onClose={saving ? undefined : onClose}
+    className="spark-jar-resource-drawer" title={<OverlayTitle icon={<DatabaseOutlined />} title={initial ? '编辑任务资源' : '添加任务资源'} description="选择用途与资源，建立代码引用" />}
+    closable={saving ? false : { placement: 'end' }} maskClosable={!saving} keyboard={!saving} onClose={saving ? undefined : onClose}
     footer={<div className="spark-jar-resource-footer"><Typography.Text type="secondary">只建立代码引用，不执行读写</Typography.Text>
       <Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} onClick={() => void submit().catch(() => undefined)}>确认绑定</Button></Space></div>}>
     {error && <CompactAlert type="error" message={error} />}

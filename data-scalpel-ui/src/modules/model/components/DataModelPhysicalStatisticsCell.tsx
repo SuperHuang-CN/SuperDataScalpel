@@ -72,7 +72,7 @@ const statusText = (statistics: DataModelPhysicalStatistics) => {
     case 'UNSUPPORTED':
       return '当前物理对象不可获取';
     case 'SUCCESS':
-      return `采集于 ${formatCompactDateTime(statistics.collectedAt)}`;
+      return formatCompactDateTime(statistics.collectedAt);
   }
 };
 

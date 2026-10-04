@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ClearOutlined,
@@ -134,7 +135,7 @@ export const MaskingRulePage = () => {
           <div className="management-row-actions-shortcuts">{canManage && <Tooltip title="修改规则"><Button type="text" icon={<EditOutlined />} aria-label={`修改脱敏规则${rule.name}`} onClick={() => setDrawerState({ rule, readOnly: false })} /></Tooltip>}</div>
           <Dropdown menu={{ items: [
             { key: 'view', label: '查看规则', onClick: () => setDrawerState({ rule, readOnly: true }) },
-            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除脱敏规则', content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
+            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除脱敏规则" tone="danger" />, icon: null, content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${rule.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),

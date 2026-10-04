@@ -1,4 +1,6 @@
+import { ExclamationCircleOutlined, FileTextOutlined } from '@ant-design/icons';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -171,8 +173,10 @@ export const FileDatasetModelImportDrawer = ({
       return;
     }
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '放弃未保存的调整？',
+      title: <OverlayTitle title="放弃未保存的调整？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '当前模型或字段已有修改，离开后这些调整不会保留。',
       okText: '放弃修改',
       okButtonProps: { danger: true },
@@ -250,8 +254,10 @@ export const FileDatasetModelImportDrawer = ({
     };
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '切换目标数据存储',
+        title: <OverlayTitle title="切换目标数据存储" icon={<FileTextOutlined />} />,
         content: '切换后需要按新目标重新验证字段，当前字段调整会被重置。',
         okText: '确认切换',
         cancelText: '取消',
@@ -266,8 +272,10 @@ export const FileDatasetModelImportDrawer = ({
     if (!effectiveTargetStorageDataSourceId) return;
     const apply = () => loadPreviews(effectiveTargetStorageDataSourceId, drafts);
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '重新读取逻辑表结构',
+      title: <OverlayTitle title="重新读取逻辑表结构" icon={<FileTextOutlined />} />,
       content: '重新读取会重置当前字段调整，但会保留模型编码、名称、说明和目标表名。',
       okText: '重新读取',
       cancelText: '取消',
@@ -624,7 +632,7 @@ export const FileDatasetModelImportDrawer = ({
       {modalContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title="从文件数据集创建模型"
+        title={<OverlayTitle title="从文件数据集创建模型" icon={<FileTextOutlined />} description="选择已解析逻辑表并创建模型草稿" />}
         open={open}
         size="large"
         className="managed-table-model-import-drawer"
@@ -797,7 +805,7 @@ export const FileDatasetModelImportDrawer = ({
               showIcon
               type={failedKeys.size === 0 ? 'success' : successCount > 0 ? 'warning' : 'error'}
               title={`成功 ${successCount} 个，失败 ${failedKeys.size} 个`}
-              description={failedKeys.size > 0
+             description={failedKeys.size > 0
                 ? '已成功的模型不会回滚；可以保留失败项，修改后单独重试。'
                 : '模型和字段已保存为受管草稿，文件数据未复制，物理表也尚未创建。'}
             />

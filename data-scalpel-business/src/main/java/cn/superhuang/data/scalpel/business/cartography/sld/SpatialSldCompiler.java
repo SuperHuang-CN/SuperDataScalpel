@@ -298,7 +298,7 @@ public final class SpatialSldCompiler {
         }
         ogcText(document, concat, "Literal", labeling.suffix());
         Element font = append(document, symbolizer, "Font");
-        css(document, font, "font-family", "SansSerif");
+        css(document, font, "font-family", "Noto Serif CJK SC");
         css(document, font, "font-size", decimal(labeling.fontSize()));
         css(document, font, "font-style", "normal");
         css(document, font, "font-weight", Boolean.TRUE.equals(labeling.bold()) ? "bold" : "normal");

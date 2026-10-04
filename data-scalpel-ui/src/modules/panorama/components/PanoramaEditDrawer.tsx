@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useRef } from 'react';
 import { CameraOutlined } from '@ant-design/icons';
 import { Button, Col, Drawer, Form, Input, InputNumber, Row, Select, Space, TreeSelect, message } from 'antd';
@@ -20,8 +21,8 @@ export const PanoramaEditDrawer = ({ panorama, onClose }: { panorama: Panorama; 
       messageApi.success('全景资料已保存'); onClose();
     } catch (e) { messageApi.error(e instanceof ApiError ? e.message : '保存失败'); }
   };
-  return <Drawer rootClassName="business-overlay business-drawer-overlay" open size={680} onClose={onClose}
-    title={<Space><CameraOutlined />修改全景资料</Space>} footer={<div className="panorama-drawer-footer"><span>{panorama.name}</span><Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={command.isPending} onClick={() => form.submit()}>保存</Button></Space></div>}>
+  return <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" open size={680} onClose={onClose}
+    title={<OverlayTitle icon={<CameraOutlined />} title="修改全景资料" description="更新全景影像的业务信息" />} footer={<div className="panorama-drawer-footer"><span>{panorama.name}</span><Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={command.isPending} onClick={() => form.submit()}>保存</Button></Space></div>}>
     {context}<Form form={form} layout="vertical" autoComplete="off" initialValues={{ ...panorama, expectedContentVersion: panorama.contentVersion }} onFinish={values => void submit(values)}>
       <Row gutter={16}><Col span={12}><Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true }, { max: 255 }]}><Input maxLength={255} /></Form.Item></Col><Col span={12}>
         <Form.Item name="directoryId" label="目录"><TreeSelect allowClear disabled={!user.data?.permissions.includes('directory.view')} treeData={directoryTreeSelectData(directories.data ?? [])} placeholder="未分类" /></Form.Item></Col></Row>

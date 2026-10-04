@@ -1,4 +1,5 @@
 import { DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Badge, Button, Col, ConfigProvider, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -174,19 +175,7 @@ export const FileDatasetDrawer = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="file-dataset-drawer"
-        title={(
-          <div className="file-dataset-drawer-title">
-            <span className="file-dataset-drawer-title-icon" aria-hidden="true">
-              <FileDatasetTypeIcon type={selectedType} />
-            </span>
-            <span className="file-dataset-drawer-title-copy">
-              <span>{editing ? '修改文件数据集' : '新建文件数据集'}</span>
-              <Typography.Text type="secondary">
-                {editing ? '维护数据集归属、基础说明与共享解析规则' : '先建立空数据集，再进入文件管理上传并解析文件'}
-              </Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={editing ? '修改文件数据集' : '新建文件数据集'} icon={<FileDatasetTypeIcon type={selectedType} />} description={editing ? '维护数据集归属、基础说明与共享解析规则' : '先建立空数据集，再进入文件管理上传并解析文件'} />}
         extra={<Tag className="file-dataset-drawer-header-tag">{fileDatasetTypeLabels[selectedType]}</Tag>}
         open={open}
         size="min(800px, 100vw)"
@@ -221,7 +210,7 @@ export const FileDatasetDrawer = ({
         >
           <FileDatasetFormSection
             title="数据集信息"
-            description="设置数据集的名称、文件类型和目录归属"
+           description="设置数据集的名称、文件类型和目录归属"
             icon={<DatabaseOutlined />}
           >
             <Row gutter={14}>
@@ -252,7 +241,7 @@ export const FileDatasetDrawer = ({
 
           <FileDatasetFormSection
             title="解析设置"
-            description={`${fileDatasetTypeLabels[selectedType]} 文件共享同一套解析规则`}
+           description={`${fileDatasetTypeLabels[selectedType]} 文件共享同一套解析规则`}
             icon={<SettingOutlined />}
             help={parsingHelp(selectedType)}
           >

@@ -1,4 +1,5 @@
 import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
@@ -714,15 +715,7 @@ export const DataSourceDrawer = ({
       {messageContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={(
-          <div className="data-source-drawer-title">
-            <span className="data-source-drawer-title-icon" aria-hidden="true"><DatabaseOutlined /></span>
-            <span className="data-source-drawer-title-copy">
-              <span>{editing ? '编辑数据源' : '新建数据源'}</span>
-              <Typography.Text type="secondary">配置连接信息并验证可用性</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={editing ? '编辑数据源' : '新建数据源'} icon={<DatabaseOutlined />} description="配置连接信息并验证可用性" />}
         extra={<span className="data-source-drawer-header-status">{headerStatus}</span>}
         open={open}
         size="min(1180px, 100vw)"
@@ -822,7 +815,7 @@ export const DataSourceDrawer = ({
                         type="info"
                         showIcon
                         title="推荐的 TDengine 连接方式"
-                        description="第一阶段仅发现和读取超级表，不列出子表，也不开放写入与自定义 SQL 输入。"
+                       description="第一阶段仅发现和读取超级表，不列出子表，也不开放写入与自定义 SQL 输入。"
                       />
                     </Col>
                   )}
@@ -832,7 +825,7 @@ export const DataSourceDrawer = ({
                         type="warning"
                         showIcon
                         title="RESTful JDBC 仅用于旧环境兼容"
-                        description="TDengine 官方已弃用 RestfulDriver；新连接请优先选择 WebSocket JDBC。batchfetch/batchLoad=true 不受支持。"
+                       description="TDengine 官方已弃用 RestfulDriver；新连接请优先选择 WebSocket JDBC。batchfetch/batchLoad=true 不受支持。"
                       />
                     </Col>
                   )}

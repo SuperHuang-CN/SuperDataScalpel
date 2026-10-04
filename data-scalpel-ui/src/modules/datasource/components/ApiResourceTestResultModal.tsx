@@ -1,6 +1,7 @@
 import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CopyOutlined } from '@ant-design/icons';
+import { ApiOutlined, CopyOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Input, Modal, Space, Table, message } from 'antd';
 import type { ApiResourceTestResult } from '../model/dataSource';
 
@@ -34,7 +35,7 @@ export const ApiResourceTestResultModal = ({ result, resourceName, onClose }: {
       rootClassName="business-overlay business-modal-overlay"
       open
       width={900}
-      title={`API 资源测试 · ${resourceName}`}
+      title={<OverlayTitle title={`API 资源测试 · ${resourceName}`} icon={<ApiOutlined />} />}
       destroyOnHidden
       onCancel={onClose}
       footer={<Space>{!result.success && <Button icon={<CopyOutlined />} onClick={() => void copy()}>复制诊断</Button>}<Button type="primary" onClick={onClose}>关闭</Button></Space>}
@@ -43,7 +44,7 @@ export const ApiResourceTestResultModal = ({ result, resourceName, onClose }: {
         showIcon
         type={result.success ? 'success' : 'error'}
         title={result.message}
-        description={`${result.code} · HTTP ${result.httpStatus ?? '—'} · ${result.elapsedMs} ms · ${result.recordCount} 条记录`}
+       description={`${result.code} · HTTP ${result.httpStatus ?? '—'} · ${result.elapsedMs} ms · ${result.recordCount} 条记录`}
       />
       <Descriptions bordered size="small" column={2} style={{ marginTop: 12 }}>
         <Descriptions.Item label="Content-Type">{result.contentType ?? '—'}</Descriptions.Item>

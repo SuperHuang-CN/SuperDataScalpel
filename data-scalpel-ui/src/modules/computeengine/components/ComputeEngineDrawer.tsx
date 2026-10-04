@@ -24,6 +24,7 @@ import {
   type UpdateComputeEngineRequest,
   type SparkExecutionResourcePolicy,
 } from '../model/computeEngine';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 type ComputeEngineFormSectionKey = 'basic' | 'dispatcher' | 'messaging' | 'admission' | 'resources';
 
@@ -243,8 +244,9 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       return;
     }
     modalApi.confirm({
+      icon: null,
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '应用计算引擎配置',
+      title: <OverlayTitle title="应用计算引擎配置" icon={<ControlOutlined />} />,
       content: `将暂停“${engine.name}”的任务调度，确认无任务和待清理资源后应用配置并重新启用。如仍有任务，将保留当前配置；运行中任务可继续，排队任务需恢复调度后完成或手动取消，再次应用配置。`,
       okText: '应用并重新注册',
       cancelText: '取消',
@@ -308,15 +310,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
     <Drawer
       rootClassName="business-overlay business-drawer-overlay"
       className="compute-engine-drawer"
-      title={(
-        <div className="compute-engine-drawer-title">
-          <span className="compute-engine-drawer-title-icon" aria-hidden="true"><ThunderboltOutlined /></span>
-          <span className="compute-engine-drawer-title-copy">
-            <span>{engine ? (editingAllowed ? '修改计算引擎' : '查看计算引擎') : '新建计算引擎'}</span>
-            <Typography.Text type="secondary">配置 Dispatcher、消息通道、准入容量与 Spark 运行资源</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title={engine ? (editingAllowed ? '修改计算引擎' : '查看计算引擎') : '新建计算引擎'} icon={<ThunderboltOutlined />} description="配置 Dispatcher、消息通道、准入容量与 Spark 运行资源" />}
       extra={<span className="compute-engine-drawer-header-status">{headerStatus}</span>}
       open={open}
       size="min(1080px, 100vw)"

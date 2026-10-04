@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -98,8 +99,10 @@ export const FileDatasetFilesPanel = ({
   };
 
   const remove = (file: FileDatasetFile) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除物理文件',
+    title: <OverlayTitle title="删除物理文件" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${file.originalFileName}”吗？该文件贡献的数据来源会一并删除；失去最后来源的数据表也会被永久删除。`,
     okText: '删除',
     cancelText: '取消',

@@ -1,5 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { ArrowLeftOutlined, ExperimentOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExperimentOutlined, SaveOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import type { FormProps } from 'antd';
 import { Button, Form, Modal, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +26,7 @@ import {
   type DataServiceFormValues,
 } from '../model/dataServiceEditor';
 import './dataServiceEditor.css';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 const problemMessage = (error: unknown, fallback: string) => (
   error instanceof ApiError ? error.problem?.detail ?? error.message : fallback
@@ -147,7 +148,9 @@ export const DataServiceDefinitionEditorPage = () => {
         && detail.spatialDefinition?.modelId
         && values.modelId !== detail.spatialDefinition.modelId) {
       const confirmed = await new Promise<boolean>((resolve) => Modal.confirm({
-        title: '更换空间模型并重置样式？',
+        rootClassName: 'business-overlay business-modal-overlay',
+        icon: null,
+        title: <OverlayTitle title="更换空间模型并重置样式？" icon={<ExclamationCircleOutlined />} />,
         content: '空间模型发生变化后，当前样式草稿会重置为新 Geometry 类型的默认简单样式。',
         okText: '继续保存',
         cancelText: '取消',
@@ -300,7 +303,7 @@ export const DataServiceDefinitionEditorPage = () => {
       <Modal
         rootClassName="business-overlay business-modal-overlay"
         open={blocker.state === 'blocked'}
-        title="离开未保存的服务定义？"
+        title={<OverlayTitle title="离开未保存的服务定义？" icon={<ExclamationCircleOutlined />} />}
         okText="离开"
         cancelText="继续编辑"
         onOk={() => { allowNavigationRef.current = true; blocker.proceed?.(); }}

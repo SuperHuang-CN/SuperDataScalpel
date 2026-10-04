@@ -23,6 +23,7 @@ import {
   type TableColumnsType,
 } from 'antd';
 import { useMemo, useState } from 'react';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { useCancelTaskRun, useLatestCanvasNodeTrialRun } from '../../hooks/useTasks';
 import {
   taskRunStatusColors,
@@ -253,7 +254,7 @@ const CanvasTableSchemaDrawer = ({
     <>
     <Drawer
       open={open && tables.length > 0 && trialRunSelection === null}
-      title={title}
+      title={<OverlayTitle variant="workspace" title={title} />}
       placement="right"
       size={1120}
       destroyOnHidden

@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   AimOutlined,
   ApartmentOutlined,
@@ -196,11 +197,11 @@ export const BusinessOntologyGraphWorkspace = ({
         {!overlayInspector && inspector && <aside className="ontology-graph-inspector">{inspector}</aside>}
       </div>
       {overlayInspector && (
-        <Drawer
+        <Drawer closable={{ placement: 'end' }}
           rootClassName="business-overlay business-drawer-overlay ontology-graph-inspector-drawer"
           open={Boolean(inspector)}
           size={360}
-          title="本体详情"
+          title={<OverlayTitle icon={<ApartmentOutlined />} title="本体详情" description="查看当前选中的本体对象" />}
           mask={false}
           onClose={() => setSelection(null)}
         >

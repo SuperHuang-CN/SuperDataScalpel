@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { App, Button, Drawer, Form, Select, Space, Switch, Table, Tabs, Tooltip, Typography } from 'antd';
@@ -69,7 +70,7 @@ export const SystemMcpPage = () => {
     ]} pagination={{ current: page + 1, pageSize: size, total: list.data?.totalElements, showSizeChanger: true, hideOnSinglePage: false, onChange: (p, s) => { setPage(s === size ? p - 1 : 0); setSize(s); } }} /></div>
    </div>
   </div>
-  <Drawer title={description.data?.summary ?? '接口详情'} open={Boolean(detail)} size={760} onClose={() => setDetail(undefined)}><p>{description.data?.operationId}</p><Typography.Paragraph className="system-mcp-api-detail-description">{description.data?.description || '—'}</Typography.Paragraph><p>{description.data?.unavailableReason}</p>{description.error && <Typography.Text type="danger">{description.error.message}</Typography.Text>}<pre className="system-mcp-contract">{JSON.stringify(description.data?.contract, null, 2)}</pre></Drawer>
+  <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay" title={<OverlayTitle icon={<AppstoreOutlined />} title={description.data?.summary ?? '接口详情'} description="查看接口说明与契约内容" />} open={Boolean(detail)} size={760} onClose={() => setDetail(undefined)}><p>{description.data?.operationId}</p><Typography.Paragraph className="system-mcp-api-detail-description">{description.data?.description || '—'}</Typography.Paragraph><p>{description.data?.unavailableReason}</p>{description.error && <Typography.Text type="danger">{description.error.message}</Typography.Text>}<pre className="system-mcp-contract">{JSON.stringify(description.data?.contract, null, 2)}</pre></Drawer>
  </section>;
  const configurationControls = <div className="system-mcp-configuration" aria-label="系统 MCP 配置">
   <div className="system-mcp-enable-control">

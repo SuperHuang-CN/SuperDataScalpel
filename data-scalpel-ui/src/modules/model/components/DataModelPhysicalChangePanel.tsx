@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { EyeOutlined, StopOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Empty, Modal, Space, Table, Tag, Tooltip, message } from 'antd';
@@ -48,8 +49,10 @@ export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhys
   const [cancellingPlanId, setCancellingPlanId] = useState<string | null>(null);
 
   const cancel = (change: DataModelPhysicalChange) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '取消变更计划',
+    title: <OverlayTitle title="取消变更计划" icon={<StopOutlined />} tone="danger" />,
     content: '取消后不会修改模型字段或物理表；如需继续修改，请重新生成计划。',
     okText: '确认取消',
     cancelText: '返回',
@@ -141,7 +144,7 @@ export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhys
           showIcon
           type="error"
           title="物理表变更计划加载失败"
-          description={plansQuery.error instanceof Error ? plansQuery.error.message : '请稍后重试。'}
+         description={plansQuery.error instanceof Error ? plansQuery.error.message : '请稍后重试。'}
           action={<Button size="small" onClick={() => void plansQuery.refetch()}>重试</Button>}
         />
       )}

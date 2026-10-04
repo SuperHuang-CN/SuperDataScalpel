@@ -1,5 +1,6 @@
 import { writeClipboardText } from '../../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Button, Input, List, Modal, Space, Statistic, Tag, message } from 'antd';
 import { downloadCanvasDefinition, formatCanvasDefinition } from '../canvasDefinitionIO';
@@ -38,7 +39,7 @@ export const CanvasDefinitionModal = ({
   return (
     <Modal
       open={open}
-      title="Canvas 任务配置定义"
+      title={<OverlayTitle variant="workspace" title="Canvas 任务配置定义" />}
       width={920}
       onCancel={onClose}
       footer={(

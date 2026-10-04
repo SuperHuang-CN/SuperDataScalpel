@@ -1,5 +1,6 @@
 import { createUuid } from '../../../shared/browser/createUuid';
-import { ArrowLeftOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, RobotOutlined, ShrinkOutlined, MoreOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { ArrowLeftOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, MoreOutlined, PaperClipOutlined, PlusOutlined, RobotOutlined, SendOutlined, ShrinkOutlined, StopOutlined } from '@ant-design/icons';
 import { Button, Drawer, Dropdown, Empty, Form, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, message } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -69,10 +70,10 @@ export default function DshDrawer({ user, open, onClose }: { user: string; open:
   const changeArchive = (value: Session) => {
     if (value.archived) { run(value.sessionId,async () => { saveSession(await dshApi.archive(value.sessionId,false)); void notice.success('会话已恢复'); }); return; }
     if (busy(value)) {
-      modal.confirm({title:`停止“${value.title}”的执行？`,content:'停止完成后，可以再次归档此会话。',okText:'停止执行',cancelText:'取消',
+      modal.confirm({icon: null, rootClassName: 'business-overlay business-modal-overlay', title:<OverlayTitle title={`停止“${value.title}”的执行？`} icon={<DeleteOutlined />} tone="danger" />,content:'停止完成后，可以再次归档此会话。',okText:'停止执行',cancelText:'取消',
         onOk:() => mutation(value.sessionId,async () => { saveSession(await dshApi.cancel(value.sessionId)); })}); return;
     }
-    modal.confirm({ title:`归档“${value.title}”？`,content:'会话历史和工作文件会保留，可以在“已归档”中查看并恢复。',okText:'归档',cancelText:'取消',
+    modal.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay', title:<OverlayTitle title={`归档“${value.title}”？`} icon={<RobotOutlined />} />,content:'会话历史和工作文件会保留，可以在“已归档”中查看并恢复。',okText:'归档',cancelText:'取消',
       onOk:() => mutation(value.sessionId,async () => { saveSession(await dshApi.archive(value.sessionId,true)); void notice.success('会话已归档'); }) });
   };
   const actions = (value: Session) => <Dropdown menu={{items:[{key:'rename',label:'重命名'},{key:'archive',label:value.archived ? '恢复会话' : '归档会话'}],onClick:({key}) => {
@@ -131,8 +132,8 @@ export default function DshDrawer({ user, open, onClose }: { user: string; open:
       {sessions.data?.items.length===0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={archived?'暂无归档会话':'暂无会话'}>{!archived && <Button type="primary" onClick={create} disabled={!!command}>新建会话</Button>}</Empty>}</div>
     <div className="dsh-list-footer"><Button disabled={!offset || sessions.isFetching} onClick={()=>setOffset(v=>Math.max(0,v-20))}>上一页</Button><span>第 {offset/20+1} 页</span><Button disabled={!sessions.data?.hasMore || sessions.isFetching} onClick={()=>setOffset(v=>v+20)}>下一页</Button></div>
   </aside>;
-  return <>{noticeContext}{modalContext}<Drawer rootClassName="dsh-drawer" className="dsh-panel" open={open} onClose={onClose}
-    title={<Space><RobotOutlined /><span>AI 助手</span></Space>} mask={false} push={false} autoFocus={false} zIndex={900}
+  return <>{noticeContext}{modalContext}<Drawer rootClassName="business-overlay business-drawer-overlay dsh-drawer" className="dsh-panel" open={open} onClose={onClose} closable={{ placement: 'end' }}
+    title={<OverlayTitle title="AI 助手" icon={<RobotOutlined />} description="查看会话、工作文件与助手回复" />} mask={false} push={false} autoFocus={false} zIndex={900}
     size={compact ? '100vw' : wide ? '80vw' : 'max(520px, 40vw)'}
     extra={<Space><Tooltip title="新建会话"><Button type="text" icon={<PlusOutlined />} aria-label="新建会话" onClick={create} loading={command==='create'} disabled={!enabled || !!command} /></Tooltip>
       <Tooltip title={wide?'收窄助手':'展开助手'}><Button className="dsh-layout-toggle" type="text" icon={wide?<ShrinkOutlined />:<ExpandOutlined />} aria-label={wide?'收窄助手':'展开助手'} onClick={() => setWide(value => !value)} /></Tooltip></Space>}>
@@ -182,7 +183,7 @@ export default function DshDrawer({ user, open, onClose }: { user: string; open:
         </section>
       </div>
     </>}
-  </Drawer><Modal title="重命名会话" open={!!rename} onCancel={()=>setRename(undefined)} confirmLoading={command==='rename'} okText="保存" cancelText="取消" onOk={()=>{
+  </Drawer><Modal rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle title="重命名会话" icon={<RobotOutlined />} />} open={!!rename} onCancel={()=>setRename(undefined)} confirmLoading={command==='rename'} okText="保存" cancelText="取消" onOk={()=>{
     void renameForm.validateFields().then(values=>mutation('rename',async()=>{if(rename)saveSession(await dshApi.update(rename.sessionId,values.title.trim()));setRename(undefined);})).catch(()=>undefined);
   }}><Form form={renameForm} layout="vertical" autoComplete="off"><Form.Item name="title" label="会话标题" rules={[{required:true,whitespace:true,message:'请输入会话标题'},{max:100,message:'最多 100 个字符'}]}><Input maxLength={100} autoComplete="off" /></Form.Item></Form></Modal></>;
 }

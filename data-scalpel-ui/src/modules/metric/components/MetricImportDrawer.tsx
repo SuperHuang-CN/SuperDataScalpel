@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Drawer, Empty, Space, Table, Tag, Typography, Upload } from 'antd';
 import { DownloadOutlined, FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
@@ -49,7 +50,7 @@ export const MetricImportDrawer = ({ onClose, onImported }: { onClose: () => voi
   ];
   return <Drawer
     open width={1000} rootClassName="business-overlay business-drawer-overlay"
-    title={<Space><FileExcelOutlined /><span>导入指标<Typography.Text type="secondary" className="metric-import-subtitle">上传 Excel，预览后批量保存草稿</Typography.Text></span></Space>}
+    title={<OverlayTitle title="导入指标" icon={<FileExcelOutlined />} description="上传 Excel，预览后批量保存草稿" />}
     onClose={busy ? undefined : onClose} closable={!busy} maskClosable={!busy}
     footer={<div className="metric-editor-footer">
       <Typography.Text type="secondary">{commit.data ? '导入已完成' : '有错误时整批不导入；不会自动发布或运行任务'}</Typography.Text>

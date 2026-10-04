@@ -16,6 +16,7 @@ import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeVa
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
 import { spatialColumnOptions, spatialGeometryColumns, spatialTableOptions } from '../spatialInspectorOptions';
 import FeatureColumnsModal from './FeatureColumnsModal';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const analysisKinds: SpatialCenterDispersionKind[] = [
   'MEAN_CENTER', 'MEDIAN_CENTER', 'CENTRAL_FEATURE',
@@ -160,7 +161,7 @@ const SpatialCenterDispersionInspector = ({
         <Form.Item label="结果模式">
           <Select aria-label="中心结果模式" value={resultMode ?? 'LEGACY_WIDE'}
             options={[{ value: 'ANALYSIS_TABLES', label: '各分析独立结果表' }, { value: 'LEGACY_WIDE', label: '旧版多几何宽表' }]}
-            onChange={value => Modal.confirm({ title: '切换中心分析结果模式？',
+            onChange={value => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换中心分析结果模式？'} />,
               content: '新模式改变结果表结构、使用收敛检查并允许线面质心分析；空组与退化输出语义也不同。旧配置和未启用设置会保留，请检查下游。',
               okText: '确认切换', cancelText: '取消', onOk: () => { form.setFieldValue('resultMode', value); markDirty(); } })} />
         </Form.Item>
@@ -249,7 +250,7 @@ const SpatialCenterDispersionInspector = ({
         <Modal
           open={analysesOpen}
           width={860}
-          title="设置中心与离散分析"
+          title={<OverlayTitle variant="workspace" title="设置中心与离散分析" />}
           okText="保存草稿"
           cancelText="取消"
           onOk={() => { form.setFieldValue('analyses', analysisDraft ?? savedAnalyses); setAnalysisDraft(null); setAnalysesOpen(false); markDirty(); }}
@@ -312,7 +313,7 @@ const SpatialCenterDispersionInspector = ({
                       disabled={index === analyses.length - 1}
                       onClick={() => moveAnalysis(index, index + 1)} />
                     <Button type="text" danger size="small" aria-label={`删除分析 ${index + 1}`} icon={<DeleteOutlined />}
-                      onClick={() => Modal.confirm({ title: `删除${analysisLabels[analysis.kind]}？`, content: '该分析的结果表与字段配置将一并删除。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+                      onClick={() => Modal.confirm({ title: <OverlayTitle variant="workspace" title={`删除${analysisLabels[analysis.kind]}？`} />, content: '该分析的结果表与字段配置将一并删除。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
                         onOk: () => updateAnalyses(analyses.filter((_, itemIndex) => itemIndex !== index)) })} />
                   </Space>
                 </div>

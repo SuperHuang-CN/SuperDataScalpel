@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -391,7 +392,7 @@ const TraceProximityEventsInspector = ({
         <Input placeholder="例如 device_trace_tracks" />
       </Form.Item>}
 
-      <Modal open={resultFieldsOpen} width={680} title="设置邻近追踪结果字段"
+      <Modal open={resultFieldsOpen} width={680} title={<OverlayTitle variant="workspace" title="设置邻近追踪结果字段" />}
         okText="完成" cancelText="关闭" onOk={() => setResultFieldsOpen(false)}
         onCancel={() => setResultFieldsOpen(false)}>
         <Typography.Paragraph type="secondary">

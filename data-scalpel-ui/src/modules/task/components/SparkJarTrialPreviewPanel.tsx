@@ -1,3 +1,5 @@
+import { FileTextOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { Button, Empty, Modal, Table, Tooltip, Typography, type TableColumnsType } from 'antd';
 import { useMemo, useState } from 'react';
@@ -262,7 +264,7 @@ export const SparkJarTrialPreviewPanel = ({ preview, streaming = false }: SparkJ
       <Modal
         rootClassName="business-overlay business-modal-overlay spark-jar-trial-value-modal"
         open={Boolean(complexValue)}
-        title={complexValue ? `字段值 · ${complexValue.fieldName}` : '字段值'}
+        title={<OverlayTitle icon={<FileTextOutlined />} title={complexValue ? `字段值 · ${complexValue.fieldName}` : '字段值'} />}
         footer={<Button onClick={() => setComplexValue(null)}>关闭</Button>}
         onCancel={() => setComplexValue(null)}
       >

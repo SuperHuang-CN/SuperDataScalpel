@@ -21,8 +21,12 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
+import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
+import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
 import cn.superhuang.data.scalpel.business.standard.domain.StandardDictionary;
 import cn.superhuang.data.scalpel.business.standard.repository.StandardDictionaryRepository;
 import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
@@ -60,6 +64,7 @@ public class DataEntryFormService {
     private final DataEntryRecordChangeRepository changeRepository;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
+    private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final StandardDictionaryRepository dictionaryRepository;
     private final DataSourceRepository dataSourceRepository;
     private final DataEntryHealthService healthService;
@@ -73,6 +78,7 @@ public class DataEntryFormService {
             DataEntryRecordChangeRepository changeRepository,
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
+            ModelWarehouseLayerRepository warehouseLayerRepository,
             StandardDictionaryRepository dictionaryRepository,
             DataSourceRepository dataSourceRepository,
             DataEntryHealthService healthService,
@@ -85,6 +91,7 @@ public class DataEntryFormService {
         this.changeRepository = changeRepository;
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
+        this.warehouseLayerRepository = warehouseLayerRepository;
         this.dictionaryRepository = dictionaryRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.healthService = healthService;
@@ -140,12 +147,21 @@ public class DataEntryFormService {
     public List<DataEntryModelCandidateResponse> candidates(String keyword) {
         Set<UUID> used = formRepository.findAll().stream().map(DataEntryForm::getModelId).collect(Collectors.toSet());
         String normalized = keyword == null ? null : keyword.trim().toLowerCase(Locale.ROOT);
-        return modelRepository.findAll().stream()
+        List<DataModel> models = modelRepository.findAll().stream()
+                .filter(model -> model.getStatus() == DataModelStatus.PUBLISHED)
                 .filter(model -> !used.contains(model.getId()))
                 .filter(model -> matches(model, normalized))
                 .sorted(Comparator.comparing(DataModel::getName).thenComparing(DataModel::getCode))
                 .limit(100)
-                .map(model -> candidate(model))
+                .toList();
+        Map<UUID, DataSource> sources = dataSourceRepository.findAllById(models.stream()
+                        .map(DataModel::getStorageDataSourceId).distinct().toList())
+                .stream().collect(Collectors.toMap(DataSource::getId, Function.identity()));
+        Map<UUID, ModelWarehouseLayer> layers = warehouseLayerRepository.findAllById(models.stream()
+                        .map(DataModel::getWarehouseLayerId).filter(Objects::nonNull).distinct().toList())
+                .stream().collect(Collectors.toMap(ModelWarehouseLayer::getId, Function.identity()));
+        return models.stream()
+                .map(model -> candidate(model, sources.get(model.getStorageDataSourceId()), layers.get(model.getWarehouseLayerId())))
                 .toList();
     }
 
@@ -278,21 +294,18 @@ public class DataEntryFormService {
         return form;
     }
 
-    private DataEntryModelCandidateResponse candidate(DataModel model) {
-        List<DataEntryHealthIssueResponse> issues = knownIssues(model);
+    private DataEntryModelCandidateResponse candidate(DataModel model, DataSource dataSource, ModelWarehouseLayer layer) {
+        List<DataEntryHealthIssueResponse> issues = knownIssues(model, dataSource);
         return new DataEntryModelCandidateResponse(model.getId(), model.getCode(), model.getName(), model.getStatus().name(),
-                model.getSchemaVersion(), issues.isEmpty(), issues);
+                model.getSchemaVersion(), dataSource == null ? null : dataSource.getName(),
+                ModelWarehouseLayerSummaryResponse.from(layer), issues.isEmpty(), issues);
     }
 
-    private List<DataEntryHealthIssueResponse> knownIssues(DataModel model) {
+    private List<DataEntryHealthIssueResponse> knownIssues(DataModel model, DataSource dataSource) {
         List<DataEntryHealthIssueResponse> issues = new ArrayList<>();
-        if (model.getStatus() != cn.superhuang.data.scalpel.business.model.domain.DataModelStatus.PUBLISHED) {
-            issues.add(new DataEntryHealthIssueResponse("TARGET_MODEL_NOT_PUBLISHED", "目标模型不是已发布状态", List.of("PUBLISH", "SUBMIT"), null, null));
-        }
         if (model.getPhysicalTableMode() != cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode.MANAGED) {
             issues.add(new DataEntryHealthIssueResponse("TARGET_MODEL_NOT_MANAGED", "数据填报只支持受管模型", List.of("PUBLISH", "SUBMIT"), null, null));
         }
-        DataSource dataSource = dataSourceRepository.findById(model.getStorageDataSourceId()).orElse(null);
         if (dataSource == null || !dataSource.isEnabled() || !dataSource.isStorageEnabled()) {
             issues.add(new DataEntryHealthIssueResponse("TARGET_DATASOURCE_UNAVAILABLE", "目标数据存储不存在、已停用或不具有存储用途", List.of("PUBLISH"), null, null));
         }

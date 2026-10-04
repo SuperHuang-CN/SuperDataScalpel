@@ -41,6 +41,7 @@ import { ComputeEngineDrawer } from './ComputeEngineDrawer';
 import { ComputeEngineDiscoveryDrawer } from './ComputeEngineDiscoveryDrawer';
 import { ComputeEngineTopics } from './ComputeEngineTopics';
 import { engineLifecycle } from '../model/computeEngineLifecycle';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface ComputeEngineManagementPanelProps {
   canCreate: boolean;
@@ -97,8 +98,9 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   };
 
   const register = (engine: ComputeEngine) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: engine.registrationState === 'DETACHED' ? '重新注册离线解绑的计算引擎' : '注册计算引擎',
+    title: <OverlayTitle title={engine.registrationState === 'DETACHED' ? '重新注册离线解绑的计算引擎' : '注册计算引擎'} icon={<SendOutlined />} />,
     content: engine.registrationState === 'DETACHED'
       ? `请先确认原 Dispatcher 进程已经永久停止。继续后将“${engine.name}”注册到当前配置的 Dispatcher，并重新启用任务准入。`
       : `将“${engine.name}”注册到对应 Dispatcher，并启用新任务准入。`,
@@ -110,8 +112,9 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const drain = (engine: ComputeEngine) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: engineLifecycle.pause.label,
+    title: <OverlayTitle title={engineLifecycle.pause.label} icon={<PauseCircleOutlined />} />,
     content: `“${engine.name}”：${engineLifecycle.pause.description}`,
     okText: engineLifecycle.pause.label, cancelText: '取消',
     onOk: async () => {
@@ -121,8 +124,9 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const resume = (engine: ComputeEngine) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: engineLifecycle.resume.label, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
+    title: <OverlayTitle title={engineLifecycle.resume.label} icon={<ThunderboltOutlined />} />, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
     okText: engineLifecycle.resume.label, cancelText: '取消',
     onOk: async () => {
       try { await commandMutation.mutateAsync({ id: engine.id, command: 'resume' }); messageApi.success('任务调度已恢复'); }
@@ -131,8 +135,9 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const deactivate = (engine: ComputeEngine, force: boolean) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label,
+    title: <OverlayTitle title={force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label} icon={<StopOutlined />} tone="danger" />,
     content: force
       ? `“${engine.name}”：${engineLifecycle.forceStop.description} Dispatcher 必须可访问。`
       : `“${engine.name}”：${engineLifecycle.stop.description} Dispatcher 必须可访问。`,
@@ -171,8 +176,9 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   };
 
   const remove = (engine: ComputeEngine) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除计算引擎', content: `确认删除“${engine.name}”吗？已被任务引用时无法删除。`,
+    title: <OverlayTitle title="删除计算引擎" icon={<DeleteOutlined />} tone="danger" />, content: `确认删除“${engine.name}”吗？已被任务引用时无法删除。`,
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
     onOk: async () => {
       try { await deleteMutation.mutateAsync(engine.id); messageApi.success('计算引擎已删除'); }
@@ -323,7 +329,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     />
     <Modal
       rootClassName="business-overlay business-modal-overlay"
-      title="离线解除绑定"
+      title={<OverlayTitle title="离线解除绑定" icon={<DisconnectOutlined />} />}
       open={detachEngine !== null}
       okText="确认离线解除绑定"
       cancelText="取消"

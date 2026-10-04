@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { MoreOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Form, Modal, Select, Space, Tabs, Tag, Tooltip, message } from 'antd';
 import type { TableProps } from 'antd';
@@ -29,7 +31,7 @@ const RulesPanel = () => {
     { title: '操作', width: 70, render: (_, r) => <Dropdown trigger={['click']} menu={{ items: [
       { key: 'edit', label: '编辑规则', onClick: () => setEditing(r) },
       { key: 'toggle', label: r.enabled ? '关闭规则' : '启用规则', onClick: () => void run(r.id, r.enabled ? 'disable' : 'enable') },
-      ...(r.subjectId ? [{ key: 'reset', label: '恢复全局默认', onClick: () => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '恢复全局默认',
+      ...(r.subjectId ? [{ key: 'reset', label: '恢复全局默认', onClick: () => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="恢复全局默认" />, icon: null,
         content: `确认移除“${r.subjectName}”的“${ruleLabels[r.ruleType]}”覆盖配置吗？`, okText: '恢复默认', cancelText: '返回', onOk: () => run(r.id, 'reset-override') }) }] : []),
     ] }}><Tooltip title="更多操作"><Button type="text" icon={<MoreOutlined />} loading={command.isPending && command.variables?.id === r.id} aria-label={`操作规则 ${r.subjectName} ${ruleLabels[r.ruleType]}`} /></Tooltip></Dropdown> },
   ];

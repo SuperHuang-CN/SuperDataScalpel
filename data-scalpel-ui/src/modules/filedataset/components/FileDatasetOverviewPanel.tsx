@@ -62,7 +62,7 @@ export const FileDatasetOverviewPanel = ({
           type="error"
           showIcon
           message="解析状态加载失败"
-          description="基础信息仍可查看，但当前表状态统计可能不准确。"
+         description="基础信息仍可查看，但当前表状态统计可能不准确。"
           action={<Button size="small" onClick={onRetryTables}>重试</Button>}
         />
       )}
@@ -71,26 +71,26 @@ export const FileDatasetOverviewPanel = ({
           type="info"
           showIcon
           message={`后台解析进行中：排队 ${statusCounts.QUEUED} 张，解析中 ${statusCounts.PARSING} 张`}
-          description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
+         description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
         />
       )}
       <BusinessDetailSection
         title="基础信息"
-        description="数据集类型、规模与归属信息"
+       description="数据集类型、规模与归属信息"
         icon={<FileTextOutlined />}
       >
         <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }} items={basicItems} />
       </BusinessDetailSection>
       <BusinessDetailSection
         title="共享解析参数"
-        description="应用于当前数据集全部逻辑表的解析规则"
+       description="应用于当前数据集全部逻辑表的解析规则"
         icon={<SettingOutlined />}
       >
         <Alert
           type="info"
           showIcon
           message="同一数据集的所有逻辑表使用相同解析参数"
-          description={dataset.parsingOptionsLocked
+         description={dataset.parsingOptionsLocked
             ? '当前数据集已有文件、表或解析任务，解析参数已锁定；清空数据集后可再次修改。'
             : '上传文件时无需再次配置；开始上传后解析参数将锁定。'}
         />
@@ -98,7 +98,7 @@ export const FileDatasetOverviewPanel = ({
       </BusinessDetailSection>
       <BusinessDetailSection
         title="表解析状态"
-        description="逻辑表解析任务的当前分布"
+       description="逻辑表解析任务的当前分布"
         icon={<TableOutlined />}
       >
         <div className="file-dataset-status-summary" aria-busy={tablesLoading}>

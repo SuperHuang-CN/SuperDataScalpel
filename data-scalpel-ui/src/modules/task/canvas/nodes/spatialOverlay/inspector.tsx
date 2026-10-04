@@ -18,6 +18,7 @@ import type {
 import { spatialColumnOptions, spatialGeometryColumns, spatialTableOptions } from '../spatialInspectorOptions';
 import { overlayCombinationSupported, overlayFamily, overlayOperationLabels, overlayOperations,
   overlayResultLabel, usesOverlayFamily } from './geometryPolicy';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const fingerprint = (value: SpatialOverlayConfiguration) => JSON.stringify(value);
 
@@ -174,7 +175,7 @@ const SpatialOverlayInspector = ({
             options={[{ value: 'FAMILY_2D', label: '图层家族 · 二维多部件' },
               { value: 'LEGACY_GEOMETRY', label: '旧版 · 通用 Geometry',
                 disabled: operation === 'IDENTITY' || operation === 'SYMMETRICAL_DIFFERENCE' }]}
-            onChange={value => Modal.confirm({ title: '切换几何输出策略？',
+            onChange={value => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换几何输出策略？'} />,
               content: '这会改变允许的几何组合、结果家族及坐标维度。既有字段投影保留，请检查下游。',
               okText: '确认切换', onOk: () => { form.setFieldValue('geometryPolicy', value); markDirty(); },
             })} />
@@ -201,7 +202,7 @@ const SpatialOverlayInspector = ({
           </Space>
           <Button size="small" aria-label="设置叠加输出字段" icon={<SettingOutlined />} onClick={() => setProjectionOpen(true)}>设置</Button>
         </div>
-        <Modal open={projectionOpen} width={860} title="设置空间叠加输出字段"
+        <Modal open={projectionOpen} width={860} title={<OverlayTitle variant="workspace" title="设置空间叠加输出字段" />}
           okText="完成" cancelText="关闭" onOk={() => setProjectionOpen(false)}
           onCancel={() => setProjectionOpen(false)}>
           <JoinOutputColumnsEditor
@@ -221,7 +222,7 @@ const SpatialOverlayInspector = ({
             disabled={!leftTable || !rightTable}
             onClick={() => {
               if (!leftTable || !rightTable) return;
-              Modal.confirm({ title: '按当前叠加方式重建建议？',
+              Modal.confirm({ title: <OverlayTitle variant="workspace" title={'按当前叠加方式重建建议？'} />,
                 content: '将覆盖当前字段改名、排除和排序；擦除模式的新建议会排除右侧字段。', okText: '重建',
                 onOk: () => {
                   const columns = projectForOperation(suggestJoinOutputColumns(leftTable, rightTable), operation);

@@ -16,7 +16,7 @@ export const DataModelReferenceModalContent = ({ references }: DataModelReferenc
         type="warning"
         showIcon
         message="当前模型不能删除"
-        description="任务和服务沿用原引用规则；指标仅由当前已发布启用的结果绑定保护；业务对象类型仅保护当前已保存定义，请先修改对应绑定。"
+       description="任务和服务沿用原引用规则；指标仅由当前已发布启用的结果绑定保护；业务对象类型仅保护当前已保存定义，请先修改对应绑定。"
       />
       {!!references.metrics?.length && <Table size="small" rowKey="id" pagination={false} title={() => `指标引用（${references.metrics?.length}）`} dataSource={references.metrics} columns={[
         { title: '指标', dataIndex: 'name', render: (name: string, item) => <Button type="link" size="small" onClick={() => open(`/metrics/${item.id}`)}>{name}</Button> },

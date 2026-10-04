@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import {
   ClearOutlined,
   DeleteOutlined,
@@ -147,7 +148,7 @@ const JdbcInputTableReadOptionsModalContent = ({
       open
       width={680}
       className="canvas-jdbc-input-read-options-modal"
-      title={<>读取配置 <Typography.Text type="secondary">· {tableName}</Typography.Text></>}
+      title={<OverlayTitle variant="workspace" title={<>读取配置 <Typography.Text type="secondary">· {tableName}</Typography.Text></>} />}
       onCancel={onCancel}
       footer={(
         <Space>

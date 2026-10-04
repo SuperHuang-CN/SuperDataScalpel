@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Drawer, Empty, Form, Input, InputNumber, Select, Space, Spin, Switch, Tabs, Typography, message } from 'antd';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { BarChartOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { fetchMetricDraft, fetchMetricFields, saveMetricDraft } from '../api/metricApi';
 import { invalidateMetrics } from '../hooks/useMetrics';
 import { metricDefinitionLabels, periodLabels, resourceLabels, type MetricDefinition, type MetricDraft, type ResourceKind } from '../model/metric';
@@ -103,5 +104,5 @@ const Editor = ({ draft, onClose, onSaved }: { draft: MetricDraft; onClose: () =
 };
 export const MetricDefinitionDrawer = ({ id, name, onClose, onSaved }: { id: string; name: string; onClose: () => void; onSaved: (draft: MetricDraft) => void }) => {
  const query = useQuery({ queryKey:['metrics','draft',id],queryFn:() => fetchMetricDraft(id),refetchOnWindowFocus:false });
- return <Drawer open title={`编辑口径 · ${name}`} width={880} rootClassName="business-overlay business-drawer-overlay" onClose={onClose}>{query.isError ? <InlineFeedback tone="error" label={query.error.message} action={<Button onClick={() => void query.refetch()}>重试</Button>} /> : query.data ? <Editor key={query.data.fingerprint} draft={query.data} onClose={onClose} onSaved={onSaved} /> : <Spin />}</Drawer>;
+ return <Drawer open title={<OverlayTitle title={`编辑口径 · ${name}`} icon={<BarChartOutlined />} description="调整指标计算口径与关联资源" />} width={880} rootClassName="business-overlay business-drawer-overlay" onClose={onClose} closable={{ placement: 'end' }}>{query.isError ? <InlineFeedback tone="error" label={query.error.message} action={<Button onClick={() => void query.refetch()}>重试</Button>} /> : query.data ? <Editor key={query.data.fingerprint} draft={query.data} onClose={onClose} onSaved={onSaved} /> : <Spin />}</Drawer>;
 };

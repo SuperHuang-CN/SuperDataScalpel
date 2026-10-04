@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ControlOutlined, SettingOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Row, Space, Switch, Tag, Typography, message } from 'antd';
 import { useEffect } from 'react';
@@ -55,18 +56,10 @@ export const SystemConfigurationDrawer = ({
   return (
     <>
       {messageContext}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay"
         className="data-model-drawer system-configuration-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><SettingOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>修改系统配置</span>
-              <Typography.Text type="secondary">调整平台运行参数，配置标识与类型保持不变</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<SettingOutlined />} title="修改系统配置" description="调整平台运行参数，配置标识与类型保持不变" />}
         extra={configuration && <Tag className="data-model-drawer-header-tag">{configuration.valueType}</Tag>}
         open={open}
         size={680}
