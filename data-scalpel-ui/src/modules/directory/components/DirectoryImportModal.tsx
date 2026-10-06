@@ -1,5 +1,6 @@
-import { DeleteOutlined, DownloadOutlined, FileExcelOutlined, FolderOpenOutlined, InboxOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, ConfigProvider, Modal, Space, Tag, Typography, Upload, message } from 'antd';
+import { DeleteOutlined, DownloadOutlined, FolderOpenOutlined, InboxOutlined, FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { Button, Modal, Space, Tag, Typography, Upload, message, ConfigProvider } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
@@ -69,17 +70,7 @@ export const DirectoryImportModal = ({ scope, label, open, onClose }: DirectoryI
         rootClassName={`business-overlay business-modal-overlay${resourceStyle ? ' workspace-resource-overlay resource-import-modal' : ' directory-import-modal'}`}
         width={resourceStyle ? 520 : undefined}
         centered={resourceStyle}
-        title={resourceStyle ? (
-          <div className="resource-dialog-title"><UploadOutlined aria-hidden="true" /><span>导入{label}</span></div>
-        ) : (
-          <div className="directory-import-title">
-            <span className="directory-import-title-icon" aria-hidden="true"><FolderOpenOutlined /></span>
-            <span className="directory-import-title-copy">
-              <span>导入{label}</span>
-              <Typography.Text type="secondary">从固定模板批量建立或更新目录层级</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={`导入${label}`} icon={resourceStyle ? <UploadOutlined /> : <FolderOpenOutlined />} description={resourceStyle ? undefined : '从固定模板批量建立或更新目录层级'} />}
         open={open}
         destroyOnHidden
         closable={!importMutation.isPending}

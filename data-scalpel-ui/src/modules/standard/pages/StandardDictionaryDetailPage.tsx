@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
@@ -116,7 +117,7 @@ export const StandardDictionaryDetailPage = () => {
       onClick: () => {
         modalApi.confirm({
           rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-          title: '删除码表节点',
+          title: <OverlayTitle icon={<DeleteOutlined />} title="删除码表节点" tone="danger" />, icon: null,
           content: `确认删除“${item.name}”吗？`,
           okText: '删除',
           okButtonProps: { danger: true },

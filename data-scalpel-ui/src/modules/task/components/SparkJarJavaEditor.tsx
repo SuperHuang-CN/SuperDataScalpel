@@ -1,3 +1,5 @@
+import { EditOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { App, Button, Form, Input, Modal, Space, Spin, Typography } from 'antd';
 import { attachJavaLanguage, type JavaLanguageStatus } from '../model/javaLanguageMonaco';
@@ -447,7 +449,7 @@ export const SparkJarJavaEditor = forwardRef<SparkJarJavaEditorHandle, SparkJarJ
       <span className="spark-jar-java-language-meta">Java · UTF-8</span>
       {languageStatus.retryable && <Button type="link" size="small" onClick={() => languageRef.current?.retry()}>重新连接</Button>}
     </div>
-    <Modal open={renameOpen} title="重命名 Java 文件" rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
+    <Modal open={renameOpen} title={<OverlayTitle icon={<EditOutlined />} title="重命名 Java 文件" />} rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
       okText="确认重命名" cancelText="取消" confirmLoading={renaming} maskClosable={false}
       closable={!renaming} keyboard={!renaming} cancelButtonProps={{ disabled: renaming }}
       onCancel={() => setRenameOpen(false)} onOk={() => void confirmRename()}>

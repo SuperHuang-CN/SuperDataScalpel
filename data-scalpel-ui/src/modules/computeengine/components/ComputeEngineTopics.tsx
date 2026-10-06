@@ -1,4 +1,5 @@
 import { Button, Popover, Typography } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import type { ComputeEngine } from '../model/computeEngine';
 
 type Props = { engine: Pick<ComputeEngine, 'commandTopic' | 'runnerEventTopic' | 'adminEventTopic'>; compact?: boolean };
@@ -18,7 +19,7 @@ export const ComputeEngineTopics = ({ engine, compact = false }: Props) => {
   </div>;
   return compact ? <div>
     <Typography.Text ellipsis={{ tooltip: engine.commandTopic }} style={{ display: 'block', maxWidth: '100%', fontFamily: 'monospace' }}>{engine.commandTopic}</Typography.Text>
-    <Popover content={content} title="Kafka 消息通道（只读）" trigger={['click']}>
+    <Popover content={content} title={<OverlayTitle variant="popover" title="Kafka 消息通道（只读）" />} trigger={['click']}>
       <Button type="link" size="small" style={{ padding: 0 }}>查看全部 Topic</Button>
     </Popover>
   </div> : content;

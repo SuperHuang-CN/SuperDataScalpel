@@ -2,6 +2,7 @@ import { Form, Input, InputNumber, Modal, Select, Switch } from 'antd';
 import type { SpatialNearestConnectionLines } from '../../canvasTypes';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { spatialDistanceUnitOptions, spatialUnitHelp } from '../spatialUnits';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 export function ConnectionLinesModal({ value, geodesic, onSave, onCancel }: {
   value: SpatialNearestConnectionLines;
@@ -11,7 +12,7 @@ export function ConnectionLinesModal({ value, geodesic, onSave, onCancel }: {
 }) {
   const [form] = Form.useForm<SpatialNearestConnectionLines>();
   const enabled = Form.useWatch('enabled', { form, preserve: true });
-  return <Modal open width={560} title="连接线结果配置" okText="保存草稿" cancelText="取消" onCancel={onCancel}
+  return <Modal open width={560} title={<OverlayTitle variant="workspace" title="连接线结果配置" />} okText="保存草稿" cancelText="取消" onCancel={onCancel}
     onOk={() => { void form.validateFields().catch(() => undefined); onSave(form.getFieldsValue(true)); }}>
     <Form form={form} name="nearest_connection_lines" layout="vertical" autoComplete="off" initialValues={value}>
       <Form.Item name="enabled" valuePropName="checked" label={<span className="canvas-inspector-field-label">输出连接线

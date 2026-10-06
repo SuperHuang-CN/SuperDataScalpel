@@ -99,7 +99,7 @@ export const useDeleteDataEntries = () => {
   const client = useQueryClient();
   return useMutation({ mutationFn: ({ id, keys }: { id: string; keys: Record<string, unknown>[] }) => deleteDataEntries(id, keys), onSuccess: () => client.invalidateQueries({ queryKey: key }) });
 };
-export const useDataEntryOptions = (id: string, fieldId: string) => useMutation({ mutationFn: (request: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[] }) => queryDataEntryOptions(id, fieldId, request) });
+export const useDataEntryOptions = (id: string, fieldId: string) => useMutation({ mutationFn: ({ signal, ...request }: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[]; signal?: AbortSignal }) => queryDataEntryOptions(id, fieldId, request, signal) });
 export const useUpdateDataEntryRecord = () => {
   const client = useQueryClient();
   return useMutation({

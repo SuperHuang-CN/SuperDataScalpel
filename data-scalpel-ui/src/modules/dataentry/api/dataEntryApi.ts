@@ -74,7 +74,7 @@ export const importDataEntryFile = (id: string, file: File, previewDigest: strin
 };
 export const deleteDataEntries = (id: string, keys: Record<string, unknown>[]): Promise<DataEntryMutationResponse> => requestJson(`${PATH}/${id}/entries/actions/delete-batch`, { method: 'POST', body: JSON.stringify({ keys }) });
 export const queryDataEntryData = (id: string, request: DataModelDataQueryRequest): Promise<DataModelDataQueryResponse> => requestJson(`${PATH}/${id}/actions/query-data`, { method: 'POST', body: JSON.stringify(request) });
-export const queryDataEntryOptions = (id: string, fieldId: string, request: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[] }): Promise<DataEntryOptionResponse> => requestJson(`${PATH}/${id}/fields/${fieldId}/actions/query-options`, { method: 'POST', body: JSON.stringify(request) });
+export const queryDataEntryOptions = (id: string, fieldId: string, request: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[] }, signal?: AbortSignal): Promise<DataEntryOptionResponse> => requestJson(`${PATH}/${id}/fields/${fieldId}/actions/query-options`, { method: 'POST', body: JSON.stringify(request), signal });
 export const queryDataEntryDetail = (id: string, key: Record<string, unknown>): Promise<DataEntryRecordDetail> => requestJson(`${PATH}/${id}/entries/actions/query-detail`, { method: 'POST', body: JSON.stringify({ key }) });
 export const updateDataEntryRecord = (id: string, key: Record<string, unknown>, values: Record<string, unknown>): Promise<DataEntryUpdateResponse> => requestJson(`${PATH}/${id}/entries/actions/update`, { method: 'POST', body: JSON.stringify({ key, values }) });
 

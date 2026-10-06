@@ -1,4 +1,5 @@
 import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
@@ -709,15 +710,7 @@ export const DataSourceDrawer = ({
       {messageContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay"
-        title={(
-          <div className="data-source-drawer-title">
-            <span className="data-source-drawer-title-icon" aria-hidden="true">{selectedType ? <DataSourceTypeIcon type={selectedType} /> : <DatabaseOutlined />}</span>
-            <span className="data-source-drawer-title-copy">
-              <span>{editing ? '编辑数据源' : '新建数据源'}</span>
-              <Typography.Text type="secondary">{selectedDefinition?.displayName ?? (selectedType ? dataSourceTypeLabels[selectedType] : '配置连接信息')}</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={editing ? '编辑数据源' : '新建数据源'} icon={selectedType ? <DataSourceTypeIcon type={selectedType} /> : <DatabaseOutlined />} description={selectedDefinition?.displayName ?? (selectedType ? dataSourceTypeLabels[selectedType] : '配置连接信息')} />}
         open={open}
         size="min(960px, 100vw)"
         className="data-source-drawer data-source-editor"
@@ -825,7 +818,7 @@ export const DataSourceDrawer = ({
                         type="info"
                         showIcon
                         title="推荐的 TDengine 连接方式"
-                        description="第一阶段仅发现和读取超级表，不列出子表，也不开放写入与自定义 SQL 输入。"
+                       description="第一阶段仅发现和读取超级表，不列出子表，也不开放写入与自定义 SQL 输入。"
                       />
                     </Col>
                   )}
@@ -835,7 +828,7 @@ export const DataSourceDrawer = ({
                         type="warning"
                         showIcon
                         title="RESTful JDBC 仅用于旧环境兼容"
-                        description="TDengine 官方已弃用 RestfulDriver；新连接请优先选择 WebSocket JDBC。batchfetch/batchLoad=true 不受支持。"
+                       description="TDengine 官方已弃用 RestfulDriver；新连接请优先选择 WebSocket JDBC。batchfetch/batchLoad=true 不受支持。"
                       />
                     </Col>
                   )}

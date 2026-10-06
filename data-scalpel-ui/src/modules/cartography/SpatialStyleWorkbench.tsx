@@ -1,8 +1,8 @@
 import { createUuid } from '../../shared/browser/createUuid';
-import { EditOutlined, FileTextOutlined, UploadOutlined } from '@ant-design/icons';
+import { EditOutlined, FileTextOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import {
   Button, ColorPicker, Divider, Input, InputNumber, Modal, Popover, Radio, Segmented, Select, Slider,
-  Space, Spin, Switch, Tabs, Tag, Typography, Upload,
+  Spin, Switch, Tabs, Tag, Typography, Upload,
 } from 'antd';
 import { useState } from 'react';
 import type {
@@ -20,6 +20,7 @@ import { SpatialStyleLegend, SpatialSymbolSwatch } from './SpatialStyleLegend';
 import { SpatialSldSourcePanel } from './SpatialSldSourcePanel';
 import { SpatialScaleEditor } from './SpatialScaleEditor';
 import './cartography.css';
+import { OverlayTitle } from '../../shared/components/OverlayTitle';
 
 export interface SpatialStyleWorkbenchProps {
   mode: SpatialStyleMode;
@@ -31,8 +32,6 @@ export interface SpatialStyleWorkbenchProps {
   fileName: string | null;
   fileSize: number | null;
   uploadedSldText: string | null;
-  styleVersion: number;
-  appliedStyleVersion: number | null;
   syncStatus: 'NOT_APPLIED' | 'OUT_OF_SYNC' | 'SYNCING' | 'IN_SYNC' | 'SYNC_FAILED';
   syncError: string | null;
   deployed: boolean;
@@ -53,8 +52,6 @@ export interface SpatialStyleWorkbenchProps {
   onApply(): void;
 }
 
-const statusLabels = { NOT_APPLIED: '未应用', OUT_OF_SYNC: '待应用', SYNCING: '应用中', IN_SYNC: '已同步', SYNC_FAILED: '同步失败' } as const;
-const statusColors = { NOT_APPLIED: 'default', OUT_OF_SYNC: 'warning', SYNCING: 'processing', IN_SYNC: 'success', SYNC_FAILED: 'error' } as const;
 const markerLabels: Record<SpatialMarkerShape, string> = { CIRCLE: '圆形', SQUARE: '方形', TRIANGLE: '三角形', STAR: '星形' };
 const lineLabels: Record<SpatialLinePattern, string> = { SOLID: '实线', DASHED: '虚线', DOTTED: '点线' };
 const rampLabels: Record<string, string> = { DATASCALPEL_12: '分类色', BLUE_PURPLE: '蓝紫', BLUES: '蓝色', GREENS: '绿色', YELLOW_RED: '黄红' };
@@ -67,7 +64,7 @@ const OpacityField = ({ label, value, disabled, onChange }: { label: string; val
 );
 
 const ColorField = ({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange(value: string): void }) => (
-  <label className="cartography-field"><span>{label}</span><ColorPicker value={value} disabled={disabled} showText
+  <label className="cartography-field"><span>{label}</span><ColorPicker value={value} disabled={disabled}
     onChangeComplete={(next) => onChange(next.toHexString().toUpperCase())} /></label>
 );
 
@@ -217,7 +214,9 @@ const RendererEditor = ({ document, family, fields, disabled, onChange, onProfil
   const profileReplacingRules = (request: FieldProfileRequest, hasRules: boolean) => {
     if (!hasRules) { void profile(request); return; }
     Modal.confirm({
-      title: '重新统计并更新规则？',
+      rootClassName: 'business-overlay business-modal-overlay',
+      icon: null,
+      title: <OverlayTitle title="重新统计并更新规则？" icon={<ExclamationCircleOutlined />} />,
       content: '相同分类值会保留已有名称和符号；不再出现的值或手工断点将被替换。',
       okText: '继续统计', cancelText: '取消', onOk: () => profile(request),
     });
@@ -309,8 +308,14 @@ const LabelEditor = ({ value, fields, family, disabled, onChange }: { value: Spa
 export const SpatialStyleWorkbench = (props: SpatialStyleWorkbenchProps) => {
   const document = props.value ?? props.defaultDocument;
   return <div className="cartography-workbench">
-    <div className="cartography-heading"><div><strong>在线配图</strong><Typography.Text type="secondary">Renderer 编译为 GeoServer SLD</Typography.Text></div><Tag color={statusColors[props.syncStatus]}>{statusLabels[props.syncStatus]}</Tag></div>
-    <div className="cartography-meta"><span>草稿 v{props.styleVersion}</span><span>已应用 {props.appliedStyleVersion == null ? '—' : `v${props.appliedStyleVersion}`}</span></div>
+    {(props.editable || !props.deployed) && <div className="cartography-actions">
+      {!props.deployed && <Typography.Text type="secondary">服务启用时自动应用当前样式。</Typography.Text>}
+      {props.editable && <div className="cartography-action-buttons">
+        {props.mode === 'CARTOGRAPHY' && props.geometryFamily !== 'GENERIC' && <Button onClick={props.onRestoreDefault}>恢复默认</Button>}
+        <Button disabled={!props.dirty || props.mode === 'UPLOADED_SLD' && !props.file && !props.fileName} loading={props.saving} onClick={props.onSave}>保存草稿</Button>
+        {props.applicable && props.deployed && <Button type="primary" disabled={props.mode === 'UPLOADED_SLD' && props.dirty && !props.file && !props.fileName} loading={props.saving || props.applying} onClick={props.dirty ? props.onSaveAndApply : props.onApply}>{props.dirty ? '保存并应用' : props.syncStatus === 'IN_SYNC' ? '重新应用' : '应用样式'}</Button>}
+      </div>}
+    </div>}
     {props.syncError && <Typography.Text type="danger">{props.syncError}</Typography.Text>}
     <Segmented<SpatialStyleMode> block value={props.mode} disabled={!props.editable} options={[{ value: 'CARTOGRAPHY', label: '在线制图', icon: <EditOutlined /> }, { value: 'UPLOADED_SLD', label: '上传 SLD', icon: <FileTextOutlined /> }]} onChange={props.onModeChange} />
     <div className="cartography-scroll">
@@ -330,10 +335,5 @@ export const SpatialStyleWorkbench = (props: SpatialStyleWorkbenchProps) => {
       <SpatialSldSourcePanel mode={props.mode} geometryFamily={props.geometryFamily} document={document}
         file={props.file} uploadedSldText={props.uploadedSldText} onQuerySld={props.onQuerySld} />
     </div>
-    <div className="cartography-actions"><Space wrap>
-      {props.editable && props.mode === 'CARTOGRAPHY' && props.geometryFamily !== 'GENERIC' && <Button onClick={props.onRestoreDefault}>恢复默认</Button>}
-      {props.editable && <Button disabled={!props.dirty || props.mode === 'UPLOADED_SLD' && !props.file && !props.fileName} loading={props.saving} onClick={props.onSave}>保存草稿</Button>}
-      {props.editable && props.applicable && props.deployed && <Button type="primary" disabled={props.mode === 'UPLOADED_SLD' && props.dirty && !props.file && !props.fileName} loading={props.saving || props.applying} onClick={props.dirty ? props.onSaveAndApply : props.onApply}>{props.dirty ? '保存并应用' : props.syncStatus === 'IN_SYNC' ? '重新应用' : '应用样式'}</Button>}
-    </Space>{!props.deployed && <Typography.Text type="secondary">服务启用时自动应用当前样式。</Typography.Text>}</div>
   </div>;
 };

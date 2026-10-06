@@ -11,6 +11,7 @@ import {
   TableOutlined,
 } from '@ant-design/icons';
 import { Badge, Button, Card, Col, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -435,15 +436,7 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
     <Drawer
       rootClassName="business-overlay business-drawer-overlay"
       open={open}
-      title={(
-        <div className="data-source-drawer-title">
-          <span className="data-source-drawer-title-icon" aria-hidden="true"><ApiOutlined /></span>
-          <span className="data-source-drawer-title-copy">
-            <span>{resource ? `修改 API 资源 · ${resource.name}` : '新建 API 资源'}</span>
-            <Typography.Text type="secondary">定义请求协议、结果结构与安全执行边界</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title={resource ? `修改 API 资源 · ${resource.name}` : '新建 API 资源'} icon={<ApiOutlined />} description="定义请求协议、结果结构与安全执行边界" />}
       extra={<span className="data-source-drawer-header-status"><Tag color={enabled ? 'success' : undefined}>{enabled ? '已启用' : '已停用'}</Tag></span>}
       size="min(1120px, 100vw)"
       className="data-source-drawer api-resource-drawer"
@@ -463,6 +456,7 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
           </Space>
         </div>
       )}
+      closable={{ placement: 'end' }}
     >
       <div className="data-source-drawer-layout">
         <nav className="data-source-section-nav api-resource-section-nav" aria-label="API 资源配置分区">

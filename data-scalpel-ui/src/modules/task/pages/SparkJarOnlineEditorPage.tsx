@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { taskPageHref } from '../model/taskViews';
 import { sparkJarReadSnippet } from '../model/sparkJarCodeResource';
@@ -295,7 +296,7 @@ const OnlineWorkbench = ({
     if (blocker.state !== 'blocked') return;
     Modal.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '在线源码尚未保存',
+      title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="在线源码尚未保存" tone="danger" />, icon: null,
       content: '离开后，本次修改将丢失。',
       okText: '放弃修改并离开',
       okButtonProps: { danger: true },
@@ -474,7 +475,7 @@ const OnlineWorkbench = ({
       } finally { resourceSaveInFlight.current = false; }
     };
     if (next.discardedTableCount > 1) {
-      Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '更新资源并清除原表选择？',
+      Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="更新资源并清除原表选择？" />, icon: null,
         content: `原绑定包含 ${next.discardedTableCount} 张 JDBC 表，本地开发表选择将被替换；不会删除数据库中的表。`,
         okText: '确认更新', cancelText: '继续编辑', onOk: submit });
     } else void submit();
@@ -622,7 +623,7 @@ const OnlineWorkbench = ({
             />
           </Popover>
           <Button type="primary" icon={<CloudUploadOutlined />} loading={compileMutation.isPending} disabled={busy} onClick={() => Modal.confirm({
-            title: '应用当前代码到任务？',
+            rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="应用当前代码到任务？" />, icon: null,
             content: '编译成功后替换当前生效 JAR，不会立即运行任务。编译失败保留原 JAR。',
             okText: '编译并应用', cancelText: '取消', onOk: compile,
           })}>

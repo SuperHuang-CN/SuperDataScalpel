@@ -61,7 +61,7 @@ export const FileDatasetOverviewPanel = ({
           type="error"
           showIcon
           message="解析状态加载失败"
-          description="基础信息仍可查看，但当前表状态统计可能不准确。"
+         description="基础信息仍可查看，但当前表状态统计可能不准确。"
           action={<Button size="small" onClick={onRetryTables}>重试</Button>}
         />
       )}
@@ -70,7 +70,7 @@ export const FileDatasetOverviewPanel = ({
           type="info"
           showIcon
           message={`后台解析进行中：排队 ${statusCounts.QUEUED} 张，解析中 ${statusCounts.PARSING} 张`}
-          description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
+         description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
         />
       )}
       <div className="file-dataset-overview-columns">

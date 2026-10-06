@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   ControlOutlined,
   ExperimentOutlined,
@@ -162,20 +163,12 @@ export const MaskingRuleDrawer = ({
   return (
     <>
       {contextHolder}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer masking-rule-drawer"
         open={open}
         size={720}
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><EyeInvisibleOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{rule ? `${readOnly ? '查看' : '修改'}脱敏规则` : '新建脱敏规则'}</span>
-              <Typography.Text type="secondary">定义可复用的数据掩码策略与执行参数</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<EyeInvisibleOutlined />} title={rule ? `${readOnly ? '查看' : '修改'}脱敏规则` : '新建脱敏规则'} description="定义可复用的数据掩码策略与执行参数" />}
         extra={<Tag className="data-model-drawer-header-tag">{strategyLabel}</Tag>}
         destroyOnHidden
         onClose={close}

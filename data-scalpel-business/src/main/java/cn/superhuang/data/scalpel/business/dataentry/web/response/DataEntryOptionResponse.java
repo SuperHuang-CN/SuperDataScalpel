@@ -24,9 +24,9 @@ public record DataEntryOptionResponse(
     public record Option(
             @Schema(description = "表单实际保存的标量值；码表为节点值，关联模型为来源业务主键值。")
             Object value,
-            @Schema(description = "来源定义中的原始显示标签。")
+            @Schema(description = "来源定义中的原始显示标签；关联模型记录的标签为 null 时本值为 null。")
             String label,
-            @Schema(description = "面向表单展示的完整标签；层级码表可包含祖先路径，关联模型可包含业务主键。")
+            @Schema(description = "面向表单展示的完整标签；关联模型标签为 null 或空白时只显示业务主键，否则显示标签和业务主键。")
             String displayLabel,
             @Schema(description = "值状态：ACTIVE 可继续选择，DISABLED 仅用于回显历史值，MISSING 无匹配项，SOURCE_UNAVAILABLE 来源不可用。")
             String status

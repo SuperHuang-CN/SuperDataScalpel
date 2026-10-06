@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Form, Input, Popconfirm, Space, Tag, Typography } from 'antd';
 import type {
@@ -63,7 +64,7 @@ export const JoinOutputColumnsEditor = ({
           排除右侧 Join Key
         </Button>}
         <Popconfirm
-          title="重建输出字段建议？"
+          title={<OverlayTitle variant="popover" title="重建输出字段建议？" />}
           description="这会覆盖当前的字段改名、排除和排序。"
           okText="重建"
           cancelText="取消"

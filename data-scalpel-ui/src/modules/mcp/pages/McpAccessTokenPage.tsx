@@ -1,6 +1,7 @@
 import { ManagementListCell, ManagementName } from '../../../shared/components/ManagementListCells';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, KeyOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Input, Modal, Space, Table, Tag, Tooltip, Typography, message, type MenuProps, type TableColumnsType } from 'antd';
 import { useState } from 'react';
@@ -41,8 +42,8 @@ export function McpAccessTokenPage() {
     catch (error) { messageApi.error(error instanceof ApiError ? error.message : 'Token 加载失败'); }
     finally { setSecretLoading(false); }
   };
-  const rotateToken = (item: McpAccessToken) => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: `轮换“${item.name}”？`, content: '旧 Token 会立即失效，客户端需要改用新 Token。', okText: '确认轮换', okButtonProps: { danger: true }, onOk: async () => { const issued = await rotate.mutateAsync(item.id); setSecret(issued.accessToken); messageApi.success('Token 已轮换'); } });
-  const deleteToken = (item: McpAccessToken) => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: `删除“${item.name}”？`, content: '删除后 Token 立即失效，Server 授权一并删除；历史调用日志仍保留。', okText: '删除', okButtonProps: { danger: true }, onOk: async () => { await remove.mutateAsync(item.id); messageApi.success('访问凭证已删除'); } });
+  const rotateToken = (item: McpAccessToken) => modal.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title={`轮换“${item.name}”？`} icon={<DeleteOutlined />} tone="danger" />, content: '旧 Token 会立即失效，客户端需要改用新 Token。', okText: '确认轮换', okButtonProps: { danger: true }, onOk: async () => { const issued = await rotate.mutateAsync(item.id); setSecret(issued.accessToken); messageApi.success('Token 已轮换'); } });
+  const deleteToken = (item: McpAccessToken) => modal.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title={`删除“${item.name}”？`} icon={<DeleteOutlined />} tone="danger" />, content: '删除后 Token 立即失效，Server 授权一并删除；历史调用日志仍保留。', okText: '删除', okButtonProps: { danger: true }, onOk: async () => { await remove.mutateAsync(item.id); messageApi.success('访问凭证已删除'); } });
   const menu = (item: McpAccessToken): MenuProps['items'] => [
     { key: 'toggle', label: item.status === 'ENABLED' ? '停用' : '启用', onClick: () => void action.mutateAsync({ id: item.id, action: item.status === 'ENABLED' ? 'disable' : 'enable' }).then(() => messageApi.success(item.status === 'ENABLED' ? '已停用' : '已启用')) },
     { key: 'rotate', icon: <SyncOutlined />, label: '轮换 Token', onClick: () => rotateToken(item) },
@@ -67,6 +68,6 @@ export function McpAccessTokenPage() {
       <Table className="management-table management-table-comfortable" size="small" rowKey="id" columns={columns} dataSource={query.data?.content ?? []} loading={query.isLoading} scroll={{ x: 1100, y: '100%' }} pagination={{ current: page + 1, pageSize: size, total: query.data?.totalElements ?? 0, showSizeChanger: true, showTotal: total => `共 ${total} 项`, onChange: (next, nextSize) => { setPage(nextSize === size ? next - 1 : 0); setSize(nextSize); } }} />
     </div>
     <McpAccessTokenDrawer open={editor !== undefined} tokenId={editor} onClose={() => setEditor(undefined)} onIssued={value => setSecret(value)} />
-    <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" open={secret !== null} title={<Space><KeyOutlined />完整 Access Token</Space>} footer={<Space><Button icon={<CopyOutlined />} onClick={() => void writeClipboardText(secret ?? '').then(() => messageApi.success('Token 已复制'))}>复制</Button><Button type="primary" onClick={() => setSecret(null)}>关闭</Button></Space>} onCancel={() => setSecret(null)} destroyOnHidden><BusinessSecretInput readOnly name="mcp-access-token-secret" value={secret ?? ''} /></Modal>
+    <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" open={secret !== null} title={<OverlayTitle title="完整 Access Token" icon={<KeyOutlined />} />} footer={<Space><Button icon={<CopyOutlined />} onClick={() => void writeClipboardText(secret ?? '').then(() => messageApi.success('Token 已复制'))}>复制</Button><Button type="primary" onClick={() => setSecret(null)}>关闭</Button></Space>} onCancel={() => setSecret(null)} destroyOnHidden><BusinessSecretInput readOnly name="mcp-access-token-secret" value={secret ?? ''} /></Modal>
   </section>;
 }

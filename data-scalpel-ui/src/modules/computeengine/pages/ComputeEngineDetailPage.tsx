@@ -49,6 +49,7 @@ import {
   type ComputeEngineRuntimeOverview,
   type DispatcherExecutionScope,
 } from '../model/computeEngine';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 type DetailTab = 'overview' | 'active' | 'queue' | 'recent' | 'configuration';
 
@@ -276,8 +277,9 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
     } catch (error) { showError(error, '测试计算引擎失败'); }
   };
   const register = () => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: '注册计算引擎', content: engine.registrationState === 'DETACHED'
+    title: <OverlayTitle title="注册计算引擎" icon={<SendOutlined />} />, content: engine.registrationState === 'DETACHED'
       ? `请先确认原 Dispatcher 进程已经永久停止。继续后将“${engine.name}”注册到当前 Dispatcher，并重新启用任务准入。`
       : `将“${engine.name}”注册到对应 Dispatcher，并启用新任务准入。`,
     okText: '注册', cancelText: '取消',
@@ -287,8 +289,9 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
     },
   });
   const drain = () => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: engineLifecycle.pause.label, content: `“${engine.name}”：${engineLifecycle.pause.description}`,
+    title: <OverlayTitle title={engineLifecycle.pause.label} icon={<PauseCircleOutlined />} />, content: `“${engine.name}”：${engineLifecycle.pause.description}`,
     okText: engineLifecycle.pause.label, cancelText: '取消',
     onOk: async () => {
       try { await commandMutation.mutateAsync({ id: engine.id, command: 'drain' }); messageApi.success('任务调度已暂停，运行中任务继续'); }
@@ -296,8 +299,9 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
     },
   });
   const resume = () => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: engineLifecycle.resume.label, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
+    title: <OverlayTitle title={engineLifecycle.resume.label} icon={<ThunderboltOutlined />} />, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
     okText: engineLifecycle.resume.label, cancelText: '取消',
     onOk: async () => {
       try { await commandMutation.mutateAsync({ id: engine.id, command: 'resume' }); messageApi.success('任务调度已恢复'); }
@@ -305,8 +309,9 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
     },
   });
   const deactivate = (force: boolean) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label,
+    title: <OverlayTitle title={force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label} icon={<StopOutlined />} tone="danger" />,
     content: `“${engine.name}”：${force ? engineLifecycle.forceStop.description : engineLifecycle.stop.description} Dispatcher 必须可访问。`,
     okText: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label, cancelText: '取消', okButtonProps: { danger: force },
     onOk: async () => {

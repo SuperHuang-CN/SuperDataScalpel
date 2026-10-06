@@ -125,6 +125,51 @@
   .resource-workspace-overlay.business-overlay:is(.business-drawer-overlay, .business-modal-overlay) :is(.ant-modal-header, .ant-modal-body, .ant-modal-footer, .ant-drawer-header, .ant-drawer-body, .ant-drawer-footer) { padding-inline: 16px; }
 }
 
+/* OverlayTitle supplies heading structure; either resource portal scope owns
+   its lake-blue appearance. The extra root scope beats generic :has() rules. */
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay .overlay-title { gap: 10px; color: #263d4c; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay .overlay-title__icon { width: 36px; height: 36px; color: #287f9e; font-size: 16px; background: #edf6fb; border: 0; border-radius: var(--ds-radius-control); box-shadow: none; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay .overlay-title__name { color: #263d4c; font-size: 17px; font-weight: 600; line-height: 24px; letter-spacing: 0; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay .overlay-title__description { color: #5b7180; font-size: 12px; font-weight: 400; line-height: 20px; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay .overlay-title--danger .overlay-title__icon { color: #b6384b; background: #fff0f2; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-drawer-overlay .ant-drawer-header:has(.overlay-title) { min-height: 68px; padding: 16px 24px; background: #f8fbfd; border-bottom: 1px solid #e2ecf1; backdrop-filter: none; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-container:has(.overlay-title) { padding: 0; background: #fff; border-color: #e2ecf1; border-radius: var(--ds-radius-panel); }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-header:has(.overlay-title) { min-height: 64px; padding: 16px 56px 16px 24px; background: #f8fbfd; border-bottom: 1px solid #e2ecf1; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .overlay-title__icon { width: 32px; height: 32px; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay:is(.business-drawer-overlay, .business-modal-overlay) :is(.ant-drawer-close, .ant-modal-close) { color: #5b7180; background: #f3f8fb; border-color: #dce8ee; border-radius: var(--ds-radius-control); }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay:is(.business-drawer-overlay, .business-modal-overlay) :is(.ant-drawer-close, .ant-modal-close):hover { color: #287f9e; background: #edf6fb; border-color: #bfdbe9; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay:is(.business-drawer-overlay, .business-modal-overlay) :is(.ant-drawer-close, .ant-modal-close):active { color: #216c88; background: #dfeef7; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay:is(.business-drawer-overlay, .business-modal-overlay) :is(.ant-drawer-close, .ant-modal-close):focus-visible { outline-color: #287f9e; }
+
+/* Confirm headings live in the body; allocate spacing once around each region. */
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-body:has(.ant-modal-confirm-title .overlay-title) { padding: 0; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-title:has(.overlay-title) { min-height: 64px; padding: 16px 24px; background: #f8fbfd; border-bottom: 1px solid #e2ecf1; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-body:has(.overlay-title) .ant-modal-confirm-content { padding: 16px 24px 8px; }
+:is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-body-wrapper:has(.overlay-title) .ant-modal-confirm-btns { padding: 12px 24px 16px; }
+
+/* Directory and file/delete dialogs retain their existing single white surface. */
+.workspace-resource-overlay.business-overlay.business-drawer-overlay .resource-directory-editor .ant-drawer-header:has(.overlay-title) { min-height: 64px; background: #fff; }
+.workspace-resource-overlay.business-overlay.business-modal-overlay.resource-import-modal .ant-modal-header:has(.overlay-title) { padding-block: 20px; background: #fff; }
+.workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-body:has(.overlay-title) { padding: 24px; }
+.workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-title:has(.overlay-title) { min-height: 0; padding: 0; background: #fff; border: 0; }
+.workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-body:has(.overlay-title) .ant-modal-confirm-content { margin-top: 16px; padding: 0; }
+.workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-body-wrapper:has(.overlay-title) .ant-modal-confirm-btns { margin-top: 24px; padding: 0; }
+@media (max-width: 720px) {
+  :is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-drawer-overlay .ant-drawer-header:has(.overlay-title) { padding-inline: 16px; }
+  :is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay :is(.ant-modal-header, .ant-modal-confirm-title):has(.overlay-title) { padding-left: 16px; }
+  :is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-title:has(.overlay-title) { padding-right: 16px; }
+  :is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-body:has(.overlay-title) .ant-modal-confirm-content { padding-inline: 16px; }
+  :is(.workspace-resource-overlay, .resource-workspace-overlay).business-overlay.business-modal-overlay .ant-modal-confirm-body-wrapper:has(.overlay-title) .ant-modal-confirm-btns { padding-inline: 16px; }
+  .workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-body:has(.overlay-title) { padding-inline: 16px; }
+  .workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-title:has(.overlay-title),
+  .workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-body:has(.overlay-title) .ant-modal-confirm-content,
+  .workspace-resource-overlay.business-overlay.business-modal-overlay.resource-delete-modal .ant-modal-confirm-body-wrapper:has(.overlay-title) .ant-modal-confirm-btns { padding-inline: 0; }
+}
+@media (max-width: 480px) {
+  .workspace-resource-overlay.business-overlay.business-drawer-overlay .resource-directory-editor .ant-drawer-header:has(.overlay-title) { padding-inline: 16px; }
+  .workspace-resource-overlay.business-overlay.business-modal-overlay.resource-import-modal .ant-modal-header:has(.overlay-title) { padding-left: 16px; }
+}
+
 /* Dialog contents use the same flat information hierarchy as resource details.
    Keep these rules outside the list-density scope: form controls stay 36px. */
 .resource-workspace-overlay.business-overlay :is(.data-model-form, .service-engine-form, .data-service-basic-form) { gap: 9px; }

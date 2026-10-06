@@ -29,6 +29,7 @@ import {
 import type { DataServiceDetail, DataServiceSummary } from '../model/dataService';
 import { publishedGatewayBinding } from '../model/dataServiceGateway';
 import { GatewayReconciliationTag } from './GatewayReconciliationTag';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface DataServiceSubscriptionsDrawerProps {
   open: boolean;
@@ -168,8 +169,9 @@ export const DataServiceSubscriptionsDrawer = ({
       if (key === 'sync') void sync(subscription);
       if (key === 'revoke') {
         modalApi.confirm({
+          icon: null,
           rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-          title: '撤回消费者订阅',
+          title: <OverlayTitle title="撤回消费者订阅" icon={<DeleteOutlined />} tone="danger" />,
           content: `确认撤回“${subscription.consumerName}”对当前服务的调用权限吗？`,
           okText: '撤回',
           okButtonProps: { danger: true },
@@ -241,18 +243,10 @@ export const DataServiceSubscriptionsDrawer = ({
   return (
     <>
       {messageContext}{modalContext}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-subscriptions-drawer"
-        title={(
-          <div className="data-service-subscriptions-title">
-            <span className="data-service-subscriptions-title-icon" aria-hidden="true"><LinkOutlined /></span>
-            <span className="data-service-subscriptions-title-copy">
-              <span>管理服务订阅</span>
-              <Typography.Text type="secondary">{dataService?.name ?? '数据服务'} · 管理消费者调用授权与网关同步</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="管理服务订阅" icon={<LinkOutlined />} description={`${dataService?.name ?? '数据服务'} · 管理消费者调用授权与网关同步`} />}
         extra={<Tag className="data-service-subscriptions-header-tag">{subscriptions.length} 个消费者</Tag>}
         open={open}
         width={780}

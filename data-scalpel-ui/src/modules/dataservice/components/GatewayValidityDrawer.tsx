@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { ClockCircleOutlined } from '@ant-design/icons';
 import { Button, Input, Drawer, Form, InputNumber, Space, Tag, message } from 'antd';
 import { CompactAlert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { getGatewayValidity, saveGatewayValidity, type GatewayValidityKind } from '../api/gatewayValidityApi';
 
 export interface GatewayValidityTarget { kind: GatewayValidityKind; id: string; name: string }
@@ -13,7 +15,7 @@ export const GatewayValidityDrawer = ({ target, onClose }: { target: GatewayVali
   const save = useMutation({ mutationFn: (values: { validFrom: string; expiresAt: string; requestsPerSecond: number }) => saveGatewayValidity(target!.kind, target!.id, {
     validFrom: values.validFrom ? new Date(values.validFrom).toISOString() : null, expiresAt: values.expiresAt ? new Date(values.expiresAt).toISOString() : null, requestsPerSecond: values.requestsPerSecond ?? 0,
   }), onSuccess: () => { message.success('有效期已保存，节点加载后生效；到期无需再次同步'); void query.refetch(); }, onError: (error: Error) => message.error(error.message) });
-  return <Drawer title={`${target?.name ?? ''} · 有效期与续期`} size={620} open={!!target} onClose={onClose} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
+  return <Drawer closable={{ placement: 'end' }} title={<OverlayTitle title={`${target?.name ?? ''} · 有效期与续期`} icon={<ClockCircleOutlined />} />} size={620} open={!!target} onClose={onClose} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
     footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}><Button onClick={onClose}>关闭</Button><Button type="primary" disabled={!query.data} loading={save.isPending} onClick={() => form.submit()}>保存</Button></Space>}>
     <CompactAlert type="info" message="仅支持自研网关。时间使用本地时区显示，到期时每次调用直接拒绝；续期不会重新启用已撤回对象，也不会更换 API Key。" />
     {query.error && <CompactAlert type="error" message={query.error.message} action={<Button onClick={() => void query.refetch()}>重试</Button>} />}

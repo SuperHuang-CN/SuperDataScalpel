@@ -215,8 +215,8 @@ public class DataEntryHealthService {
                 continue;
             }
             DataModelField label = fields.stream().filter(field -> field.getId().equals(lookup.getSourceLabelFieldId())).findFirst().orElse(null);
-            if (label == null || label.getFieldType() != PlatformDataType.STRING || label.isNullable()) {
-                issue(issues, "LOOKUP_LABEL_FIELD_INVALID", "关联下拉标签字段必须是非空 STRING 字段", PUBLISH_SUBMIT,
+            if (label == null || label.getFieldType() != PlatformDataType.STRING) {
+                issue(issues, "LOOKUP_LABEL_FIELD_INVALID", "关联下拉标签字段必须是 STRING 字段", PUBLISH_SUBMIT,
                         target.getId(), source.getId());
             }
             if (!valueCompatible(target, primaryKeys.getFirst())) {

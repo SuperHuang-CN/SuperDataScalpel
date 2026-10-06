@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { IdcardOutlined, SafetyCertificateOutlined, UserAddOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, Row, Select, Space, Switch, Tag, Typography, message } from 'antd';
 import { useEffect } from 'react';
@@ -79,18 +80,10 @@ export const SystemUserDrawer = ({ open, user, roles, onClose }: SystemUserDrawe
   return (
     <>
       {messageContext}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-user-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><UserAddOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{isEditing ? '修改系统用户' : '新建系统用户'}</span>
-              <Typography.Text type="secondary">维护登录身份、显示名称与系统访问角色</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<UserAddOutlined />} title={isEditing ? '修改系统用户' : '新建系统用户'} description="维护登录身份、显示名称与系统访问角色" />}
         extra={<Tag className="data-model-drawer-header-tag" color={enabled ? 'success' : undefined}>{enabled ? '启用' : '停用'}</Tag>}
         open={open}
         size={720}

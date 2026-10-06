@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { CodeOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
 import { Button, Empty, Form, Input, Modal, Space, Tag, Tooltip, Typography } from 'antd';
 import { useCallback, useImperativeHandle, useRef, useState } from 'react';
@@ -180,7 +181,7 @@ const SqlTransformInspector = ({
         width={1120}
         destroyOnHidden
         className="canvas-sql-transform-modal"
-        title="配置 SQL 处理"
+        title={<OverlayTitle variant="workspace" title="配置 SQL 处理" />}
         okText="保存 SQL"
         cancelText="取消"
         onOk={closeAndSaveSql}

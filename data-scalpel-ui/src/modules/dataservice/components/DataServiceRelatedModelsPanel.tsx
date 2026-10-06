@@ -1,7 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { Button, Empty, Table, Tag, Typography } from 'antd';
+import { Empty, Table, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
-import { useLocation, useNavigate } from 'react-router-dom';
 import {
   dataModelStatusLabels,
   type DataModelStatus,
@@ -31,9 +30,6 @@ export const DataServiceRelatedModelsPanel = ({
   relatedModels,
   canViewModels,
 }: DataServiceRelatedModelsPanelProps) => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
   if (dataService.type === 'SCRIPT_API') {
     return (
       <div className="data-service-detail-tab-panel data-service-related-models-empty">
@@ -82,7 +78,22 @@ export const DataServiceRelatedModelsPanel = ({
       key: 'code',
       width: 170,
       ellipsis: true,
-      render: (_value, row) => <code>{row.code ?? row.modelId}</code>,
+      render: (_value, row) => {
+        const modelCode = row.code ?? row.modelId;
+        const content = <code>{modelCode}</code>;
+        return canViewModels && row.resolved
+          ? (
+            <Typography.Link
+              href={`/model/${row.modelId}`}
+              target="_blank"
+              rel="opener"
+              aria-label={`在新标签页查看模型 ${modelCode}`}
+            >
+              {content}
+            </Typography.Link>
+          )
+          : content;
+      },
     },
     {
       title: '状态',
@@ -106,28 +117,6 @@ export const DataServiceRelatedModelsPanel = ({
       ellipsis: true,
       render: (_value, row) => <code>{physicalTableName(row)}</code>,
     },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 86,
-      fixed: 'right',
-      render: (_value, row) => (
-        <Button
-          type="link"
-          size="small"
-          disabled={!canViewModels || !row.resolved}
-          onClick={() => navigate(`/model/${row.modelId}`, {
-            state: {
-              returnTo: `${location.pathname}${location.search}`,
-              returnLabel: '返回数据服务',
-              returnState: location.state,
-            },
-          })}
-        >
-          查看模型
-        </Button>
-      ),
-    },
   ];
 
   return (
@@ -148,7 +137,7 @@ export const DataServiceRelatedModelsPanel = ({
         dataSource={relatedModels}
         loading={relatedModels.some((row) => row.loading)}
         pagination={false}
-        scroll={{ x: 1100, y: '100%' }}
+        scroll={{ x: 1040, y: '100%' }}
       />
     </div>
   );

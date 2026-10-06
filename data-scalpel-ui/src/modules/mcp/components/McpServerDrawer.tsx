@@ -1,4 +1,6 @@
+import { ApiOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Modal, Space, TreeSelect, Typography, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
@@ -24,7 +26,7 @@ function ServerDrawerForm({ server, directories, defaultDirectoryId, onClose, on
   const close = () => {
     if (saving) return;
     if (!dirty) { onClose(); return; }
-    modal.confirm({ title: '放弃未保存的基础信息？', okText: '放弃', cancelText: '继续编辑', onOk: onClose,
+    modal.confirm({ icon: null, title: <OverlayTitle title="放弃未保存的基础信息？" icon={<ExclamationCircleOutlined />} tone="danger" />, okText: '放弃', cancelText: '继续编辑', onOk: onClose,
       rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay' });
   };
   const submit = async () => {
@@ -41,11 +43,11 @@ function ServerDrawerForm({ server, directories, defaultDirectoryId, onClose, on
     } catch (error) { if (error instanceof ApiError) messageApi.error(error.message); }
   };
   return <Drawer open width={560} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
-    title={server ? '编辑 MCP Server' : '新建 MCP Server'} onClose={close}
+    title={<OverlayTitle title={server ? '编辑 MCP Server' : '新建 MCP Server'} icon={<ApiOutlined />} description="维护 Server 基础信息与 Tool 组织目录" />} onClose={close}
     footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
       <Button disabled={saving} onClick={close}>取消</Button>
       <Button type="primary" loading={saving} onClick={() => void submit()}>确定</Button>
-    </Space>}>
+    </Space>} closable={{ placement: 'end' }}>
     {context}{modalContext}
     <Form form={form} layout="vertical" autoComplete="off" disabled={saving} onValuesChange={() => setDirty(true)}
       initialValues={server ? { name: server.name, directoryId: server.directoryId ?? undefined, description: server.description ?? '', instructions: server.instructions ?? '' }

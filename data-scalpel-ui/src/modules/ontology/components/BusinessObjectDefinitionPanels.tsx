@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../shared/browser/createUuid';
 import {
   ApiOutlined,
@@ -335,7 +336,7 @@ export const SourcesPanel = ({ definition, canManage, onChange }: {
                 </div>
               ),
               extra: canManage ? (
-                <Popconfirm title={`移除“${source.name || `补充来源 ${index + 1}`}”？`} onConfirm={() => onChange({ ...definition, supplements: definition.supplements.filter((_, position) => position !== index) })}>
+                <Popconfirm title={<OverlayTitle variant="popover" title={`移除“${source.name || `补充来源 ${index + 1}`}”？`} tone="danger" />} onConfirm={() => onChange({ ...definition, supplements: definition.supplements.filter((_, position) => position !== index) })}>
                   <Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除${source.name || '补充来源'}`} onClick={(event) => event.stopPropagation()} />
                 </Popconfirm>
               ) : null,
@@ -444,7 +445,7 @@ export const PropertiesPanel = ({ definition, canManage, onChange }: {
                     <Tooltip title="上移"><Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={!canManage || index === 0} aria-label={`上移${group.name}`} onClick={() => moveGroup(group.id, -1)} /></Tooltip>
                     <Tooltip title="下移"><Button type="text" size="small" icon={<ArrowDownOutlined />} disabled={!canManage || index === groups.length - 1} aria-label={`下移${group.name}`} onClick={() => moveGroup(group.id, 1)} /></Tooltip>
                     <Tooltip title="重命名"><Button type="text" size="small" icon={<EditOutlined />} disabled={!canManage} aria-label={`编辑${group.name}`} onClick={() => { setNewGroup(false); setGroupDraft({ ...group }); }} /></Tooltip>
-                    <Popconfirm title={`删除属性组“${group.name}”？`} description="组内属性将移入未分组。" onConfirm={() => onChange({ ...definition, groups: definition.groups.filter((item) => item.id !== group.id), properties: definition.properties.map((property) => property.groupId === group.id ? { ...property, groupId: null } : property) })}>
+                    <Popconfirm title={<OverlayTitle variant="popover" title={`删除属性组“${group.name}”？`} tone="danger" />} description="组内属性将移入未分组。" onConfirm={() => onChange({ ...definition, groups: definition.groups.filter((item) => item.id !== group.id), properties: definition.properties.map((property) => property.groupId === group.id ? { ...property, groupId: null } : property) })}>
                       <Tooltip title="删除分组"><Button type="text" size="small" danger icon={<DeleteOutlined />} disabled={!canManage} aria-label={`删除${group.name}`} /></Tooltip>
                     </Popconfirm>
                   </Space>
@@ -501,7 +502,7 @@ export const PropertiesPanel = ({ definition, canManage, onChange }: {
               render: (_, property) => (
                 <Space size={0}>
                   <Tooltip title="编辑属性"><Button type="text" icon={<EditOutlined />} disabled={!canManage} aria-label={`编辑属性${property.name}`} onClick={() => setPropertyDraft({ ...property })} /></Tooltip>
-                  <Popconfirm title={`移除业务属性“${property.name}”？`} description="不会删除来源模型字段。" onConfirm={() => onChange({ ...definition, properties: definition.properties.filter((item) => item.id !== property.id) })}>
+                  <Popconfirm title={<OverlayTitle variant="popover" title={`移除业务属性“${property.name}”？`} tone="danger" />} description="不会删除来源模型字段。" onConfirm={() => onChange({ ...definition, properties: definition.properties.filter((item) => item.id !== property.id) })}>
                     <Tooltip title="移除属性"><Button type="text" danger icon={<DeleteOutlined />} disabled={!canManage} aria-label={`移除属性${property.name}`} /></Tooltip>
                   </Popconfirm>
                 </Space>
@@ -511,11 +512,11 @@ export const PropertiesPanel = ({ definition, canManage, onChange }: {
         />
       </BusinessDetailSection>
 
-      <Modal rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" open={Boolean(groupDraft)} title={newGroup ? '新建属性组' : '编辑属性组'} okText="保存" cancelText="取消" okButtonProps={{ disabled: !groupDraft?.name.trim() }} onCancel={() => setGroupDraft(null)} onOk={saveGroup}>
+      <Modal open={Boolean(groupDraft)} rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title={newGroup ? '新建属性组' : '编辑属性组'} />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !groupDraft?.name.trim() }} onCancel={() => setGroupDraft(null)} onOk={saveGroup}>
         <OntologyField label="分组名称"><Input autoComplete="off" autoFocus value={groupDraft?.name ?? ''} maxLength={100} onChange={(event) => groupDraft && setGroupDraft({ ...groupDraft, name: event.target.value })} /></OntologyField>
       </Modal>
 
-      <Modal rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" open={Boolean(propertyDraft)} title="编辑业务属性" okText="保存" cancelText="取消" okButtonProps={{ disabled: !propertyDraft?.name.trim() || !propertyDraft?.code.trim() }} onCancel={() => setPropertyDraft(null)} onOk={() => {
+      <Modal open={Boolean(propertyDraft)} rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay" title={<OverlayTitle icon={<ApartmentOutlined />} title="编辑业务属性" />} okText="保存" cancelText="取消" okButtonProps={{ disabled: !propertyDraft?.name.trim() || !propertyDraft?.code.trim() }} onCancel={() => setPropertyDraft(null)} onOk={() => {
         if (!propertyDraft) return;
         onChange({ ...definition, properties: definition.properties.map((property) => property.id === propertyDraft.id ? { ...propertyDraft, name: propertyDraft.name.trim(), code: simpleCode(propertyDraft.code) } : property) });
         setPropertyDraft(null);
@@ -603,7 +604,7 @@ export const RelationsPanel = ({ definition, relations, objectName, targets, can
               return {
                 key: relation.id,
                 label: <div className="ontology-collapse-summary"><strong>{relation.forwardName || `未命名关系 ${index + 1}`}</strong><ManagementCode value={relation.code} /><Tag>{relation.cardinality ? relationCardinalityLabels[relation.cardinality] : '未设置数量'}</Tag><span>{target?.name ?? '尚未选择目标类型'}</span></div>,
-                extra: canManage ? <Popconfirm title={`移除关系“${relation.forwardName || `关系 ${index + 1}`}”？`} onConfirm={() => onChange({ ...definition, relations: definition.relations.filter((item) => item.id !== relation.id) })}><Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除关系${relation.forwardName || index + 1}`} onClick={(event) => event.stopPropagation()} /></Popconfirm> : null,
+                extra: canManage ? <Popconfirm title={<OverlayTitle variant="popover" title={`移除关系“${relation.forwardName || `关系 ${index + 1}`}”？`} tone="danger" />} onConfirm={() => onChange({ ...definition, relations: definition.relations.filter((item) => item.id !== relation.id) })}><Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除关系${relation.forwardName || index + 1}`} onClick={(event) => event.stopPropagation()} /></Popconfirm> : null,
                 children: <RelationEditor relation={relation} definition={definition} targets={targets} disabled={!canManage} onChange={(next) => onChange({ ...definition, relations: definition.relations.map((item) => item.id === relation.id ? next : item) })} />,
               };
             })}
@@ -685,7 +686,7 @@ export const CapabilitiesPanel = ({ definition, canManage, onChange }: {
             items={definition.capabilities.map((capability, index) => ({
               key: capability.id,
               label: <div className="ontology-collapse-summary"><strong>{capability.name || `未命名能力 ${index + 1}`}</strong><Tag color="blue">{capability.kind ? capabilityKindLabels[capability.kind] : '未设置类型'}</Tag><ManagementCode value={capability.code} /><span>{capability.inputs.length} 入参 · {capability.outputs.length} 输出</span><Tag>仅定义</Tag></div>,
-              extra: canManage ? <Popconfirm title={`移除能力“${capability.name || `能力 ${index + 1}`}”？`} onConfirm={() => onChange({ ...definition, capabilities: definition.capabilities.filter((item) => item.id !== capability.id) })}><Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除能力${capability.name || index + 1}`} onClick={(event) => event.stopPropagation()} /></Popconfirm> : null,
+              extra: canManage ? <Popconfirm title={<OverlayTitle variant="popover" title={`移除能力“${capability.name || `能力 ${index + 1}`}”？`} tone="danger" />} onConfirm={() => onChange({ ...definition, capabilities: definition.capabilities.filter((item) => item.id !== capability.id) })}><Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除能力${capability.name || index + 1}`} onClick={(event) => event.stopPropagation()} /></Popconfirm> : null,
               children: (
                 <div className="ontology-capability-editor">
                   <div className="ontology-form-grid ontology-form-grid-3">

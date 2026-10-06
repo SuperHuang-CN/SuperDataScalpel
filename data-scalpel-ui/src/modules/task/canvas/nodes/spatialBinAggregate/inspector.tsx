@@ -47,6 +47,7 @@ import { spatialUnitHelp } from '../spatialUnits';
 import { binSizeLabel } from './binSizeSemantics';
 import { PlanarGridModal } from './PlanarGridModal';
 import { planarGridHelp } from './planarGrid';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const statisticKinds: Array<{ value: SpatialBinStatisticKind; label: string }> = [
   { value: 'COUNT', label: 'COUNT · 点数' },
@@ -199,7 +200,7 @@ const SpatialBinAggregateInspector = ({
             { value: 'HEXAGON', label: '六边形' },
             { value: 'H3', label: 'H3' },
           ]} onChange={(next) => { if (!next) return; Modal.confirm({
-            title: '切换格网形状？',
+            title: <OverlayTitle variant="workspace" title={'切换格网形状？'} />,
             content: '格网 ID、边界和统计分组会变化；各模式参数保留，切换后请检查坐标系及大小。',
             okText: '确认切换', cancelText: '取消', onOk: () => {
               if (next === 'H3' && !form.getFieldValue('h3')) {
@@ -259,7 +260,7 @@ const SpatialBinAggregateInspector = ({
           <Select<SpatialBinSizeSemantics> aria-label="六边形尺寸语义" value={binSizeSemantics}
             options={[{ value: 'HEXAGON_FLAT_TO_FLAT', label: '对边距离（推荐）' },
               { value: 'LEGACY_SIDE_LENGTH', label: '边长（兼容旧版）' }]}
-            onChange={(next) => Modal.confirm({ title: '切换六边形尺寸语义？',
+            onChange={(next) => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换六边形尺寸语义？'} />,
               content: '尺寸数值保持不变，但解释方式改变会影响格网位置和统计结果。若保持旧格网，边长转换为对边距离时需要乘以 √3。',
               okText: '确认切换', cancelText: '取消', onOk: () => updateConfiguration('binSizeSemantics', next) })} />
         </Form.Item>}
@@ -325,7 +326,7 @@ const SpatialBinAggregateInspector = ({
         </Form.Item>
 
         <Modal
-          open={statisticsOpen} width={860} title="设置格网统计项" okText="保存统计草稿" cancelText="取消"
+          open={statisticsOpen} width={860} title={<OverlayTitle variant="workspace" title="设置格网统计项" />} okText="保存统计草稿" cancelText="取消"
           onOk={() => { updateConfiguration('statistics', statisticsDraft); setStatisticsOpen(false); }} onCancel={() => setStatisticsOpen(false)}
         >
           <div className="canvas-spatial-modal-toolbar">
@@ -376,7 +377,7 @@ const SpatialBinAggregateInspector = ({
                     disabled={index === statisticsDraft.length - 1}
                     onClick={() => moveStatistic(index, index + 1)} />
                   <Button type="text" danger size="small" aria-label={`删除统计 ${index + 1}`} icon={<DeleteOutlined />}
-                    onClick={() => Modal.confirm({ title: `删除统计 ${statistic.outputColumnName || index + 1}？`,
+                    onClick={() => Modal.confirm({ title: <OverlayTitle variant="workspace" title={`删除统计 ${statistic.outputColumnName || index + 1}？`} />,
                       content: '删除后该字段不再输出，使用它的下游配置可能失效。', okText: '删除', cancelText: '取消',
                       onOk: () => setStatisticsDraft(statisticsDraft.filter((_, itemIndex) => itemIndex !== index)),
                     })} />
@@ -387,14 +388,14 @@ const SpatialBinAggregateInspector = ({
         </Modal>
         {planarGridOpen && <PlanarGridModal initialValue={planarGrid} onCancel={() => setPlanarGridOpen(false)}
           onSave={value => { updateConfiguration('planarGrid', value); setPlanarGridOpen(false); }} />}
-        <Modal open={groupOpen} width={560} title="设置格网分组汇总" okText="保存草稿"
+        <Modal open={groupOpen} width={560} title={<OverlayTitle variant="workspace" title="设置格网分组汇总" />} okText="保存草稿"
           onOk={() => {
             updateConfiguration('groupSummary', groupDraft);
             setGroupOpen(false);
           }} onCancel={() => setGroupOpen(false)}>
           <SpatialGroupSummaryEditor value={groupDraft} columns={columns} onChange={setGroupDraft} />
         </Modal>
-        <Modal open={temporalOpen} width={620} title="设置格网时间切片" okText="保存草稿"
+        <Modal open={temporalOpen} width={620} title={<OverlayTitle variant="workspace" title="设置格网时间切片" />} okText="保存草稿"
           onOk={() => {
             updateConfiguration('temporalSlicing', temporalDraft);
             setTemporalOpen(false);
@@ -405,7 +406,7 @@ const SpatialBinAggregateInspector = ({
           }}>
           <SpatialTemporalSlicingEditor value={temporalDraft} columns={columns} onChange={setTemporalDraft} />
         </Modal>
-        <Modal open={fieldsOpen} width={560} title="设置格网结果字段" okText="完成" cancelText="关闭"
+        <Modal open={fieldsOpen} width={560} title={<OverlayTitle variant="workspace" title="设置格网结果字段" />} okText="完成" cancelText="关闭"
           onOk={() => setFieldsOpen(false)} onCancel={() => setFieldsOpen(false)}>
           <div className="canvas-spatial-pair-grid">
             <Form.Item name="binIdColumnName" label="格网 ID" rules={[{ required: true, whitespace: true }]}>

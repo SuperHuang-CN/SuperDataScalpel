@@ -1,5 +1,7 @@
 import type { Graph, Node } from '@antv/x6';
 import { Modal } from 'antd';
+import { createElement } from 'react';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import type { CanvasNodeRuntimeData } from './canvasTypes';
 
 type CanvasNodeDeletionRequestHandler = (nodes: readonly Node[]) => void;
@@ -26,7 +28,7 @@ export const confirmCanvasNodeDeletion = (graph: Graph, nodes: readonly Node[]) 
     : '';
 
   Modal.confirm({
-    title,
+    title: createElement(OverlayTitle, { variant: 'workspace', title }),
     content: `节点配置将被删除。${edgeNotice}删除后仍可通过撤销恢复。`,
     okText: '删除',
     okButtonProps: { danger: true },

@@ -18,6 +18,7 @@ import { temporalWindowLabel } from '../spatialCalendarWindow';
 import { spatialColumnOptions, spatialGeometryColumns, spatialTableOptions } from '../spatialInspectorOptions';
 import { spatialAreaUnitOptions, spatialDistanceUnitOptions, spatialUnitHelp } from '../spatialUnits';
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const numericTypes = new Set(['BYTE', 'SHORT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL']);
 const fingerprint = (value: SpatialDensityConfiguration) => JSON.stringify(value);
@@ -199,7 +200,7 @@ const SpatialDensityInspector = ({
         <Input placeholder="例如 order_density" />
       </Form.Item>
 
-      <Modal open={fieldsOpen} width={820} title="设置数量字段" okText="保存字段草稿" cancelText="取消"
+      <Modal open={fieldsOpen} width={820} title={<OverlayTitle variant="workspace" title="设置数量字段" />} okText="保存字段草稿" cancelText="取消"
         onOk={() => { update('fields', fieldDrafts); setFieldsOpen(false); }}
         onCancel={() => setFieldsOpen(false)}>
         <div className="canvas-spatial-modal-toolbar">
@@ -237,13 +238,13 @@ const SpatialDensityInspector = ({
         </Space>
       </Modal>
 
-      <Modal open={temporalOpen} width={620} title="设置密度时间切片" okText="保存草稿" cancelText="取消"
+      <Modal open={temporalOpen} width={620} title={<OverlayTitle variant="workspace" title="设置密度时间切片" />} okText="保存草稿" cancelText="取消"
         onOk={() => { update('temporalSlicing', temporalDraft); setTemporalOpen(false); }}
         onCancel={() => setTemporalOpen(false)}>
         <SpatialTemporalSlicingEditor value={temporalDraft} columns={columns} onChange={setTemporalDraft} />
       </Modal>
 
-      <Modal open={outputFieldsOpen} width={620} title="设置密度结果字段" okText="完成" cancelText="关闭"
+      <Modal open={outputFieldsOpen} width={620} title={<OverlayTitle variant="workspace" title="设置密度结果字段" />} okText="完成" cancelText="关闭"
         onOk={() => setOutputFieldsOpen(false)} onCancel={() => setOutputFieldsOpen(false)}>
         <div className="canvas-spatial-pair-grid">
           <Form.Item name="binIdColumnName" label="格网 ID" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item>

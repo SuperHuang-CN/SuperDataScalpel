@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
@@ -90,7 +91,7 @@ const ModelOutputCanvasNodeInspector = ({
 
   const removeWrite = (write: ModelOutputWrite) => {
     Modal.confirm({
-      title: '删除这条模型写入？',
+      title: <OverlayTitle variant="workspace" title="删除这条模型写入？" tone="danger" />,
       content: write.targetModelId ? `目标模型 ${write.targetModelId} 的字段映射会一并删除。` : '未完成的写入配置会一并删除。',
       okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
       onOk: () => updateWrites(writes.filter((item) => item.writeId !== write.writeId)),
@@ -137,7 +138,7 @@ const ModelOutputCanvasNodeInspector = ({
       </Typography.Text>
     </Space>
     <Modal className="canvas-output-write-modal" open={Boolean(editingWrite)} width={1080} destroyOnHidden styles={{ body: { overflow: 'hidden' } }}
-      title={editingWrite ? `设置模型写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置模型写入'}
+      title={<OverlayTitle variant="workspace" title={editingWrite ? `设置模型写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置模型写入'} />}
       onCancel={() => setEditingWriteId(null)}
       onOk={async () => { const applied = await settingsRef.current?.apply(); if (applied) setEditingWriteId(null); }}
       okText="保存此项" cancelText="取消">

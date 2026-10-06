@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
 import '../../../shared/theme/resource-workspace.css';
 import { ArrowLeftOutlined, CameraOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -43,7 +44,7 @@ export const PanoramaDetailPage = () => {
     catch (e) { if (!controller.signal.aborted) { messageApi.error(e instanceof ApiError ? e.message : '下载失败'); if (e instanceof ApiError && e.problem?.code === 'PANORAMA_CONTENT_CHANGED') void query.refetch(); } }
     finally { setDownloading(false); }
   };
-  const remove = () => modal.confirm({ ...panoramaDeleteConfirmation(panorama),
+  const remove = () => modal.confirm({ ...panoramaDeleteConfirmation(panorama), title: <OverlayTitle icon={<DeleteOutlined />} title="删除全景影像" tone="danger" />,
     onOk: async () => { try { await command.mutateAsync({ id, action: 'delete' }); messageApi.success('全景已删除'); navigate('/panorama'); } catch (e) { messageApi.error(e instanceof ApiError ? e.message : '删除失败'); throw e; } } });
   return <ConfigProvider theme={workspaceResourceTheme}><div className="panorama-detail-page business-detail-page resource-workspace-detail">{context}{modalContext}
     <div className="business-detail-header"><Space wrap><Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/panorama')}>返回列表</Button><CameraOutlined /><Typography.Text strong>{panorama.name}</Typography.Text><Tag>{processingLabels[panorama.processingStatus]}</Tag></Space>

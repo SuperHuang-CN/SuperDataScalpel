@@ -189,6 +189,7 @@ TASK_ENGINE_PID=""
 DISPATCHER_PID=""
 FRONTEND_PID=""
 ADMIN_ACCESS_TOKEN=""
+COMPUTE_ENGINE_REGISTRATION_OK=true
 STOPPED=false
 BACKGROUND_JOB_PIDS=()
 BACKGROUND_JOB_NAMES=()
@@ -780,7 +781,10 @@ wait_for_background_jobs
 
 if [[ "$REMOTE_EXECUTION" == false ]]; then
   register_local_engine
-  register_local_compute_engine
+  if ! register_local_compute_engine; then
+    COMPUTE_ENGINE_REGISTRATION_OK=false
+    echo "警告：本地计算引擎未自动登记；开发环境继续运行，请在计算引擎页面处理上述冲突后重试。" >&2
+  fi
 else
   echo "远端执行模式：保留已有计算引擎登记，不启动或修改 Dispatcher/Docker。"
 fi
@@ -793,5 +797,8 @@ elif [[ "$REMOTE_EXECUTION" == true ]]; then
   wait "$TASK_ENGINE_PID" "$BACKEND_PID" "$FRONTEND_PID"
 else
   echo "DataScalpel ${ENVIRONMENT_NAME}前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
+  if [[ "$COMPUTE_ENGINE_REGISTRATION_OK" != true ]]; then
+    echo "本地计算引擎自动登记未完成；在修复计算引擎配置前不要执行 Canvas 数据任务。"
+  fi
   wait "$ENGINE_PID" "$TASK_ENGINE_PID" "$DISPATCHER_PID" "$BACKEND_PID" "$FRONTEND_PID"
 fi

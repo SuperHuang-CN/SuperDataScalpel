@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DownloadOutlined,
   CodeOutlined,
@@ -145,7 +147,7 @@ export const SparkJarArtifactSummary = ({
           <>
             <Button onClick={onClearSelection}>取消选择</Button>
             <Button type="primary" icon={<UploadOutlined />} loading={uploading} onClick={() => jar ? Modal.confirm({
-              title: '替换当前 JAR？', content: `将用“${pendingFile.name}”替换“${jar.fileName}”。在线源码保留，上传失败仍保留当前 JAR。`,
+              rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="替换当前 JAR？" />, icon: null, content: `将用“${pendingFile.name}”替换“${jar.fileName}”。在线源码保留，上传失败仍保留当前 JAR。`,
               okText: '确认替换', cancelText: '取消', onOk: onUpload,
             }) : onUpload()}>
               {jar ? '覆盖当前 JAR' : '上传 JAR'}
@@ -173,7 +175,7 @@ export const SparkJarArtifactSummary = ({
         rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         width={680}
         open={detailOpen}
-        title="用户作业 JAR 详情"
+        title={<OverlayTitle icon={<FileZipOutlined />} title="用户作业 JAR 详情" />}
         footer={<Button onClick={() => setDetailOpen(false)}>关闭</Button>}
         onCancel={() => setDetailOpen(false)}
       >
@@ -423,9 +425,9 @@ export const SparkJarRuntimeConfiguration = ({
         </div>
       )}
 
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay spark-jar-runtime-drawer"
-        title={<div className="spark-jar-drawer-title"><span className="spark-jar-drawer-icon"><SettingOutlined /></span><div>高级运行配置<small>按需调整 JVM、任务参数与 Spark Conf</small></div></div>}
+        title={<OverlayTitle icon={<SettingOutlined />} title="高级运行配置" description="按需调整 JVM、任务参数与 Spark Conf" />}
         width={960}
         open={Boolean(activeAdvanced)}
         onClose={closeAdvanced}

@@ -1,5 +1,7 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import '../../../shared/components/schema-table.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -297,8 +299,10 @@ export const DataModelDataQueryPanel = ({
       return;
     }
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-      title: '放弃条件修改？',
+      title: <OverlayTitle title="放弃条件修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '当前查询条件尚未应用，关闭后本次修改会丢失。',
       okText: '放弃修改',
       okButtonProps: { danger: true },
@@ -340,7 +344,6 @@ export const DataModelDataQueryPanel = ({
   return (
     <div className="model-data-query-public-panel">
       {modalContext}
-      {toolbar}
       <div className="model-data-query-summary-bar">
         <div className="model-data-query-summary-main">
           <span className="model-data-query-summary-title">查询条件</span>
@@ -349,6 +352,8 @@ export const DataModelDataQueryPanel = ({
           </Tooltip>
         </div>
         <div className="model-data-query-summary-actions">
+          {toolbar}
+          {toolbar && <span className="model-data-query-control-divider" aria-hidden />}
           {hasAppliedConditions && <Button type="link" size="small" onClick={() => void resetAndQuery()}>重置</Button>}
           <Popover
             trigger="click"

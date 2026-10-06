@@ -1,4 +1,4 @@
-import { ApiOutlined, CloudServerOutlined, IdcardOutlined } from '@ant-design/icons';
+import { ApiOutlined, CloudServerOutlined, IdcardOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { Badge, Button, Drawer, Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
@@ -20,6 +20,7 @@ import {
 } from '../model/dataServiceEditor';
 import { DataServiceTypeIcon } from './DataServiceTypeIcon';
 import { CommonServiceFields } from './editor/CommonServiceFields';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 type DataServiceBasicTarget = DataServiceSummary | DataServiceDetail;
 
@@ -180,8 +181,9 @@ export const DataServiceBasicDrawer = ({
       return;
     }
     modalApi.confirm({
+      icon: null,
       rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-      title: editing ? '放弃未保存的基础信息？' : '放弃创建数据服务？',
+      title: <OverlayTitle title={editing ? '放弃未保存的基础信息？' : '放弃创建数据服务？'} icon={<ExclamationCircleOutlined />} />,
       content: editing
         ? '关闭后，本次对服务基础信息的修改将丢失。'
         : '关闭后，当前填写的服务基础信息将丢失。',
@@ -255,21 +257,7 @@ export const DataServiceBasicDrawer = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-basic-drawer"
-        title={(
-          <div className="data-service-basic-drawer-title">
-            <span className="data-service-basic-drawer-title-icon" aria-hidden="true">
-              {effectiveType && <DataServiceTypeIcon type={effectiveType} />}
-            </span>
-            <span className="data-service-basic-drawer-title-copy">
-              <span>{title}</span>
-              <Typography.Text type="secondary">
-                {editing
-                  ? '维护服务标识、目录归属与运行引擎'
-                  : '先建立服务草稿，服务定义可在创建后继续配置'}
-              </Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={title} icon={effectiveType ? <DataServiceTypeIcon type={effectiveType} /> : <ApiOutlined />} description={editing ? '维护服务标识、目录归属与运行引擎' : '先建立服务草稿，服务定义可在创建后继续配置'} />}
         extra={effectiveType ? <Tag className="data-service-basic-drawer-header-tag">{dataServiceTypeLabels[effectiveType]}</Tag> : undefined}
         open={open}
         size="min(820px, 100vw)"

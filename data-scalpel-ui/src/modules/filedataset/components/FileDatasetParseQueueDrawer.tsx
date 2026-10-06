@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { ReloadOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { ClockCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { DescriptionsProps, TableProps } from 'antd';
 import { Button, Descriptions, Drawer, Form, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
@@ -178,7 +179,7 @@ export const FileDatasetParseQueueDrawer = ({ open, onClose }: FileDatasetParseQ
   return (
     <Drawer
       rootClassName="business-overlay business-drawer-overlay"
-      title="文件解析队列"
+      title={<OverlayTitle title="文件解析队列" icon={<ClockCircleOutlined />} description="查看文件解析进度与处理结果" />}
       open={open}
       size={1180}
       onClose={onClose}
@@ -192,6 +193,7 @@ export const FileDatasetParseQueueDrawer = ({ open, onClose }: FileDatasetParseQ
           刷新
         </Button>
       )}
+      closable={{ placement: 'end' }}
     >
       {summaryQuery.isError && (
         <Alert
@@ -209,7 +211,7 @@ export const FileDatasetParseQueueDrawer = ({ open, onClose }: FileDatasetParseQ
             showIcon
             className="file-dataset-form-alert"
             message={summary.queueEnabled ? '统一解析队列已开启' : '统一解析队列已关闭'}
-            description={summary.queueEnabled
+           description={summary.queueEnabled
               ? '摘要和任务列表每 5 秒自动刷新；关闭抽屉后停止。'
               : 'Worker 将停止领取新任务，但已排队任务不会丢失，正在运行的任务继续完成。'}
           />

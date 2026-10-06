@@ -417,7 +417,8 @@ public class DataEntryDataService {
         List<DataModelField> fields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(source.getId());
         List<DataModelField> primaryKeys = fields.stream().filter(DataModelField::isPrimaryKey).toList();
         DataModelField labelField = fields.stream().filter(field -> field.getId().equals(lookup.getSourceLabelFieldId())).findFirst().orElse(null);
-        if (primaryKeys.size() != 1 || labelField == null || !DataEntryHealthService.valueCompatible(target, primaryKeys.getFirst())) {
+        if (primaryKeys.size() != 1 || labelField == null || labelField.getFieldType() != PlatformDataType.STRING
+                || !DataEntryHealthService.valueCompatible(target, primaryKeys.getFirst())) {
             return unavailableOptions(request.values());
         }
         DataSource dataSource = dataSourceRepository.findById(source.getStorageDataSourceId())
@@ -546,7 +547,7 @@ public class DataEntryDataService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源数据源不存在"));
             if (!sourceDataSource.isEnabled() || !DataEntryHealthService.supportedDatabase(sourceDataSource)
                     || !DataEntryHealthService.valueCompatible(target, sourceKey)
-                    || label.getFieldType() != PlatformDataType.STRING || label.isNullable()) {
+                    || label.getFieldType() != PlatformDataType.STRING) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源配置当前不可用");
             }
             Object sourceValue = convertSafely(values.get(target.getCode()), sourceKey);
@@ -753,15 +754,16 @@ public class DataEntryDataService {
     }
 
     private static DataEntryOptionResponse.Option option(Map<String, Object> row) {
-        Object value = row.get("value");
-        String label = String.valueOf(row.get("label"));
-        return new DataEntryOptionResponse.Option(value, label, label + "（" + value + "）", "ACTIVE");
+        return option(row, row.get("value"));
     }
 
     private static DataEntryOptionResponse.Option option(Map<String, Object> row, Object responseValue) {
-        String label = String.valueOf(row.get("label"));
+        Object rawLabel = row.get("label");
+        String label = rawLabel == null ? null : String.valueOf(rawLabel);
+        String displayLabel = label == null || label.isBlank()
+                ? String.valueOf(responseValue) : label + "（" + responseValue + "）";
         return new DataEntryOptionResponse.Option(
-                responseValue, label, label + "（" + responseValue + "）", "ACTIVE"
+                responseValue, label, displayLabel, "ACTIVE"
         );
     }
 

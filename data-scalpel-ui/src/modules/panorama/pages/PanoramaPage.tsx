@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
 import '../../../shared/theme/resource-workspace.css';
 import { DeleteOutlined, EditOutlined, CameraOutlined, EnvironmentOutlined, UnorderedListOutlined, UploadOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -38,7 +39,7 @@ export const PanoramaPage = () => {
   const query = usePanoramas(request); const command = usePanoramaCommand();
   const apply = (values: Filters) => { setFilters({ ...values, ...advanced }); setPage(0); };
   const reset = () => { form.resetFields(); setFilters({}); setAdvanced({}); setAdvancedDraft({}); setSelection(undefined); setPage(0); };
-  const remove = (p: Panorama) => modal.confirm({ ...panoramaDeleteConfirmation(p),
+  const remove = (p: Panorama) => modal.confirm({ ...panoramaDeleteConfirmation(p), title: <OverlayTitle icon={<DeleteOutlined />} title="删除全景影像" tone="danger" />,
     onOk: async () => { try { await command.mutateAsync({ id: p.id, action: 'delete' }); messageApi.success('全景已删除'); } catch (e) { messageApi.error(e instanceof ApiError ? e.message : '删除失败'); throw e; } } });
   const columns: TableProps<Panorama>['columns'] = [
     { title: '全景影像', width: 280, render: (_: unknown, p) => <div className="panorama-name-cell">{p.currentContent ? <PanoramaImage id={p.id} version={p.contentVersion} /> : <span className="panorama-no-preview" aria-label="暂无预览"><CameraOutlined /></span>}<ManagementName name={p.name} description={p.description}><Button type="link" onClick={() => navigate(`/panorama/${p.id}`)} title={p.name}>{p.name}</Button></ManagementName></div> },

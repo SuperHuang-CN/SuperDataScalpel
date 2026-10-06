@@ -1,5 +1,6 @@
 import '../../../shared/components/schema-table.css';
 import { CompactAlert as Alert, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined, FileSearchOutlined, FontSizeOutlined, PlusOutlined, ProfileOutlined, SafetyCertificateOutlined, SaveOutlined, SearchOutlined, TagsOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
@@ -279,26 +280,8 @@ const FieldEditorDrawer = ({
     <Drawer
       rootClassName="business-overlay business-drawer-overlay data-model-field-editor-drawer workspace-resource-overlay model-detail-overlay"
       className="data-model-drawer data-model-field-editor-surface"
-      title={(
-        <div className="data-model-drawer-title">
-          <span className="data-model-drawer-title-icon" aria-hidden="true"><FontSizeOutlined /></span>
-          <span className="data-model-drawer-title-copy">
-            <span>{externalStructureLocked
-              ? '修改字段业务信息'
-              : spatialDefinitionLocked
-                ? '修改字段约束与业务信息'
-                : field ? '修改模型字段' : '新增模型字段'}</span>
-            <Typography.Text type="secondary">
-              {externalStructureLocked
-                ? '物理结构由外部数据库维护，仅维护字段的业务语义'
-                : spatialDefinitionLocked
-                  ? '字段定义保持不变，可调整约束与业务语义'
-                  : '定义字段标识、数据类型、约束与业务元数据'}
-            </Typography.Text>
-          </span>
-        </div>
-      )}
-      extra={<Tag className="data-model-drawer-header-tag">{field?.code ?? '待创建'}</Tag>}
+      title={<OverlayTitle title={externalStructureLocked ? '修改字段业务信息' : spatialDefinitionLocked ? '修改字段约束与业务信息' : field ? '修改模型字段' : '新增模型字段'} icon={<FontSizeOutlined />} description={externalStructureLocked ? '物理结构由外部数据库维护，仅维护字段的业务语义' : spatialDefinitionLocked ? '字段定义保持不变，可调整约束与业务语义' : '定义字段标识、数据类型、约束与业务元数据'} />}
+      extra={field?.code ? <Tag className="data-model-drawer-header-tag">{field.code}</Tag> : undefined}
       open={open}
       width={760}
       destroyOnHidden
@@ -319,6 +302,7 @@ const FieldEditorDrawer = ({
           </Space>
         </div>
       )}
+      closable={{ placement: 'end' }}
     >
       <Form<DataModelFieldInput>
         name="data-model-field-editor-form"
@@ -626,8 +610,10 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-      title: '放弃当前字段修改？',
+      title: <OverlayTitle title="放弃当前字段修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '字段编辑抽屉中的修改尚未应用，关闭后会丢失。',
       okText: '放弃修改',
       okButtonProps: { danger: true },
@@ -732,8 +718,10 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-      title: '放弃未保存的字段修改？',
+      title: <OverlayTitle title="放弃未保存的字段修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '刷新后将重新加载最后保存的字段定义，当前修改会丢失。',
       okText: '放弃修改并刷新',
       okButtonProps: { danger: true },
@@ -822,8 +810,8 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           </Tooltip>
           {!externalModel && !spatialDefinitionLocked && (
             <Popconfirm
-              title="删除字段"
-              description={`确认删除“${field.name}”吗？保存后生效。`}
+              title={<OverlayTitle variant="popover" title="删除字段" tone="danger" />}
+             description={`确认删除“${field.name}”吗？保存后生效。`}
               okText="删除"
               cancelText="取消"
               onConfirm={() => setLocalFields((current) => (current ?? serverFields).filter((item) => item.rowKey !== field.rowKey))}
@@ -884,7 +872,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           showIcon
           type="error"
           title="无法确认受管物理表状态，当前只能保存字段名称、说明、展示排序和关联码表。"
-          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试；物理结构修改暂不可用。'}
+         description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试；物理结构修改暂不可用。'}
           action={<Button size="small" onClick={() => void inspectionQuery.refetch()}>重试</Button>}
         />
       )}
@@ -900,7 +888,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           showIcon
           type="warning"
           title="受管物理表未处于可规划状态，物理结构修改暂不可用。"
-          description="字段名称、说明、展示排序和关联码表仍可直接保存；请先修复物理表状态，再调整字段结构。"
+         description="字段名称、说明、展示排序和关联码表仍可直接保存；请先修复物理表状态，再调整字段结构。"
         />
       )}
       <div className="model-tab-toolbar detail-table-filter-toolbar">

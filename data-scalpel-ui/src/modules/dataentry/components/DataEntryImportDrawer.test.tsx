@@ -132,4 +132,22 @@ describe('DataEntryImportDrawer', () => {
     expect(onImported).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('keeps template options available while a draft cannot import data', async () => {
+    const draft: DataEntryFormDetail = {
+      ...detail,
+      form: { ...detail.form, status: 'DRAFT' },
+      health: { ...detail.health, canSubmit: false },
+    };
+    const user = userEvent.setup();
+    const { container } = render(
+      <DataEntryImportDrawer open detail={draft} onClose={vi.fn()} onImported={vi.fn()} />,
+    );
+
+    expect(container.ownerDocument.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: '确认导入' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /下载模板/ }));
+    expect(await screen.findByRole('menuitem', { name: '下载 Excel 模板' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '下载 CSV 模板' })).toBeInTheDocument();
+  });
 });

@@ -1,4 +1,5 @@
 import { createUuid } from '../../../shared/browser/createUuid';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   AimOutlined,
   CloseOutlined,
@@ -662,7 +663,7 @@ const EditableCanvasDesigner = ({
       action();
       return;
     }
-    Modal.confirm({ title, content, okText: '替换画布', cancelText: '取消', onOk: action });
+    Modal.confirm({ title: <OverlayTitle variant="workspace" title={title} />, content, okText: '替换画布', cancelText: '取消', onOk: action });
   };
 
   const loadExample = () => requestInspectorExit(() => {
@@ -687,7 +688,7 @@ const EditableCanvasDesigner = ({
     const parsed = parseCanvasDefinitionJson(await file.text());
     if (!parsed.success) {
       Modal.error({
-        title: '无法导入 Canvas 定义',
+        title: <OverlayTitle variant="workspace" title="无法导入 Canvas 定义" />,
         content: <List size="small" dataSource={parsed.errors} renderItem={(error) => <List.Item>{error}</List.Item>} />,
       });
       return;
@@ -947,7 +948,7 @@ const EditableCanvasDesigner = ({
       )}
       <Modal
         open={pendingInspectorAction !== null}
-        title="节点配置尚未应用"
+        title={<OverlayTitle variant="workspace" title="节点配置尚未应用" />}
         closable={false}
         maskClosable={false}
         onCancel={continueEditingInspector}

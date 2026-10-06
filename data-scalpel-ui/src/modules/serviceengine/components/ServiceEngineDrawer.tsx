@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CloudServerOutlined, GlobalOutlined, IdcardOutlined, KeyOutlined } from '@ant-design/icons';
 import { Badge, Button, Drawer, Form, Input, Select, Space, Switch, Tag, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -179,13 +180,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
       <Drawer
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="service-engine-drawer"
-        title={<div className="service-engine-drawer-title">
-          <span className="service-engine-drawer-title-icon" aria-hidden="true"><CloudServerOutlined /></span>
-          <span className="service-engine-drawer-title-copy">
-            <span>{editing ? '修改 Service Engine' : '新建 Service Engine'}</span>
-            <Typography.Text type="secondary">配置普通服务引擎或 GeoServer 空间引擎</Typography.Text>
-          </span>
-        </div>}
+        title={<OverlayTitle icon={<CloudServerOutlined />} title={editing ? '修改 Service Engine' : '新建 Service Engine'} description="配置普通服务引擎或 GeoServer 空间引擎" />}
         extra={<Tag className="service-engine-drawer-header-tag">{editing ? engine?.code : geoServer ? 'GeoServer' : 'DataScalpel'}</Tag>}
         open={open}
         size="min(760px, 100vw)"

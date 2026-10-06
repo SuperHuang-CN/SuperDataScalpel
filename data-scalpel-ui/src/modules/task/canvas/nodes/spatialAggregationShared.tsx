@@ -9,6 +9,7 @@ import { spatialDurationUnitOptions } from './spatialAggregationOptions';
 import { spatialColumnOptions } from './spatialInspectorOptions';
 import { ContextHelp } from '../../../../shared/components/ContextualFeedback';
 import { calendarWindowHelp, calendarWindowUnits, usesCalendarWindow } from './spatialCalendarWindow';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 
 export const SpatialGroupSummaryEditor = ({
   value,
@@ -90,7 +91,7 @@ export const SpatialTemporalSlicingEditor = ({
       value={value.calendar ? value.calendar.mode : 'FIXED_DURATION'}
       options={[{ value: 'FIXED_DURATION', label: '固定时长' }, { value: 'CALENDAR', label: '日历周期' }]}
       onChange={(mode: NonNullable<SpatialCalendarWindowOptions['mode']>) => {
-        Modal.confirm({ title: '切换时间窗口语义？',
+        Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换时间窗口语义？'} />,
           content: '长度和重复间隔的数值保持不变，单位按所选模式解释。两种模式的单位草稿分别保留，切换可能改变统计结果。',
           okText: '确认切换', cancelText: '取消',
           onOk: () => onChange({ ...value, calendar: { intervalUnit: value.intervalUnit,

@@ -1,5 +1,6 @@
+import { DeleteOutlined, KeyOutlined, LinkOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
-import { DeleteOutlined, LinkOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Button, Input, Modal, Space, Table, Tag, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -25,7 +26,7 @@ export function McpServerAccessTokenPanel({ serverId }: { serverId: string }) {
   const grant = useServerMcpAccessTokenGrant();
   const authorizedIds = useMemo(() => new Set(authorized.data?.content.map(item => item.id) ?? []), [authorized.data]);
 
-  const revoke = (item: McpAccessToken) => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: `撤销“${item.name}”的访问权限？`, content: '只撤销该凭证对当前 Server 的授权，其他 Server 不受影响。', okText: '撤销授权', okButtonProps: { danger: true }, onOk: async () => { await grant.mutateAsync({ serverId, accessTokenId: item.id, action: 'revoke' }); messageApi.success('授权已撤销'); } });
+  const revoke = (item: McpAccessToken) => modal.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title={`撤销“${item.name}”的访问权限？`} icon={<DeleteOutlined />} tone="danger" />, content: '只撤销该凭证对当前 Server 的授权，其他 Server 不受影响。', okText: '撤销授权', okButtonProps: { danger: true }, onOk: async () => { await grant.mutateAsync({ serverId, accessTokenId: item.id, action: 'revoke' }); messageApi.success('授权已撤销'); } });
   const columns = [
     { title: '访问凭证', render: (_: unknown, item: McpAccessToken) => <div><Typography.Link strong onClick={() => navigate('/mcp-management/access-tokens')}>{item.name}</Typography.Link><div className="mcp-secondary">{item.hint}</div></div> },
     { title: '状态', dataIndex: 'status', width: 100, render: (value: string) => <Tag color={value === 'ENABLED' ? 'success' : 'default'}>{value === 'ENABLED' ? '已启用' : '已停用'}</Tag> },
@@ -37,7 +38,7 @@ export function McpServerAccessTokenPanel({ serverId }: { serverId: string }) {
     <div className="detail-table-toolbar"><div><Typography.Text strong><SafetyCertificateOutlined /> 已授权访问凭证</Typography.Text><div className="mcp-secondary">这些凭证可以调用当前 Server 发布的全部 Tool</div></div><Space><Button onClick={() => navigate('/mcp-management/access-tokens')}>管理凭证</Button><Button type="primary" icon={<LinkOutlined />} onClick={() => setPickerOpen(true)}>关联凭证</Button></Space></div>
     {authorized.isError && <Space className="mcp-query-error"><Typography.Text type="danger">授权凭证加载失败：{authorized.error.message}</Typography.Text><Button onClick={() => void authorized.refetch()}>重试</Button></Space>}
     <Table className="management-table" size="small" rowKey="id" columns={columns} dataSource={authorized.data?.content ?? []} loading={authorized.isLoading} pagination={{ current: page + 1, pageSize: size, total: authorized.data?.totalElements ?? 0, showSizeChanger: true, onChange: (next, nextSize) => { setPage(nextSize === size ? next - 1 : 0); setSize(nextSize); } }} />
-    <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" open={pickerOpen} title="关联访问凭证" footer={null} width={720} onCancel={() => setPickerOpen(false)} destroyOnHidden>
+    <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" open={pickerOpen} title={<OverlayTitle title="关联访问凭证" icon={<KeyOutlined />} />} footer={null} width={720} onCancel={() => setPickerOpen(false)} destroyOnHidden>
       <Space.Compact style={{ width: '100%', marginBottom: 12 }}><Input autoComplete="off" allowClear value={pickerKeyword} onChange={event => setPickerKeyword(event.target.value)} onPressEnter={() => { setAppliedKeyword(pickerKeyword); setPickerPage(0); }} placeholder="搜索凭证名称" /><Button onClick={() => { setAppliedKeyword(pickerKeyword); setPickerPage(0); }}>查询</Button></Space.Compact>
       {candidates.isError && <Typography.Text type="danger">凭证加载失败：{candidates.error instanceof ApiError ? candidates.error.message : '未知错误'}</Typography.Text>}
       <Table<McpAccessToken> className="management-table" size="small" rowKey="id" dataSource={candidates.data?.content ?? []} loading={candidates.isLoading}

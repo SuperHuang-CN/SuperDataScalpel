@@ -617,6 +617,7 @@ public class GeoServerClient {
         entry(entries, "schema", spec.schema() == null || spec.schema().isBlank() ? "public" : spec.schema());
         entry(entries, "user", spec.username());
         entry(entries, "passwd", spec.password());
+        entry(entries, "Expose primary keys", "true");
         String sslMode = spec.options() == null ? null : spec.options().get("sslmode");
         if (sslMode != null && !sslMode.isBlank()) entry(entries, "SSL mode", sslMode);
         Map<String, Object> dataStore = mapOf(

@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CheckCircleOutlined, CloseOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { CheckCircleOutlined, CloseOutlined, ReloadOutlined, SettingOutlined, StopOutlined, WarningOutlined } from '@ant-design/icons';
 import type { CollapseProps, TableProps } from 'antd';
 import { Button, Collapse, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { ApiError } from '../../../shared/api/http';
@@ -56,7 +57,7 @@ const changeErrorAlert = (change: DataModelPhysicalChange) => {
         showIcon
         type="warning"
         title="物理表可能已部分完成，必须人工核验后再继续处理。"
-        description={change.errorMessage || '系统未能完成后续校验或模型字段快照保存。'}
+       description={change.errorMessage || '系统未能完成后续校验或模型字段快照保存。'}
       />
     );
   }
@@ -66,7 +67,7 @@ const changeErrorAlert = (change: DataModelPhysicalChange) => {
         showIcon
         type="error"
         title={change.errorCode ? `执行失败：${change.errorCode}` : '执行失败'}
-        description={change.errorMessage || '请根据失败原因修复后重新生成计划。'}
+       description={change.errorMessage || '请根据失败原因修复后重新生成计划。'}
       />
     );
   }
@@ -151,8 +152,10 @@ export const DataModelPhysicalChangeDrawer = ({
   const current = detailQuery.data ?? change;
 
   const cancel = (target: DataModelPhysicalChange) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '取消变更计划',
+    title: <OverlayTitle title="取消变更计划" icon={<StopOutlined />} tone="danger" />,
     content: '取消后不会修改模型字段或物理表；如需继续修改，请重新生成计划。',
     okText: '确认取消',
     cancelText: '返回',
@@ -172,8 +175,10 @@ export const DataModelPhysicalChangeDrawer = ({
     const option = target.plan.executionOptions.find((item) => item.mode === mode);
     if (!option) return;
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: executionButtonLabel(mode),
+      title: <OverlayTitle title={executionButtonLabel(mode)} icon={<SettingOutlined />} />,
       width: 540,
       content: (
         <Descriptions size="small" column={1} bordered>
@@ -220,7 +225,7 @@ export const DataModelPhysicalChangeDrawer = ({
       {modalContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title="物理表变更计划"
+        title={<OverlayTitle title="物理表变更计划" icon={<SettingOutlined />} description="审阅字段变更计划与物理执行结果" />}
         open={open}
         size="large"
         className="physical-change-drawer"
@@ -248,6 +253,7 @@ export const DataModelPhysicalChangeDrawer = ({
             ))}
           </Space>
         ) : undefined}
+        closable={{ placement: 'end' }}
       >
         {!current && detailQuery.isPending && <Alert showIcon type="info" title="正在读取变更计划…" />}
         {!current && detailQuery.error && (
@@ -255,7 +261,7 @@ export const DataModelPhysicalChangeDrawer = ({
             showIcon
             type="error"
             title="变更计划加载失败"
-            description={detailQuery.error instanceof ApiError ? detailQuery.error.message : '请稍后重试。'}
+           description={detailQuery.error instanceof ApiError ? detailQuery.error.message : '请稍后重试。'}
             action={<Button size="small" onClick={() => void detailQuery.refetch()}>重试</Button>}
           />
         )}
@@ -280,7 +286,7 @@ export const DataModelPhysicalChangeDrawer = ({
                 showIcon
                 type={current.plan.strategy === 'UNSUPPORTED' ? 'warning' : 'info'}
                 title="方言结论"
-                description={<ul className="physical-change-reason-list">{current.plan.reasons.map((reason) => <li key={`${reason.code}-${reason.message}`}>{reason.message}</li>)}</ul>}
+               description={<ul className="physical-change-reason-list">{current.plan.reasons.map((reason) => <li key={`${reason.code}-${reason.message}`}>{reason.message}</li>)}</ul>}
               />
             )}
 

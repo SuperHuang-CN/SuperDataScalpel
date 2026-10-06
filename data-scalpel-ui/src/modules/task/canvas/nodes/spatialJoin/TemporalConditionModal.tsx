@@ -11,6 +11,7 @@ import {
   createSpatialJoinTemporalCondition,
   isSpatialJoinTemporalNear,
 } from './temporalCondition';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 type CanvasTable = CanvasNodeValidationResult['inputTables'][number];
 
@@ -115,7 +116,7 @@ export const TemporalConditionModal = ({
     <Modal
       open={open}
       width={760}
-      title="时间关系"
+      title={<OverlayTitle variant="workspace" title="时间关系" />}
       okText="保存配置"
       cancelText="取消"
       onCancel={onCancel}

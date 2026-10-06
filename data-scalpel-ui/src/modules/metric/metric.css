@@ -23,7 +23,6 @@
 
 .metric-import-upload { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .metric-import-summary { margin: 12px 0; }
-.metric-import-subtitle { display: block; font-size: 12px; font-weight: normal; }
 .metric-import-details { display: grid; gap: 8px; }
 .metric-import-details .ant-typography { margin-bottom: 0; }
 .metric-import-table .ant-table-cell { overflow-wrap: anywhere; }

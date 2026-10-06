@@ -1,4 +1,5 @@
 import { ApartmentOutlined, DeleteOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Empty, Input, Modal, Space, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -139,8 +140,8 @@ const JdbcTablePickerModalContent = ({
     <Modal
       open
       width={860}
-      title={title}
-      rootClassName={rootClassName}
+      title={<OverlayTitle title={title} icon={<TableOutlined />} />}
+      rootClassName={`business-overlay business-modal-overlay${rootClassName ? ` ${rootClassName}` : ''}`}
       onCancel={onCancel}
       footer={(
         <Space>

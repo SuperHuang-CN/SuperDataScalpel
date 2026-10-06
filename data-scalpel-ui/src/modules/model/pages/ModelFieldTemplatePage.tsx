@@ -1,4 +1,6 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { CompactAlert as Alert, ContextHelp } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   AppstoreOutlined,
   BarsOutlined,
@@ -149,8 +151,10 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
   const close = (confirmDirty = true) => {
     if (confirmDirty && dirtyRef.current) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-        title: '放弃未保存修改？',
+        title: <OverlayTitle title="放弃未保存修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
         content: '常用字段模板内容已修改，关闭后这些修改不会保留。',
         okText: '放弃修改',
         okButtonProps: { danger: true },
@@ -234,16 +238,8 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="data-model-drawer field-template-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><AppstoreOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{template ? '修改常用字段模板' : '新建常用字段模板'}</span>
-              <Typography.Text type="secondary">定义可复用的字段组合、类型约束与业务标准</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={<Tag className="data-model-drawer-header-tag">{template?.code ?? '待创建'}</Tag>}
+        title={<OverlayTitle title={template ? '修改常用字段模板' : '新建常用字段模板'} icon={<AppstoreOutlined />} description="定义可复用的字段组合、类型约束与业务标准" />}
+        extra={template?.code ? <Tag className="data-model-drawer-header-tag">{template.code}</Tag> : undefined}
         open={open}
         width={1040}
         destroyOnHidden
@@ -266,6 +262,7 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
             </Space>
           </div>
         )}
+        closable={{ placement: 'end' }}
       >
         <Form<CreateModelFieldTemplateRequest>
           name="model-field-template-editor-form"
@@ -559,8 +556,10 @@ export const ModelFieldTemplatePage = () => {
   };
 
   const removeTemplate = (template: ModelFieldTemplate) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-    title: '删除常用字段模板',
+    title: <OverlayTitle title="删除常用字段模板" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${template.name}（${template.code}）”吗？已复制到模型的字段不会受影响。`,
     okText: '删除',
     okButtonProps: { danger: true },

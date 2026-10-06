@@ -1,4 +1,5 @@
 import { Button, Descriptions, Modal, Space, Table, Tag, Typography } from 'antd';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import {
   physicalTableModeLabels,
   type DataModelDetail,
@@ -54,7 +55,7 @@ export const CanvasModelDetailModal = ({
 }) => (
   <Modal
     open={open && Boolean(detail)}
-    title={detail ? `模型详情 · ${detail.model.name}` : '模型详情'}
+    title={<OverlayTitle variant="workspace" title={detail ? `模型详情 · ${detail.model.name}` : '模型详情'} />}
     width={820}
     destroyOnHidden
     onCancel={onClose}

@@ -1,5 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { EyeOutlined, SearchOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { DatabaseOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Descriptions, Drawer, Form, Input, Space, Table, Tag, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
@@ -88,7 +89,7 @@ export const TdEngineTmqTopicPanel = ({ dataSource, active }: TdEngineTmqTopicPa
           showIcon
           type="error"
           message="TMQ Topic 加载失败"
-          description={topicsQuery.error instanceof ApiError ? topicsQuery.error.message : '请稍后重试。'}
+         description={topicsQuery.error instanceof ApiError ? topicsQuery.error.message : '请稍后重试。'}
           action={<Button size="small" onClick={() => void topicsQuery.refetch()}>重试</Button>}
         />
       )}
@@ -114,10 +115,11 @@ export const TdEngineTmqTopicPanel = ({ dataSource, active }: TdEngineTmqTopicPa
       />
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={selectedTopic ? `TMQ Topic · ${selectedTopic}` : 'TMQ Topic 详情'}
+        title={<OverlayTitle title={selectedTopic ? `TMQ Topic · ${selectedTopic}` : 'TMQ Topic 详情'} icon={<DatabaseOutlined />} description="查看 Topic 属性、Schema 与订阅配置" />}
         width={760}
         open={Boolean(selectedTopic)}
         onClose={() => setSelectedTopic(undefined)}
+        closable={{ placement: 'end' }}
       >
         {detailQuery.error && <Alert type="error" showIcon message="详情加载失败" description={detailQuery.error.message} />}
         {detailQuery.data && <Space orientation="vertical" size={16} style={{ width: '100%' }}>

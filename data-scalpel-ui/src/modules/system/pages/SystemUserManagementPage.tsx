@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { DeleteOutlined, EditOutlined, EllipsisOutlined, KeyOutlined, PlusOutlined, ReloadOutlined, UserOutlined } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Table, Tooltip, message } from 'antd';
@@ -70,7 +71,7 @@ export const SystemUserManagementPage = () => {
             { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingUser(user) },
             { key: 'password', icon: <KeyOutlined />, label: '重置密码', onClick: () => setPasswordUser(user) },
             { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: '删除用户', content: `确认删除“${user.displayName}”吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(user) }) },
+            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除用户" tone="danger" />, icon: null, content: `确认删除“${user.displayName}”吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(user) }) },
           ] satisfies MenuProps['items'] }} trigger={['click']}>
             <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${user.displayName}的更多操作`} /></Tooltip>
           </Dropdown>

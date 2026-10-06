@@ -36,6 +36,7 @@ import {
   type AssetType,
 } from '../model/asset';
 import './assetManagement.css';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface AssetFilters {
   keyword?: string;
@@ -135,8 +136,9 @@ export const AssetManagementPage = () => {
   };
 
   const remove = (asset: Asset) => modal.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: '删除资产记录',
+    title: <OverlayTitle title="删除资产记录" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${asset.effectiveName}”吗？该操作不会删除原资源。`,
     okText: '删除',
     cancelText: '取消',
@@ -153,8 +155,9 @@ export const AssetManagementPage = () => {
   });
 
   const runBatch = (command: 'check-all' | 'sync-all') => modal.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: command === 'check-all' ? '全量检查资产' : '全量同步资产',
+    title: <OverlayTitle title={command === 'check-all' ? '全量检查资产' : '全量同步资产'} icon={command === 'check-all' ? <SafetyCertificateOutlined /> : <CloudSyncOutlined />} />,
     content: command === 'check-all'
       ? '将逐项检查所有已登记资产，不修改已保存的来源快照。'
       : '将逐项更新所有已登记资产的来源快照，不覆盖门户信息。',

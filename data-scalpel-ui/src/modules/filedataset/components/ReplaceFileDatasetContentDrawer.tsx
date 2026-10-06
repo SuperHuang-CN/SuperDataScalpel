@@ -5,6 +5,7 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { Button, Drawer, Space, Tag, Typography, Upload, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
@@ -98,19 +99,7 @@ export const ReplaceFileDatasetContentDrawer = ({ fileDataset, file, open, onClo
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="replace-file-dataset-content-drawer"
-        title={(
-          <div className="file-dataset-drawer-title replace-file-dataset-title">
-            <span className="file-dataset-drawer-title-icon" aria-hidden="true">
-              {fileDataset ? <FileDatasetTypeIcon type={fileDataset.type} /> : <FileSyncOutlined />}
-            </span>
-            <span className="file-dataset-drawer-title-copy">
-              <span>替换文件内容</span>
-              <Typography.Text type="secondary">
-                确认当前文件后，上传同类型文件重新建立数据结构
-              </Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="替换文件内容" icon={fileDataset ? <FileDatasetTypeIcon type={fileDataset.type} /> : <FileSyncOutlined />} description="确认当前文件后，上传同类型文件重新建立数据结构" tone="danger" />}
         extra={fileDataset ? <Tag className="file-dataset-drawer-header-tag">{fileDatasetTypeLabels[fileDataset.type]}</Tag> : undefined}
         open={open}
         size={520}

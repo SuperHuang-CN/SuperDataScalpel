@@ -1,4 +1,5 @@
-import { ArrowLeftOutlined, PlayCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExclamationCircleOutlined, PlayCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Checkbox, Form, Input, InputNumber, Modal, Result, Segmented, Select, Space, Typography, message } from 'antd';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
@@ -76,7 +77,9 @@ function ToolEditor({ serverId, toolId, serverName, initialTool, canExecute }: {
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     const dialog = modal.confirm({
-      title: saving ? '正在保存，请稍后离开' : '放弃未保存的修改？',
+      icon: null,
+
+      rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle title={saving ? '正在保存，请稍后离开' : '放弃未保存的修改？'} icon={<ExclamationCircleOutlined />} tone={saving ? 'default' : 'danger'} />,
       content: saving ? '保存完成前请留在当前页面。' : '当前 Tool 定义尚未保存。',
       okText: saving ? '留在页面' : '放弃并离开',
       cancelText: '继续编辑',

@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   BookOutlined,
@@ -6,12 +7,13 @@ import {
   EditOutlined,
   ExportOutlined,
   ImportOutlined,
+  MoreOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import type { TableProps } from 'antd';
+import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Input, Modal, Select, Table, Tooltip, message } from 'antd';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -164,10 +166,17 @@ export const StandardDictionaryPage = () => {
       fixed: 'right' as const,
       width: 120,
       render: (_value: unknown, row: StandardDictionary) => (
-        <div className="modeling-row-actions">
-          <Tooltip title="修改"><Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改${row.name}`} onClick={() => { setEditing(row); setDrawerOpen(true); }} /></Tooltip>
-          <Tooltip title={row.enabled ? '停用' : '启用'}><Button type="text" size="small" icon={row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} aria-label={`${row.enabled ? '停用' : '启用'}${row.name}`} onClick={() => void executeCommand(row, row.enabled ? 'disable' : 'enable')} /></Tooltip>
-          <Tooltip title="删除"><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除${row.name}`} onClick={() => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: '删除码表', content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') })} /></Tooltip>
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            <Tooltip title="修改码表"><Button type="text" icon={<EditOutlined />} aria-label={`修改码表${row.name}`} onClick={() => { setEditing(row); setDrawerOpen(true); }} /></Tooltip>
+            <Tooltip title={row.enabled ? '停用码表' : '启用码表'}><Button type="text" icon={row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} aria-label={`${row.enabled ? '停用' : '启用'}码表${row.name}`} onClick={() => void executeCommand(row, row.enabled ? 'disable' : 'enable')} /></Tooltip>
+          </div>
+          <Dropdown menu={{ items: [
+            { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditing(row); setDrawerOpen(true); } },
+            { key: 'lifecycle', icon: row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: row.enabled ? '停用' : '启用', onClick: () => void executeCommand(row, row.enabled ? 'disable' : 'enable') },
+            { type: 'divider' },
+            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title="删除码表" tone="danger" />, icon: null, content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
+          ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${row.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),
     }] : []),

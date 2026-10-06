@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { DeleteOutlined, DownOutlined, PlusOutlined, TableOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Empty, Form, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
@@ -63,7 +64,7 @@ const TablePicker = ({ open, datasetId, value, onCancel, onConfirm }: { open: bo
       },
     },
   ];
-  return <Modal open={open} width={860} title="管理文件数据集逻辑表" afterOpenChange={(visible) => { if (visible) setSelected(value.map((item) => ({ ...item }))); }} onCancel={onCancel} footer={<Space><Button onClick={onCancel}>取消</Button><Button type="primary" onClick={() => onConfirm(selected)}>确定 · {selected.length} 张表</Button></Space>}>
+  return <Modal open={open} width={860} title={<OverlayTitle variant="workspace" title="管理文件数据集逻辑表" />} afterOpenChange={(visible) => { if (visible) setSelected(value.map((item) => ({ ...item }))); }} onCancel={onCancel} footer={<Space><Button onClick={onCancel}>取消</Button><Button type="primary" onClick={() => onConfirm(selected)}>确定 · {selected.length} 张表</Button></Space>}>
     <div className="canvas-jdbc-input-picker-grid"><section className="canvas-jdbc-input-picker-pane"><div className="canvas-jdbc-input-picker-heading"><strong>候选逻辑表</strong><Button type="link" size="small" onClick={() => setSelected((current) => {
       const existing = new Set(current.map((item) => item.fileDatasetTableId));
       return [...current, ...candidates.filter(ready).flatMap((table) => (

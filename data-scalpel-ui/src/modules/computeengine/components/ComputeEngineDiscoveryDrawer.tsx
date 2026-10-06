@@ -11,6 +11,7 @@ import { discoverComputeTargets, registerComputeTargets } from '../api/computeEn
 import { computeEnginesKey } from '../hooks/useComputeEngines';
 import { computeBackendTypeLabels, computeEngineRegistrationStateLabels,
   type ComputeTargetDiscovery, type DiscoverComputeTargetsRequest, type RegisterComputeTarget } from '../model/computeEngine';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 type TargetRow = ComputeTargetDiscovery['targets'][number];
 interface Values extends DiscoverComputeTargetsRequest { targets: Record<string, RegisterComputeTarget> }
@@ -131,9 +132,9 @@ export const ComputeEngineDiscoveryDrawer = ({ initialUrl, onClose }: { initialU
     </div>;
   };
 
-  return <Drawer open width={1000} onClose={onClose} closable={!busy} maskClosable={!busy} keyboard={!busy}
+  return <Drawer open width={1000} onClose={onClose} closable={busy ? false : { placement: 'end' }} maskClosable={!busy} keyboard={!busy}
     rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
-    title={<Space><CloudServerOutlined /><span>连接 Dispatcher<Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>发现执行目标，勾选后逐个注册为计算引擎</Typography.Text></span></Space>}
+    title={<OverlayTitle title="连接 Dispatcher" icon={<CloudServerOutlined />} description="发现执行目标，勾选后逐个注册为计算引擎" />}
     footer={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <Typography.Text type="secondary">已选 {selected.length} 个目标 · 成功项保留，失败项可重试</Typography.Text>
       <Space><Button onClick={onClose} disabled={busy}>关闭</Button><Button type="primary" loading={registration.isPending} disabled={busy || selected.length === 0} onClick={() => void register()}>注册所选目标</Button></Space>

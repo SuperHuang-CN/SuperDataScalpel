@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { SaveOutlined } from '@ant-design/icons';
 import { Button, Divider, Form, InputNumber, List, Modal, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
@@ -317,7 +319,7 @@ export const LocalSqlTaskDefinitionPanel = ({
       <Modal
         rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
-        title="离开未保存的任务定义？"
+        title={<OverlayTitle icon={<ExclamationCircleOutlined />} title="离开未保存的任务定义？" />}
         okText="放弃并离开"
         okButtonProps={{ danger: true }}
         cancelText="继续编辑"

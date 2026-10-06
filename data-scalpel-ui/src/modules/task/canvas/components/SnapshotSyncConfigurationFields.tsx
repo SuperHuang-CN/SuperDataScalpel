@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { Card, Form, InputNumber, Modal, Select, Switch } from 'antd';
 import type { ReactNode } from 'react';
 import type { CanvasColumnSchema, CanvasTableSchema, SnapshotSyncConfiguration } from '../canvasTypes';
@@ -83,7 +84,7 @@ export const SnapshotSyncConfigurationFields = ({
       return;
     }
     Modal.confirm({
-      title: '启用目标独有行删除？',
+      title: <OverlayTitle variant="workspace" title="启用目标独有行删除？" />,
       content: '启用后，来源必须代表目标表的完整快照。运行前仍会执行空来源拦截和删除数量、比例双重保护。',
       okText: '确认启用',
       cancelText: '保持关闭',

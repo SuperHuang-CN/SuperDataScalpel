@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Tag, Typography } from 'antd';
@@ -172,7 +173,7 @@ const TrackReconstructInspector = ({
           content="有序片段按时间及同时间字段排序，重复次序在真实执行时报错；跳过无时间、NULL/空几何与单点线片段。面片段保留单个观测。旧版保持原语义。" /></span>}>
           <Select<'ORDERED_SEGMENTS' | 'LEGACY_POINTS'> aria-label="轨迹重建策略" value={ordered ? 'ORDERED_SEGMENTS' : 'LEGACY_POINTS'}
             options={[{ value: 'ORDERED_SEGMENTS', label: '有序片段' }, { value: 'LEGACY_POINTS', label: '旧版点连线' }]}
-            onChange={semantics => Modal.confirm({ title: '切换轨迹重建策略？',
+            onChange={semantics => Modal.confirm({ title: <OverlayTitle variant="workspace" title="切换轨迹重建策略？" />,
               content: '次序、拆分和单点处理会发生变化。已有次序、表达式及连接段设置保留，请检查下游。', okText: '确认切换',
               onOk: () => updateReconstruction({ semantics }),
             })} />
@@ -181,7 +182,7 @@ const TrackReconstructInspector = ({
           <Form.Item label="输出形态">
             <Select<'LINE' | 'AREA'> aria-label="轨迹输出形态" value={area ? 'AREA' : 'LINE'}
               options={[{ value: 'LINE', label: '线轨迹' }, { value: 'AREA', label: '面轨迹 · XY' }]}
-              onChange={mode => Modal.confirm({ title: '切换轨迹输出形态？',
+              onChange={mode => Modal.confirm({ title: <OverlayTitle variant="workspace" title="切换轨迹输出形态？" />,
                 content: 'Geometry 类型与单观测片段处理会变化，请检查下游。已有线轨迹设置、缓冲字段和表达式均保留。',
                 okText: '确认切换', cancelText: '取消', onOk: () => updateReconstruction({ areaGeometry: {
                   ...(reconstruction?.areaGeometry ?? createAreaGeometryOptions(polygon)), enabled: mode === 'AREA',
@@ -203,7 +204,7 @@ const TrackReconstructInspector = ({
             content="按距离方法生成 MultiLineString：平面保留原顶点；测地线使用 WGS84 椭球加密并在日期变更线切开。加密只改变 Geometry，不增加观测点数或统计样本。旧版仍输出未加密 LineString。" /></span>}>
             <Select<NonNullable<TrackPathGeometryOptions['mode']>> aria-label="轨迹路径几何" value={methodPath ? 'METHOD_PATH' : 'LEGACY_VERTEX_LINE'}
               options={[{ value: 'METHOD_PATH', label: '按距离方法 · 多部件线' }, { value: 'LEGACY_VERTEX_LINE', label: '旧版顶点连线' }]}
-              onChange={mode => Modal.confirm({ title: '切换路径几何？', content: '输出几何类型和测地路径会变化，请检查下游。加密设置保留。',
+              onChange={mode => Modal.confirm({ title: <OverlayTitle variant="workspace" title="切换路径几何？" />, content: '输出几何类型和测地路径会变化，请检查下游。加密设置保留。',
                 okText: '确认切换', onOk: () => updatePath({ mode }) })} />
           </Form.Item>}
           {!area && methodPath && distanceMethod === 'GEODESIC' && <Form.Item validateStatus={invalidLength || invalidUnit ? 'error' : undefined}
@@ -238,12 +239,12 @@ const TrackReconstructInspector = ({
             }}>设置</Button>
           </div>
         </>}
-        <Modal open={areaOpen} destroyOnHidden width={680} title="设置面轨迹" okText="保存面轨迹草稿" cancelText="取消"
+        <Modal open={areaOpen} destroyOnHidden width={680} title={<OverlayTitle variant="workspace" title="设置面轨迹" />} okText="保存面轨迹草稿" cancelText="取消"
           onCancel={() => setAreaOpen(false)} onOk={() => { updateReconstruction({ areaGeometry: areaDraft }); setAreaOpen(false); }}>
           <AreaGeometryEditor value={areaDraft} columns={columns} geometry={sourceGeometry}
             validationAvailable={validation != null} distanceMethod={distanceMethod} onChange={setAreaDraft} />
         </Modal>
-        <Modal open={splitOpen} width={860} title="设置轨迹拆分表达式" okText="保存草稿" cancelText="取消"
+        <Modal open={splitOpen} width={860} title={<OverlayTitle variant="workspace" title="设置轨迹拆分表达式" />} okText="保存草稿" cancelText="取消"
           onCancel={() => setSplitOpen(false)} onOk={() => { updateReconstruction({ splitExpression: splitDraft }); setSplitOpen(false); }}>
           <TrackSplitEditor value={splitDraft} columns={columns} onChange={setSplitDraft} />
         </Modal>
@@ -256,7 +257,7 @@ const TrackReconstructInspector = ({
           </Space>
           <Button size="small" icon={<SettingOutlined />} onClick={() => setBoundariesOpen(true)}>设置</Button>
         </div>
-        <Modal open={boundariesOpen} width={680} title="设置轨迹拆分边界" okText="完成"
+        <Modal open={boundariesOpen} width={680} title={<OverlayTitle variant="workspace" title="设置轨迹拆分边界" />} okText="完成"
           cancelText="关闭" onOk={() => setBoundariesOpen(false)} onCancel={() => setBoundariesOpen(false)}>
           <TrackBoundaryEditor value={boundaries} onChange={updateBoundaries} />
         </Modal>
@@ -269,7 +270,7 @@ const TrackReconstructInspector = ({
             setSummariesOpen(true);
           }}>设置</Button>
         </div>
-        <Modal open={summariesOpen} destroyOnHidden width={860} title="设置轨迹片段汇总" okText="保存汇总草稿"
+        <Modal open={summariesOpen} destroyOnHidden width={860} title={<OverlayTitle variant="workspace" title="设置轨迹片段汇总" />} okText="保存汇总草稿"
           cancelText="取消" onOk={() => { updateSummaries(summariesDraft); setSummariesOpen(false); }} onCancel={() => setSummariesOpen(false)}>
           <TrackSummaryEditor value={summariesDraft} columns={columns} onChange={setSummariesDraft} validationAvailable={validation != null} />
         </Modal>

@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -235,7 +236,7 @@ const UnionMergeFieldsModal = ({
   const rebuildSuggestions = () => {
     if (!table) return;
     Modal.confirm({
-      title: '按当前基准层重建字段建议？',
+      title: <OverlayTitle variant="workspace" title="按当前基准层重建字段建议？" />,
       content: '本窗口中已经调整的 Match、Rename 和 Remove 将被新的自动建议替换。',
       okText: '重建建议',
       cancelText: '保留当前配置',
@@ -246,7 +247,7 @@ const UnionMergeFieldsModal = ({
   return <Modal
     open={open}
     width={820}
-    title={`合并字段 · ${table?.name ?? '已失效表'}`}
+    title={<OverlayTitle variant="workspace" title={`合并字段 · ${table?.name ?? '已失效表'}`} />}
     okText="保存字段处理"
     cancelText="取消"
     onCancel={onCancel}
@@ -449,7 +450,7 @@ export const UnionProcessorInspector = ({
       return;
     }
     Modal.confirm({
-      title: `将 ${next[0]} 设为新的基准层？`,
+      title: <OverlayTitle variant="workspace" title={`将 ${next[0]} 设为新的基准层？`} />,
       content: '第一张表决定初始输出字段和顺序。新基准层原有的自定义字段规则会被移除，其余规则将保留并由 Task Engine 重新校验。',
       okText: '更换基准层',
       cancelText: '取消',
@@ -475,7 +476,7 @@ export const UnionProcessorInspector = ({
       customRuleCount > 0 ? `当前表的 ${customRuleCount} 条自定义字段规则会一并删除` : null,
     ].filter((item): item is string => Boolean(item));
     Modal.confirm({
-      title: `移除输入表 ${tableName}？`,
+      title: <OverlayTitle variant="workspace" title={`移除输入表 ${tableName}？`} />,
       content: `${effects.join('；')}。其余规则将保留并由 Task Engine 重新校验。`,
       okText: '移除',
       cancelText: '保留',

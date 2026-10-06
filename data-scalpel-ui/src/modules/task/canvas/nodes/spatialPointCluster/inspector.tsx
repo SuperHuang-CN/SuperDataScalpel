@@ -16,6 +16,7 @@ import { spatialUnitHelp } from '../spatialUnits';
 import { spatialDurationUnitOptions } from '../spatialAggregationOptions';
 import { createDbscanOptions, dbscanHelp } from './dbscanOptions';
 import { createHdbscanOptions, hdbscanFields, hdbscanFieldErrors, hdbscanHelp } from './hdbscanOptions';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const fingerprint = (value: SpatialPointClusterConfiguration) => JSON.stringify(value);
 
@@ -252,7 +253,7 @@ const SpatialPointClusterInspector = ({
           <Input placeholder="例如 device_clusters" />
         </Form.Item>
       </Form>
-      <Modal width={680} open={diagnosticDraft !== null} title="HDBSCAN 诊断输出字段" okText="保存诊断草稿" cancelText="取消"
+      <Modal width={680} open={diagnosticDraft !== null} title={<OverlayTitle variant="workspace" title="HDBSCAN 诊断输出字段" />} okText="保存诊断草稿" cancelText="取消"
         onCancel={() => setDiagnosticDraft(null)} onOk={() => {
           if (diagnosticDraft) {
             form.setFieldValue('hdbscan', diagnosticDraft);
@@ -269,14 +270,14 @@ const SpatialPointClusterInspector = ({
           </Form.Item>)}
         </Form>}
       </Modal>
-      <Modal open={pendingMode !== null} title="切换聚类语义？" okText="确认切换" cancelText="取消"
+      <Modal open={pendingMode !== null} title={<OverlayTitle variant="workspace" title="切换聚类语义？" />} okText="确认切换" cancelText="取消"
         onCancel={() => setPendingMode(null)} onOk={() => {
           if (pendingMode) updateDbscan({ ...createDbscanOptions(), ...dbscan, mode: pendingMode });
           setPendingMode(null);
         }}>
         切换可能改变簇成员与噪声。空间半径和隐藏的时间配置保持不变；旧算法与显式密度连通分别执行。
       </Modal>
-      <Modal open={pendingAlgorithm !== null} title="切换聚类算法？" okText="确认切换算法" cancelText="取消"
+      <Modal open={pendingAlgorithm !== null} title={<OverlayTitle variant="workspace" title="切换聚类算法？" />} okText="确认切换算法" cancelText="取消"
         onCancel={() => setPendingAlgorithm(null)} onOk={() => {
           if (pendingAlgorithm) {
             const next = algorithmDrafts[pendingAlgorithm] ?? (pendingAlgorithm === 'DBSCAN' ? {
