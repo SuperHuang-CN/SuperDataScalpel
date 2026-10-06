@@ -1,7 +1,7 @@
 export { DataModelDataQueryPanel } from './components/DataModelDataQueryPanel';
 export { DataModelPickerModal } from './components/DataModelPickerModal';
 export type { DataModelPickerSelectionMode } from './components/DataModelPickerModal';
-export { LineageGraphCanvas } from './components/LineageGraphCanvas';
+export { LineageGraphCanvas, SpatialPreviewPanel } from './components/LazyModelVisualizations';
 export { LineageFieldSelector } from './components/LineageFieldSelector';
 export { LineageWarningHint } from './components/LineageWarningHint';
 export type { DataModelDataQueryPanelProps, DataModelQueryRow } from './components/DataModelDataQueryPanel';
@@ -80,5 +80,3 @@ export type { ModelStatistics } from './model/modelStatistics';
 export { useQualityStatistics, useQualityModels } from './hooks/useQualityStatistics';
 export type { QualityStatistics, QualityStatisticsItem, QualityResultFilter } from './model/qualityStatistics';
 export { ModelQualityStatisticsDrawer } from './components/ModelQualityStatisticsDrawer';
-
-export { SpatialPreviewPanel } from "./components/DataModelSpatialPreviewPanel";

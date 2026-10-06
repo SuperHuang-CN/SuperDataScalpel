@@ -7,6 +7,7 @@ import {
   DeploymentUnitOutlined,
   ExportOutlined,
   LogoutOutlined,
+  LoadingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
@@ -15,7 +16,7 @@ import {
 } from '@ant-design/icons';
 import type { BreadcrumbProps, MenuProps, ThemeConfig } from 'antd';
 import { Breadcrumb, Button, ConfigProvider, Layout, Menu, Space, Tooltip, Typography } from 'antd';
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useTransition } from 'react';
 import { DshDrawer } from '../../modules/dsh';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCurrentUser, useLogout, useSystemConfigurations } from '../../modules/system';
@@ -323,8 +324,27 @@ const breadcrumbItems = (pathname: string, taskView: TaskViewConfiguration): Bre
   return [{ title: '工作台' }];
 };
 
+const openAssetPortal = () => {
+  window.open('/assets', '_blank', 'noopener,noreferrer');
+};
+
+const markPendingMenu = (items: NonNullable<MenuProps['items']>, target: string): NonNullable<MenuProps['items']> => (
+  items.map(item => {
+    if (!item || item.type === 'divider') return item;
+    if ('children' in item) return { ...item, children: markPendingMenu(item.children ?? [], target) };
+    if (item.key !== target) return item;
+    return {
+      ...item,
+      className: 'app-menu-item-pending',
+      label: <span className="app-menu-pending-label"><span>{item.label}</span><LoadingOutlined className="app-menu-pending-spinner" spin aria-hidden /></span>,
+    };
+  })
+);
+
 export const AppShell = () => {
   const navigate = useNavigate();
+  const [navigationPending, startNavigation] = useTransition();
+  const [navigationTarget, setNavigationTarget] = useState('');
   const location = useLocation();
   const navigationPath = location.pathname.replace(/\/+$/, '') || '/';
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsedPreference);
@@ -407,13 +427,14 @@ export const AppShell = () => {
           mode="inline"
           selectedKeys={selectedKey ? [selectedKey] : []}
           openKeys={openMenuKeys}
-          items={navigationItems(permissions)}
+          items={navigationPending ? markPendingMenu(navigationItems(permissions), navigationTarget) : navigationItems(permissions)}
           onClick={({ key }) => {
             if (key === '/assets') {
-              window.open('/assets', '_blank', 'noopener,noreferrer');
+              openAssetPortal();
               return;
             }
-            navigate(key);
+            setNavigationTarget(key);
+            startNavigation(() => { void navigate(key); });
           }}
           onOpenChange={(nextOpenKeys) => {
             const latestOpenKey = nextOpenKeys.find((key) => !openMenuKeys.includes(String(key)));
@@ -429,6 +450,9 @@ export const AppShell = () => {
       </Layout.Sider>
       </ConfigProvider>
       <Layout className="app-main">
+        {navigationPending && <div className="app-navigation-pending" role="progressbar" aria-label="页面切换中">
+          <span className="app-navigation-progress-track" />
+        </div>}
         <div className="app-workspace-backdrop" aria-hidden="true">
           <img src={workspaceBackground} alt="" draggable={false} />
         </div>
@@ -453,7 +477,7 @@ export const AppShell = () => {
                 className="app-asset-portal-trigger"
                 icon={<CompassOutlined />}
                 aria-label="打开数据资产门户"
-                onClick={() => window.open('/assets', '_blank', 'noopener,noreferrer')}
+                onClick={openAssetPortal}
               >
                 资产门户 <ExportOutlined aria-hidden />
               </Button>
@@ -481,7 +505,7 @@ export const AppShell = () => {
         </Layout.Header>
         </ConfigProvider>
         {assistantLoaded && currentUserQuery.data && <Suspense fallback={null}><DshDrawer key={currentUserQuery.data.userId ?? currentUserQuery.data.username} user={currentUserQuery.data.userId ?? currentUserQuery.data.username} open={assistantOpen} onClose={() => setAssistantOpen(false)} /></Suspense>}
-        <Layout.Content className={contentClassName}>
+        <Layout.Content className={contentClassName} aria-busy={navigationPending}>
           {resourceModulePage ? <div className={`management-module-workspace ${topLevelManagementPage ? 'resource-workspace-list' : 'resource-workspace-detail'}`}><Outlet /></div> : <Outlet />}
         </Layout.Content>
       </Layout>

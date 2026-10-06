@@ -273,7 +273,7 @@ public final class TdEngineDialect extends AbstractJdbcDialect implements Databa
 
     private static String readTimestampPrecision(Connection connection, String database) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT precision FROM information_schema.ins_databases WHERE name = ?")) {
+                "SELECT `precision` FROM information_schema.ins_databases WHERE name = ?")) {
             statement.setString(1, database);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {

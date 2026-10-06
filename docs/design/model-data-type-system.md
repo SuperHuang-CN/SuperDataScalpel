@@ -61,6 +61,8 @@
 
 PostgreSQL 方言的物理表结构比较对时间戳复用原生类型优先的读取映射，不只依赖 JDBC 类型码：`timestamptz` / `timestamp with time zone` 匹配 `TIMESTAMP`，`timestamp` / `timestamp without time zone` 匹配 `TIMESTAMP_NTZ`（兼容旧 `DATETIME`）。即使驱动对两者返回相同 JDBC 类型码，也不允许带时区与不带时区类型互相匹配；其他字段的比较规则保持不变。
 
+MySQL 按原生类型区分 `TIMESTAMP` 与 `DATETIME`：前者映射平台 `TIMESTAMP`，后者映射 `TIMESTAMP_NTZ`，结构比较及结构快照保持一致，不能仅凭二者相同的 JDBC `TIMESTAMP` 类型码判断。
+
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
 
 ClickHouse 的普通 `String` 没有长度参数。模型可以继续配置 `STRING.length`，该值用于统一元数据管理、数据标准和后续跨库迁移；ClickHouse DDL 始终生成 `String`，不使用具有补零语义的 `FixedString`，字段编辑器通过紧凑提示明确物理表不会强制该长度。
@@ -77,6 +79,8 @@ STRING/BINARY 降级。无 marker 的 `String` 始终映射为普通 `STRING`，
 放在非 String 列上的 marker 返回 `UNSUPPORTED`。平台不解析或校验每行 WKB 值。
 
 ## 接口与交互
+
+Oracle JDBC 的 `BINARY_FLOAT` / `BINARY_DOUBLE` 原生类型编号在元数据边界映射为平台 `FLOAT` / `DOUBLE`，不因其使用厂商类型编号而拒绝导入。Oracle 索引读取采用驱动的近似统计模式，避免只读元数据查询触发统计收集过程。TDengine 的数据库精度查询对 `precision` 标识符使用反引号引用。
 
 - `GET /api/v1/models/platform-types?storageDataSourceId=...` 返回目标数据存储支持的平台类型以及长度能力。字段编辑器据此禁用不支持类型，不在前端硬编码数据库判断。
 - `GET /api/v1/models/external-table-import-preview?storageDataSourceId=...&physicalTableName=...` 返回每列的原生类型、平台类型、映射质量和问题。

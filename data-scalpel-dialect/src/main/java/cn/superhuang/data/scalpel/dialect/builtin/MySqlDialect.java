@@ -169,7 +169,7 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
         String table = qualifiedName(target);
         String selectColumns = columns.stream()
                 .map(column -> column.geometry()
-                        ? "ST_AsBinary(" + quoteIdentifier(column.name()) + ") AS "
+                        ? "ST_AsBinary(" + quoteIdentifier(column.name()) + ", 'axis-order=long-lat') AS "
                         + quoteIdentifier(column.name())
                         : quoteIdentifier(column.name()))
                 .collect(java.util.stream.Collectors.joining(", "));
@@ -206,7 +206,7 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
 
     private static String snapshotValue(JdbcSnapshotColumn column) {
         return column.geometry()
-                ? "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ")"
+                ? "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ", 'axis-order=long-lat')"
                 : "?";
     }
 
@@ -229,7 +229,7 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
     private static String upsertValue(JdbcUpsertColumn column) {
         return column.geometrySpatialReferenceId() == null
                 ? "?"
-                : "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ")";
+                : "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ", 'axis-order=long-lat')";
     }
 
     private static void validateUpsert(List<JdbcUpsertColumn> columns, List<String> keyColumns) {
@@ -277,9 +277,29 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
     }
 
     @Override
+    protected boolean matchesColumnType(TableColumnDefinition expected, ColumnMetadata actual) {
+        if (expected.type() == TableColumnType.TIMESTAMP) {
+            return "TIMESTAMP".equalsIgnoreCase(actual.nativeType());
+        }
+        if (expected.type() == TableColumnType.TIMESTAMP_NTZ || expected.type() == TableColumnType.DATETIME) {
+            return "DATETIME".equalsIgnoreCase(actual.nativeType());
+        }
+        return super.matchesColumnType(expected, actual);
+    }
+
+    @Override
+    protected TableColumnType tableColumnType(ColumnMetadata actual) {
+        if ("TIMESTAMP".equalsIgnoreCase(actual.nativeType())) return TableColumnType.TIMESTAMP;
+        return super.tableColumnType(actual);
+    }
+
+    @Override
     protected Optional<TypeMappingResult<PlatformTypeDefinition>> mapDialectTypeToPlatform(
             JdbcTypeDescriptor physicalType
     ) {
+        if ("TIMESTAMP".equalsIgnoreCase(physicalType.nativeTypeName())) {
+            return Optional.of(TypeMappingResult.exact(PlatformTypeDefinition.of(PlatformDataType.TIMESTAMP)));
+        }
         if (!isMySqlSpatialType(physicalType.nativeTypeName())) {
             return Optional.empty();
         }

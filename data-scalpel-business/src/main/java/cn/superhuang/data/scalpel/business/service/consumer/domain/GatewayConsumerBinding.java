@@ -90,7 +90,7 @@ public class GatewayConsumerBinding extends BaseEntity {
     public void beginSync() {
         resetReconciliation();
         syncStatus = GatewayConsumerSyncStatus.SYNC_PENDING;
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 
@@ -115,7 +115,7 @@ public class GatewayConsumerBinding extends BaseEntity {
     public void beginDelete() {
         resetReconciliation();
         syncStatus = GatewayConsumerSyncStatus.DELETE_PENDING;
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 

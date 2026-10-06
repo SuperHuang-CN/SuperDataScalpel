@@ -96,7 +96,7 @@ public class DispatcherRunnerEventService {
                 event.messageId(), event.messageType().name(), coordinates.topic(), coordinates.partition(),
                 coordinates.offset(), event.executionId()
         ));
-        DispatcherTaskExecution execution = executionRepository.findByExecutionIdAndAttempt(
+        DispatcherTaskExecution execution = executionRepository.findByExecutionIdAndAttemptForUpdate(
                 event.executionId(), event.attempt()
         ).orElse(null);
         if (!matches(execution, event)) {

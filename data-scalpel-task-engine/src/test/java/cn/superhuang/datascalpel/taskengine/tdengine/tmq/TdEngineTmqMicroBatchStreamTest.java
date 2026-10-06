@@ -203,21 +203,28 @@ class TdEngineTmqMicroBatchStreamTest {
         private final Map<TopicPartition, Long> end;
         private boolean closed;
         private boolean commitCalled;
+        private String subscribedTopic;
 
         private FakeConsumer(Map<TopicPartition, Long> beginning, Map<TopicPartition, Long> end) {
             this.beginning = beginning;
             this.end = end;
         }
 
-        @Override public void subscribe(Collection<String> topics) {}
+        @Override public void subscribe(Collection<String> topics) { subscribedTopic = topics.iterator().next(); }
         @Override public void unsubscribe() {}
         @Override public ConsumerRecords<Map<String, Object>> poll(Duration timeout) {
             return ConsumerRecords.emptyRecord();
         }
         @Override public void seek(TopicPartition partition, long offset) {}
         @Override public long position(TopicPartition partition) { return end.get(partition); }
-        @Override public Map<TopicPartition, Long> beginningOffsets(String topic) { return beginning; }
-        @Override public Map<TopicPartition, Long> endOffsets(String topic) { return end; }
+        @Override public Map<TopicPartition, Long> beginningOffsets(String topic) {
+            assertEquals(topic, subscribedTopic, "Driver requires subscription before offset lookup");
+            return beginning;
+        }
+        @Override public Map<TopicPartition, Long> endOffsets(String topic) {
+            assertEquals(topic, subscribedTopic, "Driver requires subscription before offset lookup");
+            return end;
+        }
         @Override public Set<TopicPartition> assignment() { return beginning.keySet(); }
         @Override public void close() { closed = true; }
     }

@@ -76,6 +76,7 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - Dispatcher 在任务真正出队时生成短期 URL。
 - launch v4 的 `qualitySamples` 仅为本次质检可生成样本的行级规则签发固定对象 Key PUT 地址；
   Canvas 或关闭样本时为空。该清单不进入 Manifest、Result、日志或 Kafka 事件。
+- 样本对象使用上述 `quality/samples/{ruleId}.parquet` 专用路径校验，不能套用普通运行制品的单层文件名校验；规则 UUID、运行 UUID 和 attempt 仍须与启动描述符一致。
 - launch v5 增加固定 `trialPreview` PUT 地址。批流 Spark JAR 仅在试运行时使用它，每 3 秒按变化覆盖
   `trial-preview.json`；上传失败只影响预览新鲜度，不改变任务成败。正式运行不会写入该对象。
 - `userJar` 只在 `SPARK_JAR` 出队时存在，和 Manifest 使用相互独立的短期下载地址与 100 MiB 大小限制。

@@ -33,7 +33,7 @@ public record ModelQualityOverviewResponse(
         ruleResults = ruleResults == null ? List.of() : List.copyOf(ruleResults);
     }
 
-    @Schema(description = "规则明细状态：AVAILABLE 已读取并校验不超过 5 MiB 的 v4/v5 result.json；UNAVAILABLE 对象存储未配置、不可用或制品缺失；INVALID 制品超限、损坏、版本不支持或与运行身份/汇总不一致；NOT_AVAILABLE 尚无有效质检运行。")
+    @Schema(description = "规则明细状态：AVAILABLE 已读取并校验不超过 5 MiB 的 v4～v11 result.json；UNAVAILABLE 对象存储未配置、不可用或制品缺失；INVALID 制品超限、损坏、版本不支持或与运行身份/汇总不一致；NOT_AVAILABLE 尚无有效质检运行。")
     public enum ResultDetailStatus { AVAILABLE, UNAVAILABLE, INVALID, NOT_AVAILABLE }
 
     @Schema(description = "单条规则在该次运行中的结果：PASSED 指标未超过阈值；FAILED 指标超过阈值；SKIPPED 因停用、失效或依赖不可用而未执行。")

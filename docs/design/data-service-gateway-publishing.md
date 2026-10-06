@@ -454,7 +454,7 @@ POST /api/v1/data-services/{id}/actions/cleanup-deployment
 
 - DataService 和 Binding 控制面准备阶段使用悲观锁；
 - 外部 HTTP 调用不进入管理数据库事务；
-- `operationStartedAt` 作为一次操作令牌，完成阶段只更新仍属于本次操作的状态；
+- `operationStartedAt` 作为一次操作令牌，完成阶段只更新仍属于本次操作的状态；服务、调用方、凭证及订阅绑定均在生成令牌时截断到 PostgreSQL 可持久化的微秒精度，避免事务外操作返回后因纳秒精度差异被误判为过期操作；
 - 30 秒内的进行中操作拒绝重叠执行，超时后允许人工重试；
 - 发布部分成功后可以通过稳定 Kong 名称重新收敛；
 - 撤回部分成功后只保留失败 Binding，重试不恢复已经删除的对象；

@@ -1,8 +1,8 @@
 import { ApiOutlined, ApartmentOutlined, ArrowRightOutlined, DatabaseOutlined, DeploymentUnitOutlined, LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, ConfigProvider, Form, Input, message } from 'antd';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { useLogin } from '../hooks/useSystemAccess';
+import { useCurrentUser, useLogin } from '../hooks/useSystemAccess';
 import type { LoginRequest } from '../model/systemAccess';
 import loginIllustration from '../../../shared/assets/login-spatiotemporal-cutout.png';
 import './LoginPage.css';
@@ -27,19 +27,22 @@ export const LoginPage = () => {
   const location = useLocation();
   const [messageApi, messageContext] = message.useMessage();
   const loginMutation = useLogin();
+  const currentUserQuery = useCurrentUser();
+  const requestedPath = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+  const destination = requestedPath?.pathname?.startsWith('/') && !requestedPath.pathname.startsWith('//') && requestedPath.pathname !== '/login'
+    ? `${requestedPath.pathname}${requestedPath.search ?? ''}${requestedPath.hash ?? ''}`
+    : '/';
 
   const submit = async (values: LoginRequest) => {
     try {
       await loginMutation.mutateAsync(values);
-      const requestedPath = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
-      const destination = requestedPath?.pathname?.startsWith('/')
-        ? `${requestedPath.pathname}${requestedPath.search ?? ''}${requestedPath.hash ?? ''}`
-        : '/';
       navigate(destination, { replace: true });
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '登录失败，请稍后重试');
     }
   };
+
+  if (currentUserQuery.data) return <Navigate to={destination} replace />;
 
   return (
     <ConfigProvider componentSize="large" theme={loginTheme}>

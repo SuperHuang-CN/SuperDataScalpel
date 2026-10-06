@@ -266,8 +266,8 @@ public final class MetadataIndex {
         if (blank(topic.catalogName())) throw invalid(path + ".catalogName is required");
         if (blank(topic.supertableName())) throw invalid(path + ".supertableName is required");
         if (blank(topic.definitionFingerprint())
-                || !topic.definitionFingerprint().matches("[0-9a-f]{64}")) {
-            throw invalid(path + ".definitionFingerprint must be lowercase SHA-256");
+                || !topic.definitionFingerprint().matches("(?:v2:)?[0-9a-f]{64}")) {
+            throw invalid(path + ".definitionFingerprint must be legacy SHA-256 or v2 fingerprint");
         }
         if (blank(topic.timePrecision()) || !Set.of("MS", "US").contains(topic.timePrecision())) {
             throw invalid(path + ".timePrecision must be MS or US");

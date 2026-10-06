@@ -18,6 +18,14 @@ import java.time.Instant;
 public interface DispatcherTaskExecutionRepository extends JpaRepository<DispatcherTaskExecution, UUID> {
     Optional<DispatcherTaskExecution> findByExecutionIdAndAttempt(UUID executionId, int attempt);
     Optional<DispatcherTaskExecution> findByExecutionId(UUID executionId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from DispatcherTaskExecution e where e.executionId = :executionId")
+    Optional<DispatcherTaskExecution> findByExecutionIdForUpdate(UUID executionId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from DispatcherTaskExecution e where e.executionId = :executionId and e.attempt = :attempt")
+    Optional<DispatcherTaskExecution> findByExecutionIdAndAttemptForUpdate(UUID executionId, int attempt);
     long countByState(DispatcherExecutionState state);
     long countByStateIn(Collection<DispatcherExecutionState> states);
     boolean existsByStateIn(Collection<DispatcherExecutionState> states);

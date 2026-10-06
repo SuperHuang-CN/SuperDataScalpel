@@ -1,6 +1,8 @@
+import { clearAccessToken, getAccessToken } from './accessSession';
+export { clearAccessToken, hasAccessToken, saveAccessToken } from './accessSession';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
 const DEFAULT_TIMEOUT_MS = 20_000;
-const ACCESS_TOKEN_STORAGE_KEY = 'data-scalpel.access-token';
 
 export interface ApiViolation {
   field: string;
@@ -19,18 +21,7 @@ export interface ApiProblem {
   violations?: ApiViolation[];
 }
 
-export const hasAccessToken = (): boolean => Boolean(window.sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY));
-
-export const saveAccessToken = (accessToken: string): void => {
-  window.sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
-};
-
-export const clearAccessToken = (): void => {
-  window.sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-};
-
-const authorizationHeader = (): Record<string, string> => {
-  const accessToken = window.sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+const authorizationHeader = (accessToken: string | null): Record<string, string> => {
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 };
 
@@ -55,6 +46,7 @@ export const requestJson = async <T>(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> => {
   const { skipAuthentication = false, ...requestInit } = init;
+  const accessToken = skipAuthentication ? null : getAccessToken();
   const controller = new AbortController();
   const callerSignal = requestInit.signal;
   const abortFromCaller = () => controller.abort();
@@ -71,7 +63,7 @@ export const requestJson = async <T>(
       ...requestInit,
       headers: {
         Accept: 'application/json',
-        ...(skipAuthentication ? {} : authorizationHeader()),
+        ...authorizationHeader(accessToken),
         ...(requestInit.body && !(requestInit.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         ...requestInit.headers,
       },
@@ -80,6 +72,7 @@ export const requestJson = async <T>(
     const body = await response.text();
 
     if (!response.ok) {
+      if (response.status === 401 && accessToken) clearAccessToken(accessToken);
       throw toApiError(body, response.status);
     }
 
@@ -115,6 +108,7 @@ export const requestBlobResponse = async (
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<BlobResponse> => {
   const { skipAuthentication = false, ...requestInit } = init;
+  const accessToken = skipAuthentication ? null : getAccessToken();
   const controller = new AbortController();
   const callerSignal = requestInit.signal;
   const abortFromCaller = () => controller.abort();
@@ -130,12 +124,13 @@ export const requestBlobResponse = async (
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...requestInit,
       headers: {
-        ...(skipAuthentication ? {} : authorizationHeader()),
+        ...authorizationHeader(accessToken),
         ...requestInit.headers,
       },
       signal: controller.signal,
     });
     if (!response.ok) {
+      if (response.status === 401 && accessToken) clearAccessToken(accessToken);
       throw toApiError(await response.text(), response.status);
     }
     return { blob: await response.blob(), headers: response.headers };
@@ -182,6 +177,7 @@ export const requestEventStream = async (
   onEvent: (event: { event: string; data: string }) => void | Promise<void>,
 ): Promise<void> => {
   const { SseDecoder } = await import('./sse');
+  const accessToken = getAccessToken();
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal.addEventListener('abort', abort, { once: true });
@@ -191,10 +187,13 @@ export const requestEventStream = async (
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      headers: { ...authorizationHeader(), Accept: 'text/event-stream' }, signal: controller.signal,
+      headers: { ...authorizationHeader(accessToken), Accept: 'text/event-stream' }, signal: controller.signal,
     });
     window.clearTimeout(timer);
-    if (!response.ok) throw toApiError(await response.text(), response.status);
+    if (!response.ok) {
+      if (response.status === 401 && accessToken) clearAccessToken(accessToken);
+      throw toApiError(await response.text(), response.status);
+    }
     if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
       throw new ApiError('事件连接返回格式无效');
     }

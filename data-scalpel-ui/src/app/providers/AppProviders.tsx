@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import type { PropsWithChildren } from 'react';
+import { useEffect, useState, useSyncExternalStore, type PropsWithChildren } from 'react';
+import { getAccessToken, subscribeAccessSession } from '../../shared/api/accessSession';
 import { workspaceResourceTheme, workspaceStatusTagStyles } from '../../shared/theme/workspaceResourceTheme';
 
 const feedbackIcons = {
@@ -21,7 +22,7 @@ ConfigProvider.config({
   ),
 });
 
-const queryClient = new QueryClient({
+const createQueryClient = () => new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
@@ -31,6 +32,19 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const SessionQueries = ({ children }: PropsWithChildren) => {
+  const [queryClient] = useState(createQueryClient);
+  useEffect(() => () => queryClient.clear(), [queryClient]);
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+};
+
+const AccessSessionProvider = ({ children }: PropsWithChildren) => {
+  const token = useSyncExternalStore(subscribeAccessSession, getAccessToken, () => null);
+  // Remount account-owned pages and queries together: no old cache, drafts or
+  // in-flight query results can cross a login/logout/account-change boundary.
+  return <SessionQueries key={token ?? 'anonymous'}>{children}</SessionQueries>;
+};
 
 export const AppProviders = ({ children }: PropsWithChildren) => (
   <ConfigProvider
@@ -74,6 +88,6 @@ export const AppProviders = ({ children }: PropsWithChildren) => (
       },
     }}
   >
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <AccessSessionProvider>{children}</AccessSessionProvider>
   </ConfigProvider>
 );

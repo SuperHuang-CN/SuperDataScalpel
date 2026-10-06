@@ -13,7 +13,7 @@ public record TdEngineTmqInputConfiguration(
         String catalogName,
         @JsonPropertyDescription("必填的 Topic 来源超级表名；必须与元数据快照及当前 Topic 定义一致。")
         String supertableName,
-        @JsonPropertyDescription("必填的 64 位小写 SHA-256 Topic/超级表定义指纹；发布、重新启用和运行准备时与当前定义复核，变化时拒绝运行，旧版合法指纹会给出升级提示。")
+        @JsonPropertyDescription("必填的 Topic/超级表定义指纹，当前格式为 v2: 加 64 位小写 SHA-256；保存时兼容旧版 64 位 SHA-256。发布、重新启用和运行准备时与当前定义复核，变化时拒绝运行，旧版合法指纹会给出升级提示。")
         String topicDefinitionFingerprint,
         @JsonPropertyDescription("当前操作产生的 Canvas 逻辑表名；必须在任务定义内唯一，后续节点通过该值引用结果。")
         String outputTableName,

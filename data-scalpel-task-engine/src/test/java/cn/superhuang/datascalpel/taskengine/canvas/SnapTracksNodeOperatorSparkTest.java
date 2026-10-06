@@ -83,6 +83,40 @@ class SnapTracksNodeOperatorSparkTest {
     }
 
     @Test
+    void preservesAllTrackIdentitiesAcrossDifferentShufflePartitions() {
+        String previous = spark.conf().get("spark.sql.shuffle.partitions");
+        spark.conf().set("spark.sql.shuffle.partitions", "7");
+        try {
+            List<Row> observations = new ArrayList<>();
+            List<Row> network = new ArrayList<>();
+            for (int track = 0; track < 20; track++) {
+                double latitude = 30 + track * .01;
+                for (int sequence = 1; sequence <= 20; sequence++) {
+                    observations.add(point("T" + track, "2026-01-01 00:00:00", sequence,
+                            "POINT (" + (114 + sequence * .0001) + " " + latitude + ")"));
+                }
+                network.add(line("L" + track, "A" + track, "B" + track, "A", "road" + track,
+                        "LINESTRING (114 " + latitude + ", 114.01 " + latitude + ")"));
+            }
+            SparkCanvasTable originalPoints = points("multi_points", WGS84, observations);
+            SparkCanvasTable originalLines = lines("multi_roads", WGS84, network);
+            SparkCanvasTable points = new SparkCanvasTable(originalPoints.schema(), originalPoints.dataset().repartition(3));
+            SparkCanvasTable lines = new SparkCanvasTable(originalLines.schema(), originalLines.dataset().repartition(2));
+            List<Row> rows = execute(points, lines, configuration("multi_points", "multi_roads", "multi_result",
+                    SnapTracksOutputMode.ALL_FEATURES, SpatialDistanceMethod.GEODESIC,
+                    100d, SpatialDistanceUnit.METERS, null, null, List.of())).dataset().collectAsList();
+            assertEquals(400, rows.size());
+            assertEquals(400, rows.stream().map(row -> row.getAs("track_id") + ":" + row.getAs("sequence")).distinct().count());
+            for (Row row : rows) {
+                assertEquals("L" + row.<String>getAs("track_id").substring(1), row.getAs("matched_line_id"));
+                assertEquals("M", row.getAs("match_status"));
+            }
+        } finally {
+            spark.conf().set("spark.sql.shuffle.partitions", previous);
+        }
+    }
+
+    @Test
     void matchesConnectedPlanarLinesAndProjectsNetworkFields() {
         SparkCanvasTable points = points("points", WEB_MERCATOR, List.of(
                 point("T", "2026-01-01 00:00:00", 1L, "POINT (1 0)"),

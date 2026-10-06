@@ -43,7 +43,7 @@ export const useLogin = () => {
   return useMutation({
     mutationFn: (request: LoginRequest) => login(request),
     onSuccess: async (response) => {
-      saveAccessToken(response.accessToken);
+      saveAccessToken(response.accessToken, response.expiresAt);
       await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
     },
   });

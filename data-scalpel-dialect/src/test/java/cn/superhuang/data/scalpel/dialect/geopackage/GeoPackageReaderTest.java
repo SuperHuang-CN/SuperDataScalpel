@@ -98,6 +98,30 @@ class GeoPackageReaderTest {
     }
 
     @Test
+    void readsTextWithOptionalCharacterLimitWrittenByGeoPackageTools() throws Exception {
+        Path file = temporaryDirectory.resolve("bounded-text.gpkg");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA application_id = 1196444487");
+            statement.execute("CREATE TABLE gpkg_contents (table_name TEXT NOT NULL, data_type TEXT NOT NULL)");
+            statement.execute("CREATE TABLE gpkg_spatial_ref_sys (srs_id INTEGER PRIMARY KEY, organization TEXT, organization_coordsys_id INTEGER, definition TEXT)");
+            statement.execute("CREATE TABLE stations (id INTEGER PRIMARY KEY, name TEXT(80), note TEXT)");
+            statement.execute("INSERT INTO gpkg_contents VALUES ('stations', 'attributes')");
+            statement.execute("INSERT INTO stations VALUES (1, '城市监测站', NULL)");
+        }
+        try (GeoPackageReader reader = GeoPackageReader.open(file)) {
+            var schema = reader.schema("stations");
+            assertEquals(PlatformDataType.STRING, schema.columns().get(1).type().type());
+            assertEquals(80, schema.columns().get(1).type().length());
+            assertNull(schema.columns().get(2).type().length());
+            try (var rows = reader.openRows(schema, false)) {
+                assertEquals("城市监测站", rows.next().get("name"));
+                assertNull(rows.next());
+            }
+        }
+    }
+
+    @Test
     void acceptsAnAttributesOnlyGeoPackageWithoutGeometryMetadataTable() throws Exception {
         Path file = temporaryDirectory.resolve("attributes-only.gpkg");
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);

@@ -52,7 +52,7 @@ final class SnapTracksSupport {
             .add("lineLengthMetres", DataTypes.DoubleType, false);
     private static final StructType CHOICE_TYPE = new StructType()
             .add("observationId", DataTypes.LongType, false)
-            .add("lineRowId", DataTypes.LongType, true);
+            .add("lineKey", DataTypes.StringType, true);
 
     private SnapTracksSupport() {
     }
@@ -164,30 +164,38 @@ final class SnapTracksSupport {
         occupied.addAll(List.of(rawLines.columns()));
         Names names = Names.resolve(occupied);
         Dataset<Row> points = checkedPoints(prepared.dataset(), configuration, names)
-                .withColumn(names.observationId(), functions.monotonically_increasing_id())
                 .withColumn(names.observationOrder(),
-                        functions.row_number().over(prepared.orderedWindow()).cast(DataTypes.LongType));
+                        functions.row_number().over(prepared.orderedWindow()).cast(DataTypes.LongType))
+                .withColumn(names.observationId(), functions.col(names.observationOrder()));
         Dataset<Row> lines = checkedLines(rawLines, configuration, names);
         Dataset<Row> candidates = candidates(points, lines, configuration, geometryType,
                 searchDistanceMetres, sourceUnitsPerMetre, names, prepared);
         Dataset<Row> choices = choices(candidates, configuration, searchDistanceMetres,
                 sourceUnitsPerMetre, names, prepared);
 
+        // Partition-dependent IDs may change when Spark evaluates the two join branches.
+        // Use the track identity and its ordered observation position to reconnect the source.
+        Column observationMatch = qualified(OUTPUT_POINT_ALIAS, names.observationId()).equalTo(
+                qualified(CHOICE_ALIAS, names.observationId()));
+        for (var id : prepared.trackIdSchemas()) {
+            observationMatch = observationMatch.and(qualified(OUTPUT_POINT_ALIAS, id.name())
+                    .eqNullSafe(qualified(CHOICE_ALIAS, id.name())));
+        }
+        observationMatch = observationMatch.and(qualified(OUTPUT_POINT_ALIAS, prepared.segmentColumnName())
+                .eqNullSafe(qualified(CHOICE_ALIAS, prepared.segmentColumnName())));
         Dataset<Row> selectedPoints = points.alias(OUTPUT_POINT_ALIAS).join(
-                choices.alias(CHOICE_ALIAS),
-                qualified(OUTPUT_POINT_ALIAS, names.observationId()).equalTo(
-                        qualified(CHOICE_ALIAS, names.observationId())), "inner");
+                choices.alias(CHOICE_ALIAS), observationMatch, "inner");
         Dataset<Row> joined = selectedPoints.join(lines.alias(OUTPUT_LINE_ALIAS),
-                qualified(CHOICE_ALIAS, names.lineRowId()).equalTo(
-                        qualified(OUTPUT_LINE_ALIAS, names.lineRowId())), "left_outer");
+                qualified(CHOICE_ALIAS, names.stableLineKey()).equalTo(
+                        qualified(OUTPUT_LINE_ALIAS, names.stableLineKey())), "left_outer");
         if (configuration.outputMode() == SnapTracksOutputMode.MATCHED_FEATURES) {
-            joined = joined.filter(qualified(CHOICE_ALIAS, names.lineRowId()).isNotNull());
+            joined = joined.filter(qualified(CHOICE_ALIAS, names.stableLineKey()).isNotNull());
         }
 
         Column point = qualified(OUTPUT_POINT_ALIAS, configuration.pointGeometryColumnName());
         Column line = qualified(OUTPUT_LINE_ALIAS, configuration.lineGeometryColumnName());
         Column match = match(point, line, configuration.distanceMethod(), sourceUnitsPerMetre);
-        Column matched = qualified(CHOICE_ALIAS, names.lineRowId()).isNotNull();
+        Column matched = qualified(CHOICE_ALIAS, names.stableLineKey()).isNotNull();
         List<Column> projection = new ArrayList<>();
         for (String name : prepared.source().dataset().columns()) {
             projection.add(qualified(OUTPUT_POINT_ALIAS, name));
@@ -331,8 +339,12 @@ final class SnapTracksSupport {
         projection.add(match.getField("lineLengthMetres").alias(names.lineLengthMetres()));
         projection.add(match.getField("distanceMetres").alias(names.distanceMetres()));
         Dataset<Row> result = joined.select(projection.toArray(Column[]::new));
+        List<Column> observationKeys = new ArrayList<>();
+        for (var id : prepared.trackIdSchemas()) observationKeys.add(column(result, id.name()));
+        observationKeys.add(column(result, prepared.segmentColumnName()));
+        observationKeys.add(column(result, names.observationId()));
         Column candidateCount = functions.count(column(result, names.lineRowId()))
-                .over(Window.partitionBy(column(result, names.observationId())));
+                .over(Window.partitionBy(observationKeys.toArray(Column[]::new)));
         return result.withColumn(names.lineRowId(),
                 functions.when(candidateCount.leq(SnapTracksConfiguration.MAX_CANDIDATES_PER_OBSERVATION),
                                 column(result, names.lineRowId()))
@@ -368,6 +380,7 @@ final class SnapTracksSupport {
                 configuration.distanceMethod(), searchDistanceMetres, sourceUnitsPerMetre);
         Column selected = functions.udf((UDF1<Seq<Row>, List<Row>>) values -> {
             Map<Long, ObservationBuilder> observations = new LinkedHashMap<>();
+            Map<Long, String> lineKeys = new LinkedHashMap<>();
             for (Row row : CollectionConverters.asJava(values)) {
                 long observationId = row.getLong(0);
                 long order = row.getLong(1);
@@ -375,6 +388,7 @@ final class SnapTracksSupport {
                 ObservationBuilder observation = observations.computeIfAbsent(observationId,
                         ignored -> new ObservationBuilder(observationId, order, point));
                 if (!row.isNullAt(3)) {
+                    lineKeys.put(row.getLong(3), row.getString(4));
                     observation.candidates().add(new SnapTracksMapMatcher.Candidate(
                             row.getLong(3), row.getString(4), row.get(5), row.get(6),
                             SnapTracksMapMatcher.Direction.valueOf(row.getString(7)),
@@ -385,16 +399,16 @@ final class SnapTracksSupport {
                     .sorted(Comparator.comparingLong(ObservationBuilder::order))
                     .map(ObservationBuilder::build).toList();
             return matcher.match(input).stream()
-                    .map(choice -> RowFactory.create(choice.observationId(), choice.lineRowId()))
+                    .map(choice -> RowFactory.create(choice.observationId(), lineKeys.get(choice.lineRowId())))
                     .toList();
         }, DataTypes.createArrayType(CHOICE_TYPE, false)).apply(column(grouped, names.candidateRows()));
         Dataset<Row> exploded = grouped.withColumn(names.choice(), functions.explode(selected));
-        return exploded
-                .select(
-                        column(exploded, names.choice()).getField("observationId")
-                                .alias(names.observationId()),
-                        column(exploded, names.choice()).getField("lineRowId")
-                                .alias(names.lineRowId()));
+        List<Column> projection = new ArrayList<>();
+        for (var id : prepared.trackIdSchemas()) projection.add(column(exploded, id.name()));
+        projection.add(column(exploded, prepared.segmentColumnName()));
+        projection.add(column(exploded, names.choice()).getField("observationId").alias(names.observationId()));
+        projection.add(column(exploded, names.choice()).getField("lineKey").alias(names.stableLineKey()));
+        return exploded.select(projection.toArray(Column[]::new));
     }
 
     private static Column match(

@@ -212,6 +212,7 @@ final class FileDatasetBatchReaderRegistry {
         DataFrameReader reader = spark.read()
                 .schema(schema)
                 .option("mode", "FAILFAST")
+                .option("multiLine", "true")
                 .option("encoding", options.charset())
                 .option("sep", options.fieldDelimiter())
                 .option("header", Boolean.toString(options.firstRowHeader()));

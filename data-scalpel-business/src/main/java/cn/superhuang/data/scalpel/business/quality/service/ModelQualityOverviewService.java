@@ -161,7 +161,7 @@ public class ModelQualityOverviewService {
             JsonNode attemptNode = root.path("attempt");
             int schemaVersion = schemaNode.asInt(-1);
             if (run.attempt() == null || !schemaNode.isIntegralNumber()
-                    || !attemptNode.isIntegralNumber() || (schemaVersion != 4 && schemaVersion != 5)
+                    || !attemptNode.isIntegralNumber() || schemaVersion < 4 || schemaVersion > 11
                     || !"SPARK_MODEL_QUALITY".equals(text(root, "taskType"))
                     || !uuid(root, "executionId").equals(run.executionId())
                     || !uuid(root, "runId").equals(run.executionRunId())

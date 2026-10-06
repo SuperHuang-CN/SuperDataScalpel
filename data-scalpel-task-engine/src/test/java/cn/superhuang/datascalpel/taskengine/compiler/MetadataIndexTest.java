@@ -8,6 +8,8 @@ import cn.superhuang.data.scalpel.contract.task.MetadataModel;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelPhysicalTableMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelStatus;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
+import cn.superhuang.data.scalpel.contract.task.MetadataTdEngineTmqTopic;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.http.TaskEngineException;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,22 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MetadataIndexTest {
+
+    @Test
+    void acceptsCurrentTmqMetadataFingerprintAndRejectsUnknownFormats() {
+        for (String fingerprint : List.of("a".repeat(64), "v2:" + "b".repeat(64))) {
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> MetadataIndex.create(tmqSnapshot(fingerprint)));
+        }
+        assertInvalid(tmqSnapshot("v3:" + "b".repeat(64)), ".definitionFingerprint");
+    }
+
+    private static MetadataSnapshot tmqSnapshot(String fingerprint) {
+        var topic = new MetadataTdEngineTmqTopic("readings", "city", "meters", fingerprint,
+                null, "MS", List.of(column("id")));
+        var source = new MetadataDataSource(UUID.randomUUID(), true, ConnectionKind.JDBC,
+                CanvasJdbcDatabaseType.TDENGINE_WEBSOCKET, Set.of(DataSourcePurpose.SOURCE), List.of(), List.of(topic));
+        return new MetadataSnapshot(List.of(source), List.of());
+    }
 
     @Test
     void indexesModelsByIdAndCodeAndBuildsAModelOriginTable() {

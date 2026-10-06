@@ -19,6 +19,10 @@ public record QualitySampleArtifactUpload(
             throw new IllegalArgumentException("质检样本上传信息无效");
         }
         putUrl = ExecutionContractValidation.httpUri(putUrl, "质检样本上传地址");
-        objectKey = ExecutionContractValidation.objectKey(objectKey);
+        objectKey = ExecutionContractValidation.required(objectKey, 500, "质检样本对象 Key");
+        if (!objectKey.matches("task-runs/[0-9a-fA-F-]{36}/attempts/[1-9][0-9]*/quality/samples/"
+                + ruleId + "\\.parquet")) {
+            throw new IllegalArgumentException("质检样本对象 Key 不合法");
+        }
     }
 }

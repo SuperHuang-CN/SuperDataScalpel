@@ -55,6 +55,7 @@ public final class TdEngineTmqMicroBatchStream implements MicroBatchStream, Supp
         }
         try (TdEngineTmqConsumer consumer = consumerFactory.create(options,
                 groupId, options.clientId("offsets-" + TdEngineTmqOptions.attemptId()))) {
+            consumer.subscribe(java.util.List.of(options.topic()));
             Map<Integer, Long> offsets = vGroupOffsets(options.startingOffsets().equals("earliest")
                     ? consumer.beginningOffsets(options.topic())
                     : consumer.endOffsets(options.topic()));
@@ -87,6 +88,7 @@ public final class TdEngineTmqMicroBatchStream implements MicroBatchStream, Supp
         TdEngineTmqOffset start = requireOffset(startOffset);
         try (TdEngineTmqConsumer consumer = consumerFactory.create(options,
                 groupId, options.clientId("latest-" + TdEngineTmqOptions.attemptId()))) {
+            consumer.subscribe(java.util.List.of(options.topic()));
             Map<Integer, Long> beginning = vGroupOffsets(consumer.beginningOffsets(options.topic()));
             Map<Integer, Long> latest = vGroupOffsets(consumer.endOffsets(options.topic()));
             requireSameVGroups(start.vGroups().keySet(), beginning.keySet(), latest.keySet());

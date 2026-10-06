@@ -105,7 +105,7 @@ final class SpatialJdbcRuntimeSupport {
             if (column.fieldType() == PlatformDataType.GEOMETRY) {
                 String alias = "__datascalpel_wkb_" + geometryIndex++;
                 wkbAliases.put(column.name(), alias);
-                selectExpressions.add("ST_AsBinary(" + quotedColumn + ") AS "
+                selectExpressions.add(geometryReadExpression(dialect, quotedColumn) + " AS "
                         + dialect.quoteIdentifier(alias));
             } else {
                 selectExpressions.add(quotedColumn);
@@ -318,7 +318,7 @@ final class SpatialJdbcRuntimeSupport {
             Integer srid = srids.get(name);
             columns.add(new JdbcUpsertColumn(name, srid));
             bindings.add(new JdbcBinding(name, srid != null));
-            placeholders.add(srid == null ? "?" : "ST_GeomFromWKB(?, " + srid + ")");
+            placeholders.add(srid == null ? "?" : geometryWriteExpression(dialect, srid));
         }
         String sql = keys.isEmpty() ? "INSERT INTO " + qualifiedTableName + " ("
                 + columns.stream().map(c -> dialect.quoteIdentifier(c.name())).collect(java.util.stream.Collectors.joining(", "))
@@ -326,6 +326,16 @@ final class SpatialJdbcRuntimeSupport {
         var spec = new SpatialWriteSpec(source.connection().driverClassName(), source.connection().jdbcUrl(),
                 jdbcProperties(source.connection()), sql, bindings);
         encodeGeometry(dataset, srids).foreachPartition((ForeachPartitionFunction<Row>) spec::write);
+    }
+
+    static String geometryReadExpression(DatabaseDialect dialect, String quotedColumn) {
+        return "ST_AsBinary(" + quotedColumn
+                + ("MYSQL".equals(dialect.definition().id()) ? ", 'axis-order=long-lat'" : "") + ")";
+    }
+
+    static String geometryWriteExpression(DatabaseDialect dialect, int srid) {
+        return "ST_GeomFromWKB(?, " + srid
+                + ("MYSQL".equals(dialect.definition().id()) ? ", 'axis-order=long-lat'" : "") + ")";
     }
 
     static Dataset<Row> encodeGeometry(Dataset<Row> dataset, Map<String, Integer> srids) {

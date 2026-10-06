@@ -722,6 +722,7 @@ final class CanvasTaskExecutor {
 
     static DataFrameReader reader(SparkSession spark, RuntimeDataSource source) {
         PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
+        TdEngineSparkJdbcDialect.ensureRegistered();
         RuntimeJdbcConnection connection = source.connection();
         DataFrameReader reader = spark.read().format("jdbc")
                 .option("url", connection.jdbcUrl())
@@ -1030,6 +1031,7 @@ final class CanvasTaskExecutor {
             TaskExecutionError error
     ) {
         Instant endedAt = Instant.now();
+        error = preservePartialWriteFailure(nodeResults, error);
         return new TaskExecutionResult(
                 TaskExecutionResult.CURRENT_SCHEMA_VERSION,
                 executionId,
@@ -1040,9 +1042,54 @@ final class CanvasTaskExecutor {
                 endedAt,
                 elapsedMillis(startedAt, endedAt),
                 affectedRows,
-                nodeResults,
+                attributeDeferredFailure(nodeResults, error),
                 error
         );
+    }
+
+    static TaskExecutionError preservePartialWriteFailure(
+            List<NodeExecutionResult> results, TaskExecutionError error) {
+        for (NodeExecutionResult result : results) {
+            if (result.state() == NodeExecutionState.FAILED
+                    && !result.nodeId().equals(error.nodeId())
+                    && result.metrics() instanceof OutputWritesMetrics writes
+                    && writes.writes().stream().anyMatch(write ->
+                    write.state() == OutputWriteExecutionState.SUCCESS)) {
+                // The result contract permits one failed node. Keep the output failure when
+                // it carries committed writes, so their metrics and total rows remain visible.
+                return new TaskExecutionError(error.code(), error.message(), error.category(),
+                        error.retryable(), result.nodeId(), result.nodeType(), result.nodeName(),
+                        result.phase(), error.sqlState(), error.diagnosticId());
+            }
+        }
+        return error;
+    }
+
+    static List<NodeExecutionResult> attributeDeferredFailure(
+            List<NodeExecutionResult> results, TaskExecutionError error
+    ) {
+        // Spark may discover a source read failure only when a downstream write runs.
+        // The classifier retains that source identity, so replace its prepared result
+        // rather than emitting a failed output with a different node's error.
+        NodeExecutionResult trigger = results.stream()
+                .filter(result -> result.state() == NodeExecutionState.FAILED)
+                .findFirst().orElse(null);
+        if (trigger != null && error.nodeId() != null && error.nodeId().equals(trigger.nodeId())) {
+            return results.stream().map(result -> result != trigger ? result : new NodeExecutionResult(
+                    trigger.nodeId(), trigger.nodeType(), trigger.nodeName(), trigger.state(), trigger.phase(),
+                    trigger.startedAt(), trigger.endedAt(), trigger.durationMs(), trigger.rowsWritten(),
+                    trigger.metrics(), error.message(), error)).toList();
+        }
+        if (trigger == null || error.nodeId() == null
+                || results.stream().noneMatch(result -> error.nodeId().equals(result.nodeId()))) {
+            return results;
+        }
+        return results.stream().filter(result -> result != trigger).map(result -> {
+            if (!error.nodeId().equals(result.nodeId())) return result;
+            return new NodeExecutionResult(result.nodeId(), result.nodeType(), result.nodeName(),
+                    NodeExecutionState.FAILED, error.phase(), result.startedAt(), trigger.endedAt(),
+                    elapsedMillis(result.startedAt(), trigger.endedAt()), null, null, error.message(), error);
+        }).toList();
     }
 
     private static TaskExecutionState failureState(TaskExecutionError error) {
@@ -2714,7 +2761,9 @@ final class CanvasTaskExecutor {
         LOGGER.error(
                 "event=NODE_FAILED executionId={} runId={} attempt={} nodeId={} nodeType={} nodeName={} phase={} durationMs={} code={} category={} retryable={} sqlState={} diagnosticId={}\n{}",
                 manifest.execution().executionId(), manifest.execution().runId(), manifest.execution().attempt(),
-                safeLogValue(node.id()), node.nodeType(), safeLogValue(node.name()), phase,
+                safeLogValue(error.nodeId() == null ? node.id() : error.nodeId()),
+                error.nodeType() == null ? node.nodeType() : error.nodeType(),
+                safeLogValue(error.nodeName() == null ? node.name() : error.nodeName()), error.phase(),
                 elapsedMillis(startedAt, Instant.now()), error.code(), error.category(), error.retryable(),
                 error.sqlState(), error.diagnosticId(),
                 RunnerLogSanitizer.jdbcReadOptionSafeStackTrace(

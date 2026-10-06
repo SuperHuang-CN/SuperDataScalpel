@@ -53,7 +53,7 @@ final class BatchJdbcWriter {
                 Integer srid = geometrySrids.get(column);
                 if (srid != null) {
                     if (srid <= 0) throw new RunnerExecutionException("SPATIAL_TARGET_METADATA_UNAVAILABLE", "目标 Geometry 缺少 EPSG CRS", null);
-                    expressions.add("ST_GeomFromWKB(?, " + srid + ")");
+                    expressions.add(SpatialJdbcRuntimeSupport.geometryWriteExpression(dialect, srid));
                 } else {
                     expressions.add("?");
                 }

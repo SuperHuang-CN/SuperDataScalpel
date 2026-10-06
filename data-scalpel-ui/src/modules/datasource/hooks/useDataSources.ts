@@ -70,8 +70,7 @@ export const useDataSources = (request: DataSourceSearchRequest, enabled = true)
   queryKey: [dataSourcesQueryKey, request],
   queryFn: () => fetchDataSources(request),
   enabled,
-  staleTime: request.hasPublishedModels ? 0 : undefined,
-  refetchOnMount: request.hasPublishedModels ? 'always' : undefined,
+  ...(request.hasPublishedModels ? { staleTime: 0, refetchOnMount: 'always' as const } : {}),
 });
 
 export const useDataSource = (id: string | undefined, enabled = true) => useQuery({

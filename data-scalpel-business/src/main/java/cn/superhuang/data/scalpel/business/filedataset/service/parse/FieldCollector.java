@@ -186,7 +186,7 @@ final class FieldCollector {
         private LogicalType logicalType;
         private int presentCount;
         private boolean nullable;
-        private int decimalPrecision;
+        private int decimalIntegerDigits;
         private int decimalScale;
 
         private void observeDecimal(Object value, LogicalType candidate) {
@@ -202,8 +202,8 @@ final class FieldCollector {
                 return;
             }
             int scale = Math.max(0, decimal.scale());
-            int precision = decimal.precision() + Math.max(0, -decimal.scale());
-            decimalPrecision = Math.max(decimalPrecision, Math.max(1, precision));
+            int integerDigits = Math.max(0, decimal.precision() - decimal.scale());
+            decimalIntegerDigits = Math.max(decimalIntegerDigits, integerDigits);
             decimalScale = Math.max(decimalScale, scale);
         }
 
@@ -213,7 +213,7 @@ final class FieldCollector {
                 return FileDatasetTypeDefinitions.fromLogicalType(resolved);
             }
             int scale = decimalScale;
-            int precision = Math.max(decimalPrecision, scale + 1);
+            int precision = Math.max(1, decimalIntegerDigits) + scale;
             return precision == 0
                     ? FileDatasetTypeDefinitions.fromLogicalType(LogicalType.DECIMAL)
                     : FileDatasetTypeDefinitions.decimal(precision, scale);

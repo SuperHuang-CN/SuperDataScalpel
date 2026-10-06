@@ -18,8 +18,17 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JdbcMetadataReaderTest {
+
+    @Test
+    void readsUniqueIndexDefinitionsWithoutRefreshingDatabaseStatistics() throws Exception {
+        var table = new JdbcMetadataReader(BuiltInDialects.registry().require("POSTGRESQL"))
+                .readTable(connection(), new TableIdentifier("warehouse", "public", "spatial_asset"));
+        assertEquals(List.of("name"), table.indexes().getFirst().columns());
+        assertTrue(table.indexes().getFirst().usableAsUniqueKey());
+    }
 
     @Test
     void keepsColumnSizeOnlyForBoundedCharacterColumns() throws Exception {
@@ -73,7 +82,13 @@ class JdbcMetadataReaderTest {
                     column("name", 2, Types.VARCHAR, "varchar", 128),
                     column("created_at", 3, Types.DATE, "date", 10)
             ));
-            case "getPrimaryKeys", "getIndexInfo" -> resultSet(List.of());
+            case "getPrimaryKeys" -> resultSet(List.of());
+            case "getIndexInfo" -> {
+                assertEquals(true, arguments[4], "Metadata inspection must not refresh statistics");
+                yield resultSet(List.of(Map.of("TYPE", DatabaseMetaData.tableIndexOther,
+                        "INDEX_NAME", "unique_name", "COLUMN_NAME", "name", "NON_UNIQUE", false,
+                        "ORDINAL_POSITION", (short) 1)));
+            }
             default -> defaultValue(method.getReturnType());
         });
         return proxy(Connection.class, (proxy, method, arguments) -> switch (method.getName()) {

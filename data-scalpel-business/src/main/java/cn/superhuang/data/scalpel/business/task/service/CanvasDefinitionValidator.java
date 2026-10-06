@@ -25,6 +25,7 @@ public class CanvasDefinitionValidator {
             "(?i).*(password|passwd|secret|token|credential|api[-_.]?key|access[-_.]?key|signature).*"
     );
     private static final Pattern SHA_256 = Pattern.compile("[0-9a-f]{64}");
+    private static final Pattern TMQ_FINGERPRINT = Pattern.compile("(?:v2:)?[0-9a-f]{64}");
 
     private final CanvasDefinitionUpgrader upgrader;
 
@@ -547,8 +548,8 @@ public class CanvasDefinitionValidator {
                 requireString(configuration.catalogName(), path + ".catalogName");
                 requireString(configuration.supertableName(), path + ".supertableName");
                 requireString(configuration.topicDefinitionFingerprint(), path + ".topicDefinitionFingerprint");
-                if (!SHA_256.matcher(configuration.topicDefinitionFingerprint()).matches()) {
-                    invalid(path + ".topicDefinitionFingerprint 必须是 64 位小写 SHA-256");
+                if (!TMQ_FINGERPRINT.matcher(configuration.topicDefinitionFingerprint()).matches()) {
+                    invalid(path + ".topicDefinitionFingerprint 必须是旧版 SHA-256 或 v2 指纹");
                 }
                 requireString(configuration.outputTableName(), path + ".outputTableName");
                 if (configuration.startingOffsets() == null) {
@@ -963,7 +964,9 @@ public class CanvasDefinitionValidator {
                 if (configuration.distanceMethod() == null) invalid(path + ".distanceMethod 不能为空");
                 if (configuration.parameters() == null) invalid(path + ".parameters 不能为空");
                 validateSpatialPointClusterParameters(configuration.parameters(), path + ".parameters");
-                if (configuration.dbscan() != null) requireString(configuration.dbscan().timeColumnName(), path + ".dbscan.timeColumnName");
+                if (configuration.dbscan() != null && configuration.dbscan().usesTime()) {
+                    requireString(configuration.dbscan().timeColumnName(), path + ".dbscan.timeColumnName");
+                }
                 if (configuration.hdbscan() != null) {
                     requireString(configuration.hdbscan().probabilityColumnName(), path + ".hdbscan.probabilityColumnName");
                     requireString(configuration.hdbscan().outlierColumnName(), path + ".hdbscan.outlierColumnName");
@@ -1586,8 +1589,10 @@ public class CanvasDefinitionValidator {
         var regions = configuration.regions();
         if (regions != null) {
             if (regions.binShape() == SpatialBinShape.H3) invalid(path + ".regions.binShape 仅支持 SQUARE 或 HEXAGON");
-            requireString(regions.binIdColumnName(), path + ".regions.binIdColumnName");
-            requireString(regions.binGeometryColumnName(), path + ".regions.binGeometryColumnName");
+            if (regions.usesGrid()) {
+                requireString(regions.binIdColumnName(), path + ".regions.binIdColumnName");
+                requireString(regions.binGeometryColumnName(), path + ".regions.binGeometryColumnName");
+            }
             if (regions.binSize() != null && !Double.isFinite(regions.binSize())) invalid(path + ".regions.binSize 必须是有限数值");
             var grid = regions.planarGrid();
             if (grid != null) {
@@ -1733,7 +1738,9 @@ public class CanvasDefinitionValidator {
                 }
             }
         }
-        requireString(configuration.outputTableName(), path + ".outputTableName");
+        if (!configuration.separateResults()) {
+            requireString(configuration.outputTableName(), path + ".outputTableName");
+        }
     }
 
     private static void validateSpatialDensity(

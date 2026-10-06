@@ -84,6 +84,8 @@ source_key`。队列状态为 `QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED`，并�
 
 ## 3. 校验与提交
 
+CSV/TSV 的引号内换行按同一条记录读取，管理端解析与 Runner 全量读取保持一致。十进制类型合并分别取最大整数位数与最大小数位数，避免跨记录混合精度时缩小可表示范围。GeoPackage 的 `TEXT(n)` 按字符串及其可选长度导入。
+
 初始来源按格式校验并建立字段、解析器报告的行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
 JSON、JSONL、GeoJSON 和 GEOJSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；GeoParquet 与 GPKG 还会完整扫描
 WKB Geometry 和 GeoParquet Footer；SHP 还比较 Shape 类型、Z/M

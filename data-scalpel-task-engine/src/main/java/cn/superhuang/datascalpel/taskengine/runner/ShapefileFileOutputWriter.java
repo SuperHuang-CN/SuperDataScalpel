@@ -394,12 +394,12 @@ final class ShapefileFileOutputWriter {
     ) throws IOException {
         fileSystem.mkdirs(stagingDirectory);
         for (java.nio.file.Path artifact : artifacts) {
-            fileSystem.copyFromLocalFile(
-                    false,
-                    true,
-                    new Path(artifact.toUri()),
-                    new Path(stagingDirectory, artifact.getFileName().toString())
-            );
+            // Preserve non-ASCII filenames without S3A local-copy URI relativization.
+            try (var source = Files.newInputStream(artifact);
+                 var destination = fileSystem.create(
+                         new Path(stagingDirectory, artifact.getFileName().toString()), true)) {
+                source.transferTo(destination);
+            }
         }
 
         if (output.conflictPolicy()

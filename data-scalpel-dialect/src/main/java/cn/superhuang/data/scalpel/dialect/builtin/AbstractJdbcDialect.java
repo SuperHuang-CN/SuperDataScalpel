@@ -880,7 +880,7 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         return new TableColumnDefinition(actual.name(), type, length, precision, scale, actual.nullable());
     }
 
-    private static TableColumnType tableColumnType(ColumnMetadata actual) {
+    protected TableColumnType tableColumnType(ColumnMetadata actual) {
         if (actual.spatial() != null) {
             return TableColumnType.GEOMETRY;
         }

@@ -366,9 +366,8 @@ public class DispatcherExecutionStateService {
     }
 
     private DispatcherTaskExecution locked(UUID executionId) {
-        DispatcherTaskExecution found = executionRepository.findByExecutionId(executionId)
+        return executionRepository.findByExecutionIdForUpdate(executionId)
                 .orElseThrow(() -> new IllegalStateException("执行账本不存在"));
-        return executionRepository.findByIdForUpdate(found.getId()).orElseThrow();
     }
 
     static ExecutionLaunch launch(

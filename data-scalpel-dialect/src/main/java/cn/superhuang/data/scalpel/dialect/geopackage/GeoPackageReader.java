@@ -292,8 +292,8 @@ public final class GeoPackageReader implements AutoCloseable {
             case "REAL", "FLOAT", "DOUBLE", "DOUBLE PRECISION" ->
                     scalarType(precisionOrLength, columnName, declaration, PlatformDataType.DOUBLE);
             case "NUMERIC", "DECIMAL" -> decimalType(precisionOrLength, scale, columnName);
-            case "TEXT", "CLOB" -> rejectTypeParameters(precisionOrLength, columnName, declaration, PlatformTypeDefinition.string(null));
-            case "VARCHAR", "CHARACTER", "NCHAR", "NVARCHAR", "CHAR" ->
+            case "CLOB" -> rejectTypeParameters(precisionOrLength, columnName, declaration, PlatformTypeDefinition.string(null));
+            case "TEXT", "VARCHAR", "CHARACTER", "NCHAR", "NVARCHAR", "CHAR" ->
                     PlatformTypeDefinition.string(precisionOrLength);
             case "BLOB" -> scalarType(precisionOrLength, columnName, declaration, PlatformDataType.BINARY);
             case "DATE" -> scalarType(precisionOrLength, columnName, declaration, PlatformDataType.DATE);

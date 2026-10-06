@@ -15,6 +15,8 @@ import cn.superhuang.data.scalpel.dialect.query.PreparedSqlQuery;
 import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
+import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
+import java.util.Optional;
 
 public final class OracleDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect {
 
@@ -75,6 +78,19 @@ public final class OracleDialect extends AbstractJdbcDialect implements JdbcIncr
     @Override
     public String validationQuery() {
         return "SELECT 1 FROM DUAL";
+    }
+
+    @Override
+    protected Optional<TypeMappingResult<PlatformTypeDefinition>> mapDialectTypeToPlatform(
+            JdbcTypeDescriptor physicalType) {
+        return switch (physicalType.nativeTypeName().trim().toUpperCase(Locale.ROOT)) {
+            // Oracle reports vendor JDBC codes 100/101 rather than java.sql.Types FLOAT/DOUBLE.
+            case "BINARY_FLOAT" -> Optional.of(TypeMappingResult.exact(
+                    PlatformTypeDefinition.of(PlatformDataType.FLOAT)));
+            case "BINARY_DOUBLE" -> Optional.of(TypeMappingResult.exact(
+                    PlatformTypeDefinition.of(PlatformDataType.DOUBLE)));
+            default -> Optional.empty();
+        };
     }
 
     @Override

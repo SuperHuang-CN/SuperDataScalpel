@@ -108,7 +108,8 @@ public class QualityFailureSampleService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "质检结果尚未生成"));
         try {
             JsonNode root = objectMapper.readTree(result);
-            if (root.path("schemaVersion").asLong() != 5
+            JsonNode version = root.path("schemaVersion");
+            if (!version.isIntegralNumber() || version.asLong() < 5 || version.asLong() > 11
                     || !"SPARK_MODEL_QUALITY".equals(root.path("taskType").asText())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "当前质检结果不支持失败样本");
             }

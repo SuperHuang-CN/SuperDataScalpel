@@ -2,6 +2,8 @@
 
 状态：V1 已实现。覆盖批任务、实时任务、模型质检与计算引擎，提供站内通知与通用 Webhook。失败事件按单次运行保留并人工关闭；后续成功不自动关闭原失败。
 
+运行列表的可选 `activeOnly`、`batchOnly` 查询参数省略时均按 `false` 绑定，不因 Java 构造参数缺值返回 400；原有执行模式和时间窗口筛选保持不变。
+
 适用范围：DataScalpel 控制面的运行查询、告警管理与通知。遵循 [根开发约定](../../AGENTS.md)、[前端规范](../../data-scalpel-ui/AGENTS.md)、[任务执行规范](../development/task-engine.md)及 [系统访问管理](system-access-management.md)。
 
 ## 1. 已确认范围与目标

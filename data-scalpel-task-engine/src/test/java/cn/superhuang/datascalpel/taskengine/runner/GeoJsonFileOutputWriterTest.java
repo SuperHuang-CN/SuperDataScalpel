@@ -220,8 +220,8 @@ class GeoJsonFileOutputWriterTest {
             throws Exception {
         Dataset<Row> dataset = geometryDataset(List.of(RowFactory.create(1L, "POINT (120 30)")));
         FileOutputFormatOptions.GeoJson options = new FileOutputFormatOptions.GeoJson(
-                "districts", "geom", null, false);
-        Path local = directory.resolve("local");
+                "城市监测站", "geom", null, false);
+        Path local = directory.resolve("临时文件 with spaces");
         Files.createDirectories(local);
         CanvasPreparedFileOutput failIfExists = minimalPreparedOutput(
                 dataset, options, GeometryKind.POINT, FileOutputConflictPolicy.FAIL_IF_EXISTS);
@@ -236,7 +236,7 @@ class GeoJsonFileOutputWriterTest {
 
         GeoJsonFileOutputWriter.uploadAndCommit(
                 fileSystem, configuration, staging, target, artifact, failIfExists, options);
-        assertTrue(Files.isRegularFile(directory.resolve("target/districts.geojson")));
+        assertTrue(Files.isRegularFile(directory.resolve("target/城市监测站.geojson")));
         assertTrue(Files.isRegularFile(directory.resolve("target/_SUCCESS")));
 
         Files.writeString(directory.resolve("target/keep.txt"), "original");
@@ -256,7 +256,7 @@ class GeoJsonFileOutputWriterTest {
                 new org.apache.hadoop.fs.Path(directory.resolve("staging-overwrite").toUri()),
                 target, artifact, overwrite, options);
         assertFalse(Files.exists(directory.resolve("target/keep.txt")));
-        assertTrue(Files.isRegularFile(directory.resolve("target/districts.geojson")));
+        assertTrue(Files.isRegularFile(directory.resolve("target/城市监测站.geojson")));
         assertTrue(Files.isRegularFile(directory.resolve("target/_SUCCESS")));
     }
 

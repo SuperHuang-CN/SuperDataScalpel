@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, clearAccessToken, requestBlob, requestJson, saveAccessToken } from './http';
+import { getAccessToken } from './accessSession';
 
 const successfulResponse = () => ({
   ok: true,
@@ -26,6 +27,32 @@ describe('requestJson', () => {
     expect(fetch).toHaveBeenCalledWith('/api/v1/protected', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer session-token' }),
     }));
+  });
+
+  it('invalidates a rejected login but preserves it for forbidden and temporary failures', async () => {
+    for (const status of [403, 500, 401]) {
+      saveAccessToken('current');
+      vi.mocked(fetch).mockResolvedValue({ ok: false, status, text: async () => '' } as Response);
+      await expect(requestJson('/v1/protected')).rejects.toMatchObject({ status });
+      expect(getAccessToken()).toBe(status === 401 ? null : 'current');
+    }
+  });
+
+  it('does not let an old request 401 invalidate a newer login', async () => {
+    saveAccessToken('old');
+    vi.mocked(fetch).mockImplementation(async () => {
+      saveAccessToken('new');
+      return { ok: false, status: 401, text: async () => '' } as Response;
+    });
+    await expect(requestJson('/v1/protected')).rejects.toMatchObject({ status: 401 });
+    expect(getAccessToken()).toBe('new');
+  });
+
+  it('does not clear shared login on a failed public login attempt', async () => {
+    saveAccessToken('current');
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 401, text: async () => '' } as Response);
+    await expect(requestJson('/v1/auth/login', { skipAuthentication: true })).rejects.toMatchObject({ status: 401 });
+    expect(getAccessToken()).toBe('current');
   });
 
   it('does not send a stale token to a public authentication request', async () => {

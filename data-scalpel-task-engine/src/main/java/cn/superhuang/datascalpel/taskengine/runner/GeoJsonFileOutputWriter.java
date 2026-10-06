@@ -559,12 +559,11 @@ final class GeoJsonFileOutputWriter {
     ) throws IOException {
         fileSystem.mkdirs(stagingDirectory);
         String artifactName = options.baseName() + ".geojson";
-        fileSystem.copyFromLocalFile(
-                false,
-                true,
-                new Path(artifact.toUri()),
-                new Path(stagingDirectory, artifactName)
-        );
+        // Stream bytes directly: S3A's local-copy URI relativization rejects encoded filenames.
+        try (var source = Files.newInputStream(artifact);
+             var destination = fileSystem.create(new Path(stagingDirectory, artifactName), true)) {
+            source.transferTo(destination);
+        }
         if (output.conflictPolicy()
                 == FileOutputConflictPolicy.FAIL_IF_EXISTS) {
             if (fileSystem.exists(targetDirectory)) {

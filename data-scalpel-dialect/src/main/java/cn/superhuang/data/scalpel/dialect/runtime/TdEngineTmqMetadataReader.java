@@ -207,7 +207,9 @@ public final class TdEngineTmqMetadataReader {
     private static String text(ResultSet resultSet, int column) throws SQLException {
         if (column < 1) return null;
         Object value = resultSet.getObject(column);
-        return value == null || value.toString().isBlank() ? null : value.toString().trim();
+        String text = value instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8)
+                : value == null ? null : value.toString();
+        return text == null || text.isBlank() ? null : text.trim();
     }
 
     private static Instant instant(ResultSet resultSet, int column) throws SQLException {

@@ -94,7 +94,7 @@ public class GatewayCredentialBinding extends BaseEntity {
         resetReconciliation();
         status = GatewayCredentialStatus.SYNC_PENDING;
         operationId = UUID.randomUUID();
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 
@@ -119,7 +119,7 @@ public class GatewayCredentialBinding extends BaseEntity {
         resetReconciliation();
         status = GatewayCredentialStatus.DELETE_PENDING;
         operationId = UUID.randomUUID();
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 

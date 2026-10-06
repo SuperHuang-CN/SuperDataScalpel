@@ -91,7 +91,7 @@ public class GatewaySubscriptionBinding extends BaseEntity {
         resetReconciliation();
         status = GatewaySubscriptionStatus.GRANT_PENDING;
         operationId = UUID.randomUUID();
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 
@@ -115,7 +115,7 @@ public class GatewaySubscriptionBinding extends BaseEntity {
         resetReconciliation();
         status = GatewaySubscriptionStatus.REVOKE_PENDING;
         operationId = UUID.randomUUID();
-        operationStartedAt = Instant.now();
+        operationStartedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         lastError = null;
     }
 

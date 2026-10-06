@@ -1,0 +1,51 @@
+.asset-portal-loading .portal-loading-intro { padding: 32px 0 42px; background: #eaf4f7; }
+.asset-portal-loading .portal-loading-status { display: flex; align-items: center; gap: 10px; color: #496776; font-size: 14px; line-height: 24px; }
+.asset-portal-loading .portal-loading-status .anticon { color: #227b98; font-size: 17px; }
+.asset-portal-loading .portal-loading-intro-content { width: min(580px, 100%); margin-top: 30px; }
+.asset-portal-loading .portal-loading-intro-content > .ant-skeleton + .ant-skeleton { margin-top: 28px; }
+.asset-portal-loading-home .portal-loading-intro { min-height: 570px; padding-top: 64px; }
+.asset-portal-loading-home .portal-loading-intro-content { margin-top: 48px; }
+.asset-portal-loading-home .portal-loading-intro-content .ant-skeleton-title { height: 48px; margin-bottom: 32px; }
+.asset-portal-loading-home .portal-loading-intro-content .ant-skeleton-paragraph > li { height: 19px; }
+.asset-portal-loading-home .portal-loading-intro-content .ant-skeleton-input { height: 70px; }
+.asset-portal-loading .portal-loading-body { padding-bottom: 48px; }
+.asset-portal-loading .portal-loading-statistics { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 28px; margin-top: -28px; padding: 26px; border: 1px solid #dce7eb; border-radius: var(--ds-radius-panel); background: #fff; }
+.asset-portal-loading .portal-loading-section-heading { margin: 36px 0 20px; }
+.asset-portal-loading .portal-loading-resources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.asset-portal-loading .portal-loading-resource { min-width: 0; padding: 28px; border: 1px solid #dce7eb; border-radius: var(--ds-radius-panel); background: #fff; }
+.asset-portal-loading .portal-loading-resource .ant-skeleton-paragraph > li + li { margin-top: 24px; }
+.asset-portal-loading .portal-loading-catalog { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 36px; padding-top: 36px; }
+.asset-portal-loading .portal-loading-catalog .portal-loading-section-heading { margin-top: 0; }
+.asset-portal-loading .portal-loading-sidebar { padding: 8px 24px 0 0; border-right: 1px solid #dce7eb; }
+.asset-portal-loading .portal-loading-sidebar .ant-skeleton-paragraph > li + li { margin-top: 30px; }
+.asset-portal-loading .portal-loading-detail { display: grid; grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr); align-items: start; gap: 24px; padding-top: 36px; }
+.portal-customer .asset-portal-account-loading { display: inline-flex; align-items: center; gap: 10px; }
+.portal-customer .asset-portal-account-loading .ant-skeleton-input { width: 74px; min-width: 74px; }
+
+@media (max-width: 1000px) {
+  .asset-portal-loading .portal-loading-catalog { grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
+  .asset-portal-loading .portal-loading-resources { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .asset-portal-loading .portal-loading-statistics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .asset-portal-loading .portal-loading-intro { padding: 28px 0 36px; }
+  .asset-portal-loading-home .portal-loading-intro { min-height: 440px; }
+  .asset-portal-loading-home .portal-loading-intro-content { margin-top: 36px; }
+  .asset-portal-loading-home .portal-loading-intro-content .ant-skeleton-title { height: 36px; }
+  .asset-portal-loading .portal-loading-statistics { gap: 16px; padding: 20px; }
+  .asset-portal-loading .portal-loading-catalog, .asset-portal-loading .portal-loading-detail, .asset-portal-loading .portal-loading-resources { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .asset-portal-loading .portal-loading-sidebar { border-right: 0; border-bottom: 1px solid #dce7eb; padding: 0 0 20px; }
+  .asset-portal-loading .portal-loading-sidebar .ant-skeleton-paragraph { display: flex; gap: 12px; }
+  .asset-portal-loading .portal-loading-sidebar .ant-skeleton-paragraph > li { width: 28% !important; margin: 0; }
+  .asset-portal-loading .portal-loading-sidebar .ant-skeleton-paragraph > li:nth-child(n + 4) { display: none; }
+  .asset-portal-loading .portal-loading-resource { padding: 22px; }
+  .portal-customer .asset-portal-account-loading { gap: 6px; }
+  .portal-customer .asset-portal-account-loading > span:last-child { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asset-portal-loading .ant-skeleton *, .asset-portal-loading .ant-skeleton *::after,
+  .asset-portal-loading .portal-loading-status .anticon, .asset-portal-loading .portal-loading-status .anticon svg,
+  .asset-portal-account-loading .ant-skeleton *, .asset-portal-account-loading .ant-skeleton *::after { animation: none !important; }
+}

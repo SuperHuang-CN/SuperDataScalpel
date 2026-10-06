@@ -260,7 +260,9 @@ final class JdbcMetadataReader {
         }
 
         Map<String, IndexBuilder> indexes = new LinkedHashMap<>();
-        try (ResultSet resultSet = metadata.getIndexInfo(table.catalog(), table.schema(), table.table(), false, false)) {
+        // Only index definitions are consumed. Exact statistics can trigger Oracle DBMS_STATS
+        // (and fail for quoted table names), so do not request a statistics refresh here.
+        try (ResultSet resultSet = metadata.getIndexInfo(table.catalog(), table.schema(), table.table(), false, true)) {
             while (resultSet.next()) {
                 if (resultSet.getShort("TYPE") == DatabaseMetaData.tableIndexStatistic) {
                     continue;

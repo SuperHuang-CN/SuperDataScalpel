@@ -3,7 +3,7 @@ import {
   SwapOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Tooltip } from 'antd';
+import { Avatar, Button, Skeleton, Tooltip } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { hasAccessToken } from '../../../shared/api/http';
 import { useCurrentUser, useLogout } from '../../system';
@@ -49,7 +49,12 @@ export const AssetPortalHeader = ({ page }: AssetPortalHeaderProps) => {
         </nav>
         <div className="asset-portal-user-actions">
           <Button className="asset-portal-management-button" icon={<SwapOutlined />} onClick={enterManagement}>管理工作台</Button>
-          {authenticated ? (
+          {hasAccessToken() && currentUserQuery.isPending ? (
+            <span className="asset-portal-account-loading" role="status" aria-label="正在验证登录状态">
+              <span aria-hidden="true"><Skeleton.Avatar active size={30} /></span>
+              <span aria-hidden="true"><Skeleton.Input active size="small" /></span>
+            </span>
+          ) : authenticated ? (
             <>
               <Avatar size={30} icon={<TeamOutlined />} className="asset-portal-user-avatar" />
               <span className="asset-portal-username">{currentUserQuery.data?.username}</span>
