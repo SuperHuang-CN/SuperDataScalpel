@@ -178,6 +178,46 @@ class SpatialPreviewServiceTest {
         var writing=new SpatialPreviewSource("writing","v1",1L,true,sink -> reads.incrementAndGet(),() -> "v1");
         assertEquals("UPDATING",service.prepare(writing,true).state());assertEquals(0,reads.get());
     }
+    @Test void historicalFailureBecomesUnpreparedAndRecoversWithoutForcedReload() throws Exception {
+        AtomicInteger reads=new AtomicInteger();
+        var source=new SpatialPreviewSource("historical-failure","v1",1L,false,sink -> {
+            reads.incrementAndGet();sink.accept(point());
+        },() -> "v1");
+        var row=new SpatialPreviewState(source.key(),source.revision());
+        row.reset("v1","FAILED","地图准备失败");
+        org.springframework.test.util.ReflectionTestUtils.setField(row,"updatedAt",Instant.now().minusSeconds(601));
+        states.put(source.key(),row);
+        UUID failedGeneration=row.generation;
+
+        assertEquals("NOT_PREPARED",service.status(source).state());
+        assertNotEquals(failedGeneration,row.generation);
+        assertEquals(0,reads.get()); // Status only releases the stale failure; it never reads the source.
+        service.prepare(source,false);
+        assertEquals("READY",await(source));
+        assertEquals(1,reads.get());
+        assertEquals(1,service.status(source).featureCount());
+    }
+    @Test void freshFailuresAndExplicitLimitsDoNotAutomaticallyRetry() {
+        AtomicInteger reads=new AtomicInteger();
+        var source=new SpatialPreviewSource("failure","v1",1L,false,sink -> reads.incrementAndGet(),() -> "v1");
+        var row=new SpatialPreviewState(source.key(),source.revision());
+        row.reset("v1","FAILED","地图准备失败");
+        row.observedAt=Instant.now().minusSeconds(900);
+        org.springframework.test.util.ReflectionTestUtils.setField(row,"updatedAt",Instant.now());
+        states.put(source.key(),row);
+        UUID generation=row.generation;
+        for(int i=0;i<3;i++) {
+            assertEquals("FAILED",service.status(source).state());
+            assertEquals(generation,service.prepare(source,false).generation());
+        }
+        for(String state:List.of("LIMIT_EXCEEDED","UNSUPPORTED")) {
+            row.reset("v1",state,"明确限制");
+            org.springframework.test.util.ReflectionTestUtils.setField(row,"updatedAt",Instant.now().minusSeconds(86400));
+            assertEquals(state,service.status(source).state());
+            assertEquals(state,service.prepare(source,false).state());
+        }
+        assertEquals(0,reads.get());
+    }
     @Test void expiredDataAndOutOfOrderViewportsCannotBeReused() throws Exception {
         var source=new SpatialPreviewSource("source","v1",1L,false,sink -> sink.accept(point()),() -> "v1");
         var generation=service.prepare(source,false).generation();assertEquals("READY",await(source));

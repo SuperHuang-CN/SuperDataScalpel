@@ -353,11 +353,19 @@ public class SpatialPreviewService {
             row.reset(source.revision(),"NOT_PREPARED","来源已更新，正在准备新地图");
         } else if(displayable(row)&&row.expiresAt!=null&&row.expiresAt.isBefore(Instant.now())) {
             row.reset(source.revision(),"NOT_PREPARED","预览已过期，正在重新读取来源");
+        } else if("FAILED".equals(row.state)&&failureCooldownElapsed(row)) {
+            row.reset(source.revision(),"NOT_PREPARED","上次准备失败，正在重新准备地图");
         } else if("PREPARING".equals(row.state)&&(row.leaseUntil==null||row.leaseUntil.isBefore(Instant.now()))) {
             row.reset(source.revision(),"FAILED","准备任务中断，请重新加载");
         } else if("OVERVIEW_READY".equals(row.state)&&row.leaseUntil!=null&&row.leaseUntil.isBefore(Instant.now())) {
             row.leaseUntil=null; row.message="地图可浏览，预览副本保存未完成；需要时可重新加载";
         }
+    }
+    private boolean failureCooldownElapsed(SpatialPreviewState row) {
+        // Failed preparations are persisted across visits and restarts. Do not let a transient
+        // failure block this source forever, or let status polling immediately retry a fresh failure.
+        Instant failedAt=row.getUpdatedAt()!=null?row.getUpdatedAt():row.observedAt;
+        return failedAt!=null&&!failedAt.plusSeconds(600).isAfter(Instant.now());
     }
     private <T> T locked(String key, Function<SpatialPreviewState,T> action, String revision) {
         return tx.execute(status -> {
