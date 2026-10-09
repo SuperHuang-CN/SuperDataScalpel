@@ -5,7 +5,7 @@ import cn.superhuang.data.scalpel.business.systemmcp.security.SystemMcpAuthentic
 import cn.superhuang.data.scalpel.business.systemmcp.web.request.*;
 import cn.superhuang.data.scalpel.business.systemmcp.web.response.*;
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository;
-import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
+import cn.superhuang.data.scalpel.business.system.access.domain.SystemPermissionDefinition;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -18,13 +18,15 @@ import java.time.Instant;
 import java.util.*;
 @Service
 public class SystemMcpTokenService {
+    // 临时策略：MCP 身份具备代码声明的全部业务权限，访问范围由总开关、目录及开放清单约束。
+    // 仅作用于 MCP 请求，不修改绑定用户的角色、数据库权限或普通后台 JWT。
+    private static final List<SimpleGrantedAuthority> MCP_AUTHORITIES=Arrays.stream(SystemPermissionDefinition.values())
+            .map(permission->new SimpleGrantedAuthority(permission.getCode())).toList();
     private final SystemMcpAccessTokenRepository tokens;
     private final SystemUserRepository users;
-    private final SystemAccessService access;
-    public SystemMcpTokenService(SystemMcpAccessTokenRepository t,SystemUserRepository u,SystemAccessService a) {
+    public SystemMcpTokenService(SystemMcpAccessTokenRepository t,SystemUserRepository u) {
         tokens=t;
         users=u;
-        access=a;
     }
     public static String digest(String value) {
         try {
@@ -39,12 +41,8 @@ public class SystemMcpTokenService {
         var t=tokens.findByTokenDigest(digest(secret)).orElseThrow(SystemMcpTokenService::invalid);
         if(!t.getEnabled()||t.getExpiresAt()!=null&&!t.getExpiresAt().isAfter(Instant.now()))throw invalid();
         var u=users.findById(t.getUserId()).filter(x->x.isEnabled()).orElseThrow(SystemMcpTokenService::invalid);
-        var current=access.findAuthenticationUser(u.getUsername()).orElseThrow(SystemMcpTokenService::invalid);
-        List<SimpleGrantedAuthority> authorities=new ArrayList<>();
-        authorities.add(new SimpleGrantedAuthority("ROLE_"+current.roleCode()));
-        current.permissionCodes().forEach(p->authorities.add(new SimpleGrantedAuthority(p)));
         if(tokens.touch(t.getId(),t.getTokenDigest(),Instant.now())!=1)throw invalid();
-        return new SystemMcpAuthentication(current.username(),t.getId(),secret,authorities);
+        return new SystemMcpAuthentication(u.getUsername(),t.getId(),secret,MCP_AUTHORITIES);
     }
     private static BadCredentialsException invalid() {
         return new BadCredentialsException("系统 MCP 令牌无效或绑定用户不可用");

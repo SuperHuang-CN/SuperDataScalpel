@@ -80,7 +80,7 @@ Business 和 Admin 的 Resource/DTO 使用 Swagger 注解。`data-scalpel-contra
 | 400 | `INVALID_SEARCH_REQUEST` | 统一 Search DSL 不合法 |
 | 400 | `INVALID_QUERY` / `BAD_REQUEST` | 查询协议或普通请求参数无效 |
 | 401 | `AUTHENTICATION_REQUIRED` | 未登录、Token 缺失或无效 |
-| 403 | `ACCESS_DENIED` | 已认证但没有所需权限，或 Engine 业务服务未通过来源 IP 策略 |
+| 403 | `ACCESS_DENIED` | 已认证但没有所需权限、系统 MCP 接口未开放或不可用，或 Engine 业务服务未通过来源 IP 策略 |
 | 404 | `RESOURCE_NOT_FOUND` | 资源或路由不存在 |
 | 405 | `METHOD_NOT_ALLOWED` | 请求方法不受支持 |
 | 406 | `NOT_ACCEPTABLE` | 请求的响应格式不可接受 |

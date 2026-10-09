@@ -44,9 +44,9 @@ Admin 托管 `/api/v1/dsh`，实现位于 Business 的 `dsh` 包。插件源码�
 
 新增 `/bridge/v3`，独立 Admin Bridge 密钥与 `/bridge/v1`、`/bridge/v2` 隔离。全局能力和授权协调接口由可信 Admin 使用；用户范围 `/bridge/v3/users/{uuid}` 的命令、查询、WebSocket 复用现有 Sessions、Events、Interactions。每个真实用户有独立控制存储域。
 
-插件 `0.6.0` 起，Preset `datascalpel-admin` 提供完整 DSH 原生工具组合、持久 Bash、Skills、网页工具、子智能体、工作流、`run_code` 与 Cordis 控制，并保留原生追问、`workspace_read/write`、附件读取和会话作用域的 `api_search/api_describe/api_invoke`。MCP 工具携带会话专属认证头，禁止修改全局头；MCP 的开放清单与 RBAC 不受完全权限影响。共享实例中的个人工作区只是默认目录，Shell 和原生文件工具不以它作为跨用户隔离边界。
+插件 `0.6.0` 起，Preset `datascalpel-admin` 提供完整 DSH 原生工具组合、持久 Bash、Skills、网页工具、子智能体、工作流、`run_code` 与 Cordis 控制，并保留原生追问、`workspace_read/write`、附件读取和会话作用域的 `api_search/api_describe/api_invoke`。MCP 工具携带会话专属认证头，禁止修改全局头；MCP 的身份与开放清单检查独立于 DSH 原生权限模式，业务权限采用 [系统 MCP 当前策略](system-mcp.md#身份与执行边界)。共享实例中的个人工作区只是默认目录，Shell 和原生文件工具不以它作为跨用户隔离边界。
 
-系统 MCP 仍要求总开关、接口开放和当前用户权限，接入过程不自动开放接口。`/api/v1/dsh` 整体排除在系统 MCP 目录之外，避免递归控制助手。
+系统 MCP 仍要求有效令牌、绑定用户存在且启用、总开关和接口开放，接入过程不自动开放接口；当前暂不限制绑定用户的业务权限。`/api/v1/dsh` 整体排除在系统 MCP 目录之外，避免递归控制助手。
 
 默认每用户最多 4 个活跃 Agent，全局最多 8 个。槽位在异步创建前预留，失败和释放后归还；空闲 15 分钟释放，持久历史保留。
 

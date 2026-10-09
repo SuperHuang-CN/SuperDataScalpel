@@ -30,7 +30,7 @@ public class SystemMcpManagementResource {
     @PostMapping("/actions/update-configuration") @PreAuthorize("hasAuthority('system.mcp.update')") public SystemMcpConfigurationResponse update(@Valid @RequestBody UpdateSystemMcpConfigurationRequest r,Principal p) {
         return management.updateConfiguration(r,p.getName());
     }
-    @Operation(summary = "同步系统 MCP 接口目录", description = "重新解析当前部署的 Spring MVC 路由、权限表达式和 OpenAPI 契约；完整解析成功后原子更新目录。新增接口默认关闭，仍受支持的已开放接口保留状态，删除或不再支持的接口关闭。")
+    @Operation(summary = "同步系统 MCP 接口目录", description = "重新解析当前部署的 Spring MVC 路由、操作声明和 OpenAPI 契约；当前系统 MCP 暂不按业务权限声明限制目录。完整解析成功后原子更新目录。新增接口默认关闭，仍受支持的已开放接口保留状态，删除或不再支持的接口关闭。")
     @PostMapping("/actions/refresh-catalog") @PreAuthorize("hasAuthority('system.mcp.update')") public SystemMcpConfigurationResponse refresh(Principal p) {
         return management.refreshCatalog(p.getName());
     }

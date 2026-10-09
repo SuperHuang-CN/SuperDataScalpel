@@ -2,6 +2,8 @@
 
 状态：首版实现。由 Admin 托管，业务实现位于 `business.systemmcp`，不增加进程或 Maven 模块。与在线 MCP 平台的 Groovy Tool、发布版本、服务和令牌完全独立。配套操作流程由仓库中的统一 DataScalpel Skill 提供；不集成 DHS 运行时、不改造助手交互。
 
+2026-10-09 临时策略：系统 MCP 暂不按绑定用户的业务权限限制接口发现、描述和调用。有效令牌、绑定用户存在且启用、系统总开关、目录可用性及接口开放清单仍须逐次检查；普通后台 JWT、系统 MCP 管理接口及在线 MCP 平台的权限规则保持现状。后续业务权限方案另行讨论。
+
 ## 使用入口
 
 “系统管理 → 系统 MCP”提供接口开放、访问令牌和操作记录三个页签。接口开放页左侧按 OpenAPI Tag 展示接口分类，选择分类后只查询该分类的接口；“全部接口”恢复完整目录。首次启动后总开关关闭，全部接口未开放。
@@ -27,15 +29,15 @@ SQL 测试在 Admin 侧执行，脚本草稿在所选 Engine 实际执行；两�
 
 任务检查与服务测试的边界独立：Canvas 预校验只分析定义和传入快照，JAR 在线编译会先保存源码、成功后替换当前制品，均不证明真实作业运行或结果正确。JAR 通过 JSON 源码接口开发；文件输入/输出节点仅引用现有资源或声明未来运行配置，不改变系统 MCP 不支持文件传输的范围。
 
-管理员需按所用场景的参考文档开放实际需要的接口，绑定用户也需具有相应业务权限；服务测试接口为 `EXECUTE`，不应仅按 `READ` 筛选开放。Skill 不能增加 MCP 可见范围或绕过授权；接口不可见时 Agent 应说明能力缺口。运行时契约始终通过 `api_describe` 获取，Skill 中的接口指南不替代实时契约。其他专项场景后续在同一 Skill 内补充参考文档，当前不承诺已提供完整流程。
+管理员需按所用场景的参考文档开放实际需要的接口；服务测试接口为 `EXECUTE`，不应仅按 `READ` 筛选开放。当前不要求绑定用户具有相应业务权限，Skill 仍不能增加 MCP 开放范围；接口不可见时 Agent 应说明能力缺口。运行时契约始终通过 `api_describe` 获取，Skill 中的接口指南不替代实时契约。其他专项场景后续在同一 Skill 内补充参考文档，当前不承诺已提供完整流程。
 
 ## 三个固定工具
 
 | 工具 | 参数 | 作用 |
 | --- | --- | --- |
-| `api_search` | `query`，可选 `module`、`effect`、`offset`、`limit` | 在已开放且当前用户有权访问的接口中进行确定性关键词检索；默认 10 项，最多 50 项 |
+| `api_search` | `query`，可选 `module`、`effect`、`offset`、`limit` | 在当前可用且已开放的接口中进行确定性关键词检索；默认 10 项，最多 50 项 |
 | `api_describe` | `operationIds`，1–5 项 | 返回参数、响应、局部组件、操作性质、前置条件、关联接口、最新契约指纹 |
-| `api_invoke` | `operationId`，可选 `pathParams`、`queryParams`、`body` | 经原业务 API 执行，保留 MVC 参数绑定、Bean Validation、方法权限和 ProblemDetail |
+| `api_invoke` | `operationId`，可选 `pathParams`、`queryParams`、`body` | 经原业务 API 执行，保留 MVC 参数绑定、Bean Validation、业务状态校验和 ProblemDetail；当前暂不限制绑定用户的业务权限 |
 
 `operationId` 固定为 HTTP 方法、空格和 MVC 路由模板，例如 `GET /api/v1/data-sources/{id}`，仅作为目录标识；服务端不会将客户端标识直接作为请求地址。`effect` 为 `READ`（查询）、`WRITE`（变更）、`EXECUTE`（执行）。搜索匹配名称、模块、关键词、说明及路径，支持中文片段和英文标识符。
 
@@ -49,13 +51,13 @@ SQL 测试在 Admin 侧执行，脚本草稿在所选 Engine 实际执行；两�
 
 ## 接口目录维护
 
-应用就绪后从真实 Spring MVC 路由及本机 Springdoc `/v3/api-docs` 构建目录。只扫描 `/api/v1/**` 的 GET / POST，排除认证、内部路径及系统 MCP 管理接口。接口目录的业务模块直接取 Resource 类的 OpenAPI `@Tag(name)`；管理页面和 Swagger 文档共享该分类来源，不另建分类配置。候选接口采用真实 Handler 的授权表达式，使用 Spring Security 求值，不拆解权限字符串。
+应用就绪后从真实 Spring MVC 路由及本机 Springdoc `/v3/api-docs` 构建目录。只扫描 `/api/v1/**` 的 GET / POST，排除认证、内部路径、系统 MCP 管理及 DSH 接口。接口目录的业务模块直接取 Resource 类的 OpenAPI `@Tag(name)`；管理页面和 Swagger 文档共享该分类来源，不另建分类配置。当前目录不依赖 Handler 的业务权限声明，也不在发现、描述和调用前求值其授权表达式。
 
 每个业务方法通过 `@SystemMcpOperation` 声明操作性质、中文用途以及必要的关键词、前置条件和关联接口。声明通过 OpenAPI `x-system-mcp` 扩展输出。参数和 Schema 继续来源于业务 DTO / Validation，禁止在系统 MCP 手工复制业务请求契约。未来缺少声明的接口为“待完善”，不能开放。
 
 新增或修改接口还必须遵循 [OpenAPI 契约](backend-api-response-and-error-handling.md#openapi-契约)。目录以最终生成的接口、参数和可达 Schema 说明为准；单有源码注解但在多态或引用转换中丢失的说明仍视为缺失，该接口不得开放。
 
-同方法/路径有多个 Handler，或路由依赖额外 params/headers 条件时，标记“不支持，需要适配”。依赖参数的权限表达式也需适配。文件、Multipart、二进制、图片、纯文本和持续流接口第一版不能开放；JSON 形式的文件数据集元数据查询仍可使用。
+同方法/路径有多个 Handler，或路由依赖额外 params/headers 条件时，标记“不支持，需要适配”。依赖参数的权限表达式不再构成“不支持”的原因，例如 `GET /api/v1/data-sources` 可以保留原来的 `#hasPublishedModels` 权限表达式。文件、Multipart、二进制、图片、纯文本和持续流接口第一版不能开放；JSON 形式的文件数据集元数据查询仍可使用。
 
 Schema 只保留可达的本地 components 引用，保留递归、多态与可空定义；禁止远程引用和远程获取。请求头及 Cookie 参数不开放给调用者。
 
@@ -69,7 +71,9 @@ Schema 规范化及循环检查只遍历 Schema 节点，不把 `properties` 等
 
 独立表为 `ds_system_mcp_setting`、`ds_system_mcp_api`、`ds_system_mcp_access_token`、`ds_system_mcp_audit`，遵循 UUID、BaseEntity、标量引用和 PostgreSQL text 规范，通过现有 `ddl-auto=update` 建表。
 
-数据库只保存令牌 SHA-256 摘要；随机秘密为 32 字节。令牌绑定用户 UUID，每次请求重新读取用户启用状态和当前角色权限，不复用 JWT 权限快照。停用、删除、轮换和过期立即影响后续认证。最近使用时间单独更新，避免并发认证覆盖令牌停用或轮换。
+数据库只保存令牌 SHA-256 摘要；随机秘密为 32 字节。令牌绑定用户 UUID，每次请求重新检查用户存在且启用，并保留真实用户名用于业务操作与审计；当前不读取绑定用户的角色权限。停用、删除、轮换和过期立即影响后续认证。最近使用时间单独更新，避免并发认证覆盖令牌停用或轮换。
+
+为使原接口的 `@PreAuthorize` 及业务层权限判断沿用现有实现，MCP 请求身份临时持有 `SystemPermissionDefinition` 声明的全部业务权限，不修改用户角色、数据库授权或普通后台 JWT。运行中心的当前操作人也使用该 MCP 身份权限；通知接收人的可见性仍按接收人真实权限判断。接口的参数、资源存在性、状态和生命周期校验照常执行。
 
 系统令牌不能访问系统 MCP 管理接口。它直接访问业务 URL 时，也会在真实 Handler 执行前检查总开关、目录状态和接口开放状态。普通 JWT 与在线 MCP 平台认证链保持独立。
 
@@ -125,7 +129,7 @@ Schema 规范化及循环检查只遍历 Schema 节点，不把 `properties` 等
 
 第三阶段新增 `managed` 标识；旧记录空值按手动令牌处理。系统内部为每个 DSH 用户绑定签发一次托管令牌，管理页面显示“DSH 系统托管”并隐藏操作，所有手工修改、启停、轮换和删除接口返回 409 `SYSTEM_MCP_TOKEN_MANAGED`。
 
-令牌表继续只保存摘要。为使 DSH 重启后恢复当前用户身份，独立 DSH 用户绑定表使用部署专用 AES-GCM 密钥保存可恢复的秘密；这是 DSH 接入专属保管逻辑，普通令牌没有可恢复副本。完整值不通过用户接口返回，原生模型不接触凭据。用户停用/删除、角色调整、总开关和开放清单检查沿用现有逐次鉴权。
+令牌表继续只保存摘要。为使 DSH 重启后恢复当前用户身份，独立 DSH 用户绑定表使用部署专用 AES-GCM 密钥保存可恢复的秘密；这是 DSH 接入专属保管逻辑，普通令牌没有可恢复副本。完整值不通过用户接口返回，原生模型不接触凭据。用户停用/删除、令牌、总开关和开放清单仍逐次检查；托管令牌采用相同的 MCP 临时策略，角色权限调整暂不收窄 MCP 调用范围。
 
 新增审计事件 `DSH_TOKEN_CREATED` 仅记录操作人、令牌 ID 与托管标识，不含秘密。系统 MCP 目录整体排除 `/api/v1/dsh`，防止递归。详见 [DSH 第三阶段](dsh-plugin-phase-three.md)。
 

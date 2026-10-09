@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.AnnotatedElementUtils;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -148,9 +147,6 @@ public class SystemMcpCatalogService {
                 a.setUnavailableReason("接口用途或操作性质尚未声明");
                 return a;
             }
-            var auth=AnnotatedElementUtils.findMergedAnnotation(handler.getMethod(),PreAuthorize.class);
-            if(auth==null) auth=AnnotatedElementUtils.findMergedAnnotation(handler.getBeanType(),PreAuthorize.class);
-            if(auth==null || auth.value().contains("#")) throw new IllegalArgumentException("接口授权需要显式适配");
             String type=handler.getMethod().getGenericReturnType().getTypeName();
             if(type.contains("byte[]")||type.contains("org.springframework.core.io.")||type.contains("StreamingResponseBody")||type.contains("Emitter")
             ||type.contains("InputStream")||type.contains("reactor.")||type.equals("java.lang.String"))

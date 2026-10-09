@@ -4,7 +4,6 @@ import cn.superhuang.data.scalpel.business.systemmcp.domain.*;
 import cn.superhuang.data.scalpel.business.systemmcp.repository.*;
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository;
 import cn.superhuang.data.scalpel.business.system.access.domain.SystemUser;
-import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.BadCredentialsException;
 import java.time.Instant;
@@ -12,10 +11,9 @@ import java.util.*;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class SystemMcpTokenTest {
-    @Test void resolvesCurrentPermissionsAndRejectsRevokedOrDisabledIdentity() {
+    @Test void grantsMcpPermissionsAndRejectsRevokedOrDisabledIdentity() {
         var tokens=mock(SystemMcpAccessTokenRepository.class);
         var users=mock(SystemUserRepository.class);
-        var access=mock(SystemAccessService.class);
         var token=new SystemMcpAccessToken();
         UUID userId=UUID.randomUUID();
         token.setUserId(userId);
@@ -27,11 +25,9 @@ class SystemMcpTokenTest {
         when(users.findById(userId)).thenReturn(Optional.of(user));
         when(tokens.findByTokenDigest(token.getTokenDigest())).thenReturn(Optional.of(token));
         when(tokens.touch(any(),eq(token.getTokenDigest()),any())).thenReturn(1);
-        when(access.findAuthenticationUser("reader")).thenReturn(Optional.of(new SystemAccessService.AuthenticationUser("reader","not-used","reader",List.of("model.view"))));
-        var service=new SystemMcpTokenService(tokens,users,access);
+        var service=new SystemMcpTokenService(tokens,users);
         assertTrue(service.authenticate("dssmcp_test").getAuthorities().stream().anyMatch(a->a.getAuthority().equals("model.view")));
-        when(access.findAuthenticationUser("reader")).thenReturn(Optional.of(new SystemAccessService.AuthenticationUser("reader","not-used","reader",List.of("task.view"))));
-        assertFalse(service.authenticate("dssmcp_test").getAuthorities().stream().anyMatch(a->a.getAuthority().equals("model.view")));
+        assertTrue(service.authenticate("dssmcp_test").getAuthorities().stream().anyMatch(a->a.getAuthority().equals("task.view")));
         token.setEnabled(false);
         assertThrows(BadCredentialsException.class,()->service.authenticate("dssmcp_test"));
         token.setEnabled(true);

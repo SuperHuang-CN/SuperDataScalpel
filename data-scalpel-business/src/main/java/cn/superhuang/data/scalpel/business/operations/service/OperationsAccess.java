@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.business.operations.service;
 import cn.superhuang.data.scalpel.business.operations.domain.AlertRuleType;
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository;
 import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
+import cn.superhuang.data.scalpel.business.systemmcp.security.SystemMcpAuthentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
@@ -20,7 +22,9 @@ public class OperationsAccess {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null) throw denied();
         var user = users.findByUsername(authentication.getName()).filter(u -> u.isEnabled()).orElseThrow(OperationsAccess::denied);
-        var permissions = access.findAuthenticationUser(user.getUsername()).orElseThrow(OperationsAccess::denied).permissionCodes();
+        var permissions = authentication instanceof SystemMcpAuthentication
+                ? authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList()
+                : access.findAuthenticationUser(user.getUsername()).orElseThrow(OperationsAccess::denied).permissionCodes();
         return new Actor(user.getId(), user.getUsername(), Set.copyOf(permissions));
     }
     public boolean recipientCanView(UUID userId, AlertRuleType type) {

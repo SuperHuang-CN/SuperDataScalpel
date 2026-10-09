@@ -10,7 +10,7 @@ public record SystemMcpTokenResponse(
         @Schema(description = "令牌 UUID") UUID id,
         @Schema(description = "令牌名称") String name,
         @Schema(description = "绑定系统用户 UUID") UUID userId,
-        @Schema(description = "绑定用户当前登录名；用户已删除时为‘已删除用户’。调用权限在每次请求时按用户当前状态、角色和权限重新读取") String username,
+        @Schema(description = "绑定用户当前登录名；用户已删除时为‘已删除用户’。每次调用检查用户存在且启用；当前系统 MCP 暂不限制绑定用户的业务权限，仍须接口可用且已开放") String username,
         @Schema(description = "令牌是否启用；用户停用或删除时仍会拒绝调用") boolean enabled,
         @Schema(description = "秘密轮换版本；创建时为 1，每次轮换成功后递增 1") long revision,
         @Schema(description = "令牌过期时间，ISO-8601 UTC 时间；为空表示不过期") Instant expiresAt,

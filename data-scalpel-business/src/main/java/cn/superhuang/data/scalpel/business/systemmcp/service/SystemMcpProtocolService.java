@@ -38,7 +38,7 @@ public class SystemMcpProtocolService {
             List<String> required=new ArrayList<>();
             schema.path("required").forEach(x->required.add(x.asText()));
             var descriptor=McpSchema.Tool.builder().name(name).description(switch(name) {
-                case "api_search"->"检索当前用户可访问的已开放系统接口";case "api_describe"->"读取最新接口契约、前置条件及操作性质";default->"依据最新契约执行系统接口；结果不确定时先查询业务状态，不要重复提交";
+                case "api_search"->"检索当前可用且已开放的系统接口";case "api_describe"->"读取最新接口契约、前置条件及操作性质";default->"依据最新契约执行系统接口；结果不确定时先查询业务状态，不要重复提交";
             }).inputSchema(new McpSchema.JsonSchema("object",props,required,false,null,null)).annotations(new McpSchema.ToolAnnotations(name,!name.equals("api_invoke"),name.equals("api_invoke"),!name.equals("api_invoke"),false,null)).build();
             builder.toolCall(descriptor,(context,request)-> {
                 var identity=(SystemMcpAuthentication)context.get("identity");long start=System.nanoTime();Object value;boolean failed=false;String code=null;String operation=null;Integer businessStatus=null;String executionStatus=null;

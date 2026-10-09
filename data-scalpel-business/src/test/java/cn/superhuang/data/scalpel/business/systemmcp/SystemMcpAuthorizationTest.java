@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.context.support.StaticApplicationContext;
 import org.springframework.web.method.HandlerMethod;
 import java.util.*;
 import static org.mockito.Mockito.*;
@@ -17,7 +16,7 @@ class SystemMcpAuthorizationTest {
         @PreAuthorize("hasRole('super_admin') or hasAuthority('model.view')") public void get() {
         }
     }
-    @Test void evaluatesActualSpringExpressionsAndRechecksExposure()throws Exception {
+    @Test void requiresMcpIdentityAndRechecksExposureWithoutUserPermissions()throws Exception {
         var catalog=mock(SystemMcpCatalogService.class);
         var repo=mock(SystemMcpApiRepository.class);
         var a=new SystemMcpApi();
@@ -25,8 +24,8 @@ class SystemMcpAuthorizationTest {
         a.setEnabled(true);
         a.setStatus("AVAILABLE");
         when(catalog.handler(a.getOperationId())).thenReturn(new HandlerMethod(new Resource(),Resource.class.getMethod("get")));
-        var service=new SystemMcpAuthorization(catalog,repo,new StaticApplicationContext());
-        var allowed=new UsernamePasswordAuthenticationToken("reader",null,List.of(new SimpleGrantedAuthority("model.view")));
+        var service=new SystemMcpAuthorization(catalog,repo);
+        var allowed=new SystemMcpAuthentication("reader",UUID.randomUUID(),"dssmcp_test",List.of());
         var denied=new UsernamePasswordAuthenticationToken("other",null,List.of(new SimpleGrantedAuthority("model.update")));
         assertTrue(service.permitted(a,allowed));
         assertFalse(service.permitted(a,denied));

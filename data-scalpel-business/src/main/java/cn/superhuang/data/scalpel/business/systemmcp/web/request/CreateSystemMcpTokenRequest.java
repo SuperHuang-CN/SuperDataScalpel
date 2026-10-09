@@ -12,7 +12,7 @@ import java.util.UUID;
 public record CreateSystemMcpTokenRequest(
         @Schema(description = "令牌名称，用于区分客户端或使用场景")
         @NotBlank @Size(max = 100) String name,
-        @Schema(description = "绑定用户 UUID；每次调用实时使用该用户当前状态、角色和权限")
+        @Schema(description = "绑定用户 UUID；每次调用实时检查用户存在且启用，保留用户身份用于审计；当前系统 MCP 暂不限制绑定用户的业务权限")
         @NotNull UUID userId,
         @Schema(description = "令牌过期时间，ISO-8601 UTC 时间；必须晚于当前时间，为空表示不过期")
         Instant expiresAt
